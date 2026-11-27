@@ -499,10 +499,11 @@ instructions per 64 us virtual timer event; this is an approximation,
 not Intel machine-cycle timing. Unsupported instructions stop execution
 and log the failing PC. No proprietary firmware is bundled.
 
-This mode is for identification firmware development only: timers,
-interrupts, external program memory, serial, PCM/DMA and DSP audio IRQs
-are not implemented in the MCU path. Do not enable it to repair Windows
-98 playback. Without the property, the existing SB16 PCM model is used
+This mode is experimental: firmware now controls the board PCM/DMA
+engine and DSP audio IRQs through a private XDATA mailbox. MCU timers,
+MCU interrupt handling, external program memory, serial, capture, ADPCM
+and DMA identification remain unimplemented. Windows 98 playback is not
+validated. Without the property, the existing SB16 PCM model is used
 unchanged. Firmware mode remains unmigratable with the named boards.
 
 References: Intel MCS-51 Microcontroller Family User's Manual,
@@ -535,4 +536,16 @@ image is missing or has the wrong size, realization fails rather than
 silently changing DSP implementations. Selecting a different system BIOS
 at runtime does not replace a peripheral's ROM; it is an independent
 device. The ordinary SB16 command without a firmware property retains
-the existing PCM engine until firmware-driven audio is implemented.
+the existing compatibility engine until firmware-driven audio is validated.
+
+PCM hardware interface v1: the MCU writes four argument bytes at XDATA
+0101h through 0104h, then commits an operation at 0100h. This is a private
+emulation interface, not a verified physical Creative register map. The
+firmware parses and validates commands; QEMU validates the completed
+hardware action and operates the existing board DMA and PCM engine.
+The MCU owns reset and identification replies. DSP reset stops DMA and
+clears pending PCM IRQs without clearing the independent MPU IRQ. ISA
+reads of base+0Eh and base+0Fh acknowledge the respective IRQ sources.
+With QTEST_CT1741_FIRMWARE set, qtests exercise 8/16-bit single-cycle and
+auto-init playback, terminal count and IRQ acknowledgement using the
+separately built ROM. No production default has changed.

@@ -1,5 +1,5 @@
 /* SPDX-License-Identifier: GPL-2.0-or-later */
-/* CT1741 experimental firmware transport. No PCM engine is connected yet. */
+/* CT1741 experimental firmware transport and PCM hardware mailbox. */
 #include "qemu/osdep.h"
 #include "qemu/log.h"
 #include "qemu/datadir.h"
@@ -20,6 +20,10 @@ struct CT1741Firmware {
     bool output_full;
     uint8_t input;
     uint8_t output;
+    uint8_t args[4];
+    uint8_t args_written;
+    CT1741Action action;
+    void *action_opaque;
 };
 
 static uint8_t port_read(void *opaque, unsigned int port)
@@ -34,7 +38,7 @@ static uint8_t xread(void *opaque, uint16_t addr)
 {
     CT1741Firmware *s = opaque;
 
-    if ((addr & 0xff) == 0 && s->input_ready) {
+    if (addr == 0 && s->input_ready) {
         s->input_ready = false;
         return s->input;
     }
@@ -45,9 +49,20 @@ static void xwrite(void *opaque, uint16_t addr, uint8_t value)
 {
     CT1741Firmware *s = opaque;
 
-    if ((addr & 0xff) == 0 && !s->output_full) {
+    if (addr == 0 && !s->output_full) {
         s->output = value;
         s->output_full = true;
+    } else if (addr >= 0x0101 && addr <= 0x0104) {
+        unsigned int index = addr - 0x0101;
+
+        s->args[index] = value;
+        s->args_written |= 1U << index;
+    } else if (addr == 0x0100) {
+        if (s->args_written == 0x0f && s->action) {
+            s->action(s->action_opaque, value, s->args);
+        }
+        s->args_written = 0;
+        memset(s->args, 0, sizeof(s->args));
     }
 }
 
@@ -73,6 +88,7 @@ static void tick(void *opaque)
 }
 
 CT1741Firmware *ct1741_fw_new(const char *filename, const char *model,
+                              CT1741Action action, void *opaque,
                               Error **errp)
 {
     const MCS51Model *profile = mcs51_model_find(model ? model : "intel-80c52");
@@ -113,6 +129,8 @@ CT1741Firmware *ct1741_fw_new(const char *filename, const char *model,
         error_setg(errp, "ct1741: DSP firmware must be exactly 8192 bytes");
         return NULL;
     }
+    s->action = action;
+    s->action_opaque = opaque;
     s->cpu.model = profile;
     s->cpu.rom = s->rom;
     s->cpu.opaque = s;
@@ -142,6 +160,8 @@ void ct1741_fw_reset(CT1741Firmware *s, bool asserted)
         s->input = 0;
         s->output = 0xff;
         s->fault = false;
+        s->args_written = 0;
+        memset(s->args, 0, sizeof(s->args));
     } else if (s->reset) {
         timer_mod(s->timer, qemu_clock_get_ns(QEMU_CLOCK_VIRTUAL) +
                   CT1741_PERIOD_NS);

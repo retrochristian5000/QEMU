@@ -5,7 +5,22 @@
 #include "qapi/error.h"
 
 typedef struct CT1741Firmware CT1741Firmware;
+
+/* Private firmware/hardware ABI v1, documented by X86-Firmware. */
+enum {
+    CT1741_ACTION_RATE = 1,
+    CT1741_ACTION_TIME_CONST,
+    CT1741_ACTION_BLOCK,
+    CT1741_ACTION_START,
+    CT1741_ACTION_LEGACY_START,
+    CT1741_ACTION_DMA_CONTROL,
+    CT1741_ACTION_SPEAKER,
+    CT1741_ACTION_IRQ,
+};
+typedef void (*CT1741Action)(void *opaque, uint8_t action,
+                             const uint8_t args[4]);
 CT1741Firmware *ct1741_fw_new(const char *filename, const char *model,
+                              CT1741Action action, void *opaque,
                               Error **errp);
 void ct1741_fw_free(CT1741Firmware *s);
 void ct1741_fw_reset(CT1741Firmware *s, bool asserted);

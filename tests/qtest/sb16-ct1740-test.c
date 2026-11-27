@@ -313,12 +313,29 @@ static void test_ct1741_dma_width(void)
  * Exercise actual ISA DMA service, not only the DSP's request bits.
  * The controller and DSP have independent auto-initialization settings.
  */
+static void firmware_write(QTestState *s, uint8_t value)
+{
+    unsigned int i;
+
+    for (i = 0; i < 100; i++) {
+        if (!(qtest_inb(s, 0x22c) & 0x80)) {
+            break;
+        }
+        qtest_clock_step(s, 1000000);
+    }
+    g_assert_cmpuint(i, <, 100);
+    qtest_outb(s, 0x22c, value);
+    qtest_clock_step(s, 10000000);
+}
+
 static void test_ct1740_dma_terminal_count(gconstpointer data)
 {
     unsigned int flags = GPOINTER_TO_UINT(data);
     bool wide = flags & 1;
     bool auto_init = flags & 2;
     bool continuous = flags & 4;
+    bool firmware = flags & 8;
+    const char *filename = g_getenv("QTEST_CT1741_FIRMWARE");
     unsigned int addr_port = wide ? 0xc4 : 0x02;
     unsigned int count_port = wide ? 0xc6 : 0x03;
     unsigned int clear_port = wide ? 0xd8 : 0x0c;
@@ -329,12 +346,27 @@ static void test_ct1740_dma_terminal_count(gconstpointer data)
     uint8_t irq_bit = wide ? 2 : 1;
     uint8_t cmd = wide ? 0xb0 : 0xc0;
     uint8_t samples[128] = { 0 };
-    QTestState *s = qtest_init("-M pc,chipset-controllers=on -nodefaults "
-                               "-audiodev none,id=snd "
-                               "-device sb16,audiodev=snd");
+    QTestState *s;
+
+    if (firmware && (!filename || !*filename)) {
+        g_test_skip("QTEST_CT1741_FIRMWARE not set");
+        return;
+    }
+    if (firmware) {
+        s = qtest_initf("-M pc,chipset-controllers=on -nodefaults "
+                        "-audiodev none,id=snd "
+                        "-device sb16,audiodev=snd,dsp-firmware=%s", filename);
+    } else {
+        s = qtest_init("-M pc,chipset-controllers=on -nodefaults "
+                       "-audiodev none,id=snd "
+                       "-device sb16,audiodev=snd");
+    }
 
     qtest_outb(s, 0x226, 1);
     qtest_outb(s, 0x226, 0);
+    if (firmware) {
+        qtest_clock_step(s, 10000000);
+    }
     g_assert_cmphex(qtest_inb(s, 0x22a), ==, 0xaa);
 
     /* Channel 1 or 5, 64 samples, single transfer, memory to device. */
@@ -357,13 +389,15 @@ static void test_ct1740_dma_terminal_count(gconstpointer data)
     qtest_outb(s, mask_port, 1);
 
     /* 11025 Hz, mono, unsigned PCM, 64 samples per DSP block. */
-    qtest_outb(s, 0x22c, 0x41);
-    qtest_outb(s, 0x22c, 0x2b);
-    qtest_outb(s, 0x22c, 0x11);
-    qtest_outb(s, 0x22c, cmd | (continuous ? 4 : 0));
-    qtest_outb(s, 0x22c, 0);
-    qtest_outb(s, 0x22c, 63);
-    qtest_outb(s, 0x22c, 0);
+    const uint8_t frame[] = { 0x41, 0x2b, 0x11,
+                              cmd | (continuous ? 4 : 0), 0, 63, 0 };
+    for (unsigned int i = 0; i < ARRAY_SIZE(frame); i++) {
+        if (firmware) {
+            firmware_write(s, frame[i]);
+        } else {
+            qtest_outb(s, 0x22c, frame[i]);
+        }
+    }
 
     for (unsigned int block = 0; block < (continuous ? 2 : 1); block++) {
         unsigned int elapsed;
@@ -378,6 +412,9 @@ static void test_ct1740_dma_terminal_count(gconstpointer data)
         /* DSP completion and controller terminal count must both be visible. */
         g_assert_cmphex(qtest_inb(s, status_port) & 2, ==, 2);
         qtest_inb(s, wide ? 0x22f : 0x22e);
+        if (!continuous) {
+            g_assert_cmphex(mixer_read(s, 0x220, 0x82) & irq_bit, ==, 0);
+        }
     }
 
     if (!continuous) {
@@ -389,7 +426,11 @@ static void test_ct1740_dma_terminal_count(gconstpointer data)
         count |= (unsigned int)qtest_inb(s, count_port) << 8;
         g_assert_cmphex(count, ==, auto_init ? 63 : 0xffff);
     } else {
-        qtest_outb(s, 0x22c, wide ? 0xd5 : 0xd0);
+        if (firmware) {
+            firmware_write(s, wide ? 0xd5 : 0xd0);
+        } else {
+            qtest_outb(s, 0x22c, wide ? 0xd5 : 0xd0);
+        }
     }
 
     qtest_quit(s);
@@ -529,6 +570,14 @@ int main(int argc, char **argv)
                             test_ct1740_firmware);
         qtest_add_func("/ct1740/firmware/external",
                        test_ct1740_external_firmware);
+        qtest_add_data_func("/ct1740/firmware/pcm8",
+                            GUINT_TO_POINTER(8), test_ct1740_dma_terminal_count);
+        qtest_add_data_func("/ct1740/firmware/pcm16",
+                            GUINT_TO_POINTER(9), test_ct1740_dma_terminal_count);
+        qtest_add_data_func("/ct1740/firmware/pcm8-auto",
+                            GUINT_TO_POINTER(14), test_ct1740_dma_terminal_count);
+        qtest_add_data_func("/ct1740/firmware/pcm16-auto",
+                            GUINT_TO_POINTER(15), test_ct1740_dma_terminal_count);
         qtest_add_data_func("/ct1740/dma/8-bit-terminal-count",
                             GUINT_TO_POINTER(0), test_ct1740_dma_terminal_count);
         qtest_add_data_func("/ct1740/dma/16-bit-terminal-count",

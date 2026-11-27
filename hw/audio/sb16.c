@@ -513,6 +513,74 @@ static void ct1741_dma_command(SB16State *s, uint8_t cmd)
     }
 }
 
+/* Apply completed MCU actions to the board hardware. No host command
+ * stream is replayed through the compatibility DSP parser. Validate the
+ * private ABI before invoking the shared PCM/DMA engine. */
+static void sb16_firmware_action(void *opaque, uint8_t action,
+                                 const uint8_t args[4])
+{
+    SB16State *s = opaque;
+    unsigned int length = args[2] | (args[3] << 8);
+    uint8_t cmd = args[0];
+
+    switch (action) {
+    case CT1741_ACTION_RATE:
+        s->time_const = -1;
+        s->freq = restrict_sampling_rate((args[0] << 8) | args[1]);
+        return;
+    case CT1741_ACTION_TIME_CONST:
+        s->freq = -1;
+        s->time_const = args[0];
+        return;
+    case CT1741_ACTION_BLOCK:
+        s->block_size = (args[0] | (args[1] << 8)) + 1;
+        return;
+    case CT1741_ACTION_START:
+        if (((cmd & 0xf0) == 0xb0 || (cmd & 0xf0) == 0xc0) &&
+            !(cmd & 9) && !(args[1] & 0xcf)) {
+            dma_cmd(s, cmd, args[1], length);
+            return;
+        }
+        break;
+    case CT1741_ACTION_LEGACY_START:
+        switch (cmd) {
+        case 0x14:
+            dma_cmd8(s, 0, (args[1] | (args[2] << 8)) + 1);
+            return;
+        case 0x1c:
+            dma_cmd8(s, DMA8_AUTO, -1);
+            return;
+        case 0x90:
+        case 0x91:
+            dma_cmd8(s, (cmd == 0x90 ? DMA8_AUTO : 0) | DMA8_HIGH, -1);
+            return;
+        }
+        break;
+    case CT1741_ACTION_DMA_CONTROL:
+        switch (cmd) {
+        case 0xd0: case 0xd4: case 0xd5: case 0xd6: case 0xd9: case 0xda:
+            ct1741_dma_command(s, cmd);
+            return;
+        }
+        break;
+    case CT1741_ACTION_SPEAKER:
+        if (cmd <= 1) {
+            speaker(s, cmd);
+            return;
+        }
+        break;
+    case CT1741_ACTION_IRQ:
+        if (cmd <= 1) {
+            s->mixer_regs[0x82] |= 1U << cmd;
+            qemu_irq_raise(s->pic);
+            return;
+        }
+        break;
+    }
+    qemu_log_mask(LOG_GUEST_ERROR, "ct1741: invalid PCM hardware action %u\n",
+                  action);
+}
+
 static void command (SB16State *s, uint8_t cmd)
 {
     ldebug("command 0x%x", cmd);
@@ -1100,6 +1168,10 @@ static void dsp_write(void *opaque, uint32_t nport, uint32_t val)
 
     if (s->firmware) {
         if (iport == 0x06) {
+            if (val & 1) {
+                reset(s);
+                s->out_data_len = 0; /* MCU owns the reset response. */
+            }
             ct1741_fw_reset(s->firmware, val & 1);
         } else if (iport == 0x0c) {
             ct1741_fw_write(s->firmware, val);
@@ -1197,7 +1269,9 @@ static uint32_t dsp_read(void *opaque, uint32_t nport)
         case 0x0c:
             return ct1741_fw_busy(s->firmware) ? 0x80 : 0;
         case 0x0e:
-            return ct1741_fw_ready(s->firmware) ? 0x80 : 0;
+        case 0x0f:
+            /* Both IRQ acknowledgements still belong to board hardware. */
+            break;
         default:
             return 0xff;
         }
@@ -1233,7 +1307,8 @@ static uint32_t dsp_read(void *opaque, uint32_t nport)
         break;
 
     case 0x0e:                  /* data available status | irq 8 ack */
-        retval = (!s->out_data_len || s->highspeed) ? 0 : 0x80;
+        retval = s->firmware ? (ct1741_fw_ready(s->firmware) ? 0x80 : 0) :
+                 ((!s->out_data_len || s->highspeed) ? 0 : 0x80);
         if (s->mixer_regs[0x82] & 1) {
             ack = 1;
             s->mixer_regs[0x82] &= ~1;
@@ -1476,7 +1551,7 @@ static int SB_read_DMA (void *opaque, int nchan, int dma_pos, int dma_len)
 #endif
 
     if (till <= copy) {
-        if (s->dma_auto == 0) {
+        if (s->dma_auto == 0 || s->firmware) {
             copy = till;
         }
     }
@@ -1734,6 +1809,8 @@ static void sb16_firmware_reset(DeviceState *dev)
     SB16State *s = SB16(dev);
 
     if (s->firmware) {
+        reset(s);
+        s->out_data_len = 0;
         ct1741_fw_reset(s->firmware, true);
         ct1741_fw_reset(s->firmware, false);
     }
@@ -1809,7 +1886,8 @@ static void sb16_realizefn (DeviceState *dev, Error **errp)
         return;
     }
     if (s->dsp_firmware) {
-        s->firmware = ct1741_fw_new(s->dsp_firmware, s->dsp_cpu, errp);
+        s->firmware = ct1741_fw_new(s->dsp_firmware, s->dsp_cpu,
+                                    sb16_firmware_action, s, errp);
         if (!s->firmware) {
             sb16_remove_mpu(s);
             sb16_remove_gameport(s);
