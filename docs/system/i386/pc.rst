@@ -1161,8 +1161,29 @@ size within the historical LBA28 addressing range::
     qemu-system-i386 -M pc,ide-hd-model=ibm-dtta-351010 -hda disk.img
 
 Use ``ide-hd-model=ide-hd`` to retain the generic hard disk behavior.
-The legacy optical attachment defaults to ``ide-cd`` for CD/DVD media
-compatibility. To select a CD-only experimental Oak controller profile::
+The desktop PC legacy optical attachment now defaults to
+``toshiba-xm-6202b``, a CD-only compatibility profile. Toshiba announced
+the ATAPI drive on 12 November 1997, and the archived 1999 Disk/Trend
+specification lists a 32x maximum data rate of 4.8 MB/s, a 256 KiB
+cache and PIO mode 4. The profile reports those values, uses the observed
+ATA model string ``TOSHIBA CD-ROM XM-6202B``, and supplies Toshiba INQUIRY
+identity fields. DMA is conservatively not advertised or accepted:
+Linux's libata has a model-specific NODMA quirk. The original firmware,
+mechanical seek delays, speed throttling and physical cache are not
+emulated; host I/O buffers and batching are unchanged.
+
+References:
+
+* https://www.global.toshiba/ww/news/corporate/1997/11/pr1201.html
+* https://www.bitsavers.org/pdf/toshiba/cdrom/specs/Toshiba_1999_Specs.pdf
+* Linux drivers/ata/libata-core.c, XM-6202B DMA quirk.
+
+Select the generic optical drive for DVD media or DMA workloads::
+
+    qemu-system-i386 -M pc,ide-cd-model=ide-cd -cdrom install.iso
+
+As for the Oak profiles, cooked images are classified using the existing
+CD/DVD size heuristic. To select an experimental Oak controller profile::
 
     qemu-system-i386 -M pc,ide-cd-model=oti-910 -cdrom install.iso
 
