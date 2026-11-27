@@ -165,7 +165,26 @@ with the validated selected cache at the QEMU build handoff. The dedicated
 ``test-sccache-bootstrap.py`` and ``test-compiler-cache-policy.py`` suites
 check environment and wrapper conflicts without a full LLVM rebuild.
 
-* ``SCCACHE_IDLE_TIMEOUT=180`` (seconds) is the WHP default whenever the
+* ``WHP_SCCACHE_PROFILE=performance`` is an opt-in build-speed experiment
+  for both installed and managed sccache. It defaults the idle timeout to
+  600 seconds and sets ``SCCACHE_CACHE_ZSTD_LEVEL=1`` rather than sccache's
+  default 3, reducing compression work on new cache writes at the potential
+  cost of larger entries and more evictions. The default profile remains
+  ``conservative``. An explicit ``SCCACHE_CONF`` suppresses both profile
+  defaults; individually set environment options always win. The performance
+  profile intentionally supplies environment overrides to implicit default
+  configuration files. Use a release supporting the compression setting.
+  No existing cache entries are recompressed or deleted. For example::
+
+      COMPILER_CACHE=managed-sccache WHP_SCCACHE_PROFILE=performance ./build.sh
+
+  Compare the same target and job budget with the conservative profile,
+  recording wall time, hit/miss counts and cache read/write durations.
+  Allow the old daemon to exit or restart it manually only after all clients
+  finish if a setting requires server startup. Do not assume any speedup
+  without measurements.
+
+* ``SCCACHE_IDLE_TIMEOUT=180`` (seconds) is the conservative WHP default whenever the
   sccache launcher is selected and no explicit ``SCCACHE_CONF`` is set.
   This makes the local server exit sooner after builds become idle. Explicit
   ``SCCACHE_IDLE_TIMEOUT=0`` disables idle shutdown. User values take
@@ -180,6 +199,13 @@ check environment and wrapper conflicts without a full LLVM rebuild.
   itself defaults to 10G when not configured. Smaller sizes save storage but
   may evict expensive LLVM objects and increase rebuild time. They do not
   limit resident memory.
+
+* ``SCCACHE_DIRECT`` controls preprocessor caching, normally already on
+  for eligible local C/C++ compilation. Compare with ``SCCACHE_DIRECT=0``
+  when diagnosing generated-header changes; do not force direct mode or
+  ignore system headers, time macros or working-directory identity to
+  manufacture cache hits. In the managed fork PCH consumers hash the
+  actual PCH bytes, even on a direct-mode lookup.
 
 * ``SCCACHE_CLIENT_SIDE=1`` is optional and requires a compatible sccache
   release (introduced in 0.17.0). It moves preprocessing and compilation

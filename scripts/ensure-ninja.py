@@ -419,15 +419,22 @@ def bootstrap_environment(
                 bootstrap_env['CCACHE_DIR'] = str(compiler_cache_dir)
             else:
                 bootstrap_env['SCCACHE_DIR'] = str(compiler_cache_dir)
-                # Match the shell wrappers' conservative sccache daemon policy.
-                # Keep custom sccache configuration and explicit env intact.
-                if ('SCCACHE_IDLE_TIMEOUT' not in bootstrap_env
-                        and not bootstrap_env.get('SCCACHE_CONF')):
-                    bootstrap_env['SCCACHE_IDLE_TIMEOUT'] = '180'
-                if 'SCCACHE_IDLE_TIMEOUT' in bootstrap_env:
-                    timeout = bootstrap_env['SCCACHE_IDLE_TIMEOUT']
-                    if not timeout or not timeout.isascii() or not timeout.isdecimal():
-                        raise RuntimeError('SCCACHE_IDLE_TIMEOUT must be seconds (0 means never)')
+        if cache_name == 'sccache':
+            # Match whp-build/sccache-policy.sh, even without an explicit
+            # cache directory. Preserve explicit environment/config values.
+            profile = bootstrap_env.get('WHP_SCCACHE_PROFILE', 'conservative')
+            if profile not in ('conservative', 'performance'):
+                raise RuntimeError('WHP_SCCACHE_PROFILE must be conservative or performance')
+            if not bootstrap_env.get('SCCACHE_CONF'):
+                bootstrap_env.setdefault(
+                    'SCCACHE_IDLE_TIMEOUT', '600' if profile == 'performance' else '180',
+                )
+                if profile == 'performance':
+                    bootstrap_env.setdefault('SCCACHE_CACHE_ZSTD_LEVEL', '1')
+            if 'SCCACHE_IDLE_TIMEOUT' in bootstrap_env:
+                timeout = bootstrap_env['SCCACHE_IDLE_TIMEOUT']
+                if not timeout or not timeout.isascii() or not timeout.isdecimal():
+                    raise RuntimeError('SCCACHE_IDLE_TIMEOUT must be seconds (0 means never)')
 
     if sdkroot:
         flags = []

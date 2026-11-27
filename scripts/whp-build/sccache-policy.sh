@@ -10,10 +10,26 @@
 
 whp_sccache_memory_policy()
 {
-    if [ -z "${SCCACHE_IDLE_TIMEOUT+x}" ] && [ -z "${SCCACHE_CONF:-}" ]; then
-        # sccache defaults to 600 s. Release the idle daemon sooner after
-        # short QEMU/LLVM jobs without restarting it between nearby compiles.
-        SCCACHE_IDLE_TIMEOUT=180
+    case "${WHP_SCCACHE_PROFILE-conservative}" in
+        conservative|performance) ;;
+        *)
+            printf 'error: WHP_SCCACHE_PROFILE must be conservative or performance\n' >&2
+            return 1
+            ;;
+    esac
+
+    if [ -z "${SCCACHE_CONF:-}" ]; then
+        if [ -z "${SCCACHE_IDLE_TIMEOUT+x}" ]; then
+            case "${WHP_SCCACHE_PROFILE-conservative}" in
+                conservative) SCCACHE_IDLE_TIMEOUT=180 ;;
+                performance) SCCACHE_IDLE_TIMEOUT=600 ;;
+            esac
+        fi
+        if [ "${WHP_SCCACHE_PROFILE-conservative}" = performance ] &&
+           [ -z "${SCCACHE_CACHE_ZSTD_LEVEL+x}" ]; then
+            SCCACHE_CACHE_ZSTD_LEVEL=1
+            export SCCACHE_CACHE_ZSTD_LEVEL
+        fi
     fi
 
     if [ -n "${SCCACHE_IDLE_TIMEOUT+x}" ]; then
@@ -27,7 +43,7 @@ whp_sccache_memory_policy()
         export SCCACHE_IDLE_TIMEOUT
     fi
 
-    # Leave SCCACHE_CACHE_SIZE, SCCACHE_CLIENT_SIDE, SCCACHE_CONF and remote
-    # cache configuration under user control. Never stop the shared daemon.
+    # Leave cache capacity, direct mode, client-side mode and remote storage
+    # under user control. Never stop the shared daemon.
     return 0
 }

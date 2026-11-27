@@ -384,6 +384,58 @@ class CompilerCachePolicyTests(unittest.TestCase):
                     '/usr/bin/clang++', '', '/opt/bin/sccache', cache_dir,
                 )
 
+    def test_sccache_performance_profile_matches_shell_and_ninja(self):
+        ninja = load_module(NINJA_BOOTSTRAP, 'whp_ninja_sccache_performance_test')
+        policy = ROOT / 'scripts' / 'whp-build' / 'sccache-policy.sh'
+        keys = ('SCCACHE_IDLE_TIMEOUT', 'SCCACHE_CACHE_ZSTD_LEVEL',
+                'SCCACHE_CLIENT_SIDE', 'SCCACHE_DIRECT', 'SCCACHE_CACHE_SIZE')
+        shell = (
+            'set -e; . "$1"; whp_sccache_memory_policy; '
+            'printf "%s|%s|%s|%s|%s" '
+            + ' '.join('"${' + key + '-unset}"' for key in keys)
+        )
+        for overrides, expected in (
+            ({}, ('180', 'unset', 'unset', 'unset', 'unset')),
+            ({'WHP_SCCACHE_PROFILE': 'performance'},
+             ('600', '1', 'unset', 'unset', 'unset')),
+            ({'WHP_SCCACHE_PROFILE': 'performance', 'SCCACHE_IDLE_TIMEOUT': '0',
+              'SCCACHE_CACHE_ZSTD_LEVEL': '3', 'SCCACHE_CLIENT_SIDE': '1',
+              'SCCACHE_DIRECT': '0', 'SCCACHE_CACHE_SIZE': '12G'},
+             ('0', '3', '1', '0', '12G')),
+            ({'WHP_SCCACHE_PROFILE': 'performance', 'SCCACHE_CONF': '/custom/config'},
+             ('unset', 'unset', 'unset', 'unset', 'unset')),
+        ):
+            with self.subTest(overrides=overrides):
+                run = subprocess.run(
+                    ['/bin/sh', '-c', shell, 'sh', str(policy)],
+                    env=overrides, text=True, capture_output=True, check=False,
+                )
+                self.assertEqual(run.returncode, 0, run.stderr)
+                self.assertEqual(run.stdout, '|'.join(expected))
+                with mock.patch.dict(os.environ, overrides, clear=True):
+                    for cache_dir in (None, pathlib.Path('/tmp/whp-sccache')):
+                        env = ninja.bootstrap_environment(
+                            '/usr/bin/clang++', '', '/opt/bin/sccache', cache_dir,
+                        )
+                        self.assertEqual(
+                            tuple(env.get(key, 'unset') for key in keys), expected,
+                        )
+
+        for profile in ('', 'unknown'):
+            with self.subTest(profile=profile):
+                overrides = {'WHP_SCCACHE_PROFILE': profile}
+                run = subprocess.run(
+                    ['/bin/sh', '-c', shell, 'sh', str(policy)],
+                    env=overrides, text=True, capture_output=True, check=False,
+                )
+                self.assertNotEqual(run.returncode, 0)
+                self.assertIn('WHP_SCCACHE_PROFILE', run.stderr)
+                with mock.patch.dict(os.environ, overrides, clear=True):
+                    with self.assertRaisesRegex(RuntimeError, 'WHP_SCCACHE_PROFILE'):
+                        ninja.bootstrap_environment('/usr/bin/clang++', '', '/opt/bin/sccache')
+                    env = ninja.bootstrap_environment('/usr/bin/clang++', '', '/opt/bin/ccache')
+                    self.assertNotIn('SCCACHE_CACHE_ZSTD_LEVEL', env)
+
     def test_sccache_cache_roots_align_with_shell_wrappers(self):
         ninja = NINJA_BOOTSTRAP.read_text(encoding='utf-8')
         native = (ROOT / 'scripts' / 'bootstrap-native-clang.bash').read_text(
