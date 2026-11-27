@@ -193,6 +193,22 @@ Adaptive ranking, run-length coding, streaming bit packing, link
 negotiation and retransmission are not implemented by this module.
 No raw TCP payload is compressed or changed.
 
+Both DataPort Express hardware tables identify \A0 through \A3 as
+maximum LAP-M information sizes of 64, 128, 192 and 256 characters,
+with \A3 as the factory default:
+https://arvutimuuseum.ee/th99/t/P-R/53811.htm and
+https://arvutimuuseum.ee/th99/t/P-R/53813.htm.
+Rockwell reference manual 1048 section 3.3.2 instead describes its
+\A command as an MNP block-size control, defaulting to 128. Do not
+import that default or MNP semantics into the Express profiles
+without model-specific evidence. The Express setting is reported by
+AT&V and stored with user profiles. It is a requested maximum, not
+a negotiated LAPM information-field length or a TCP buffer limit.
+The omitted-argument form is not documented in the Express tables;
+the existing requirement for an explicit number is retained.
+Regression coverage exercises all four values, invalid values,
+compression independence and profile restoration.
+
 The auto-reliable settings are included in AT&V and saved profiles.
 They are manufacturer-specific controls related to error correction,
 not AT commands defined by ITU-T V.42. The historical reference is

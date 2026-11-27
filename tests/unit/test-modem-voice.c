@@ -504,6 +504,54 @@ static void test_dataport_operating_mode(gconstpointer opaque)
     modem_frontend_cleanup(&fe, chr);
 }
 
+static void test_dataport_lapm_frame_config(gconstpointer opaque)
+{
+    ModemOutput out = { 0 };
+    CharFrontend fe = { 0 };
+    Chardev *chr = modem_new("modem-lapm-frame", opaque);
+    const char *reply;
+
+    modem_frontend_init(&fe, &out, chr);
+    assert_response_contains(modem_command(&fe, &out, "ATEQV1\r"),
+                             "\r\nOK\r\n");
+    assert_response_contains(modem_command(&fe, &out, "AT&V\r"), "\\A3 ");
+
+    for (unsigned i = 0; i <= 3; i++) {
+        g_autofree char *command = g_strdup_printf("AT\\A%u\r", i);
+        g_autofree char *setting = g_strdup_printf("\\A%u ", i);
+
+        g_assert_cmpstr(modem_command(&fe, &out, command), ==, "\r\nOK\r\n");
+        assert_response_contains(modem_command(&fe, &out, "AT&V\r"),
+                                 setting);
+    }
+    g_assert_cmpstr(modem_command(&fe, &out, "AT\\A4\r"), ==, "\r\nERROR\r\n");
+    g_assert_cmpstr(modem_command(&fe, &out, "AT\\A999999999999999999999\r"),
+                    ==, "\r\nERROR\r\n");
+    assert_response_contains(modem_command(&fe, &out, "AT&V\r"), "\\A3 ");
+
+    /* The hardware table combines frame selection with compression. */
+    g_assert_cmpstr(modem_command(&fe, &out, "AT\\A0%C1&W0\r"), ==,
+                    "\r\nOK\r\n");
+    g_assert_cmpstr(modem_command(&fe, &out, "AT\\A2%C0&W1&Y1\r"), ==,
+                    "\r\nOK\r\n");
+    reply = modem_command(&fe, &out, "AT&V\r");
+    assert_response_contains(reply, "\\A2 ");
+    assert_response_contains(reply, "%C0");
+    assert_response_contains(modem_command(&fe, &out, "AT&F\r"),
+                             "\r\nOK\r\n");
+    assert_response_contains(modem_command(&fe, &out, "AT&V\r"), "\\A3 ");
+    assert_response_contains(modem_command(&fe, &out, "ATZ\r"),
+                             "\r\nOK\r\n");
+    reply = modem_command(&fe, &out, "AT&V\r");
+    assert_response_contains(reply, "\\A0 ");
+    assert_response_contains(reply, "%C1");
+    qemu_modem_hardware_reset(chr);
+    reply = modem_command(&fe, &out, "AT&V\r");
+    assert_response_contains(reply, "\\A2 ");
+    assert_response_contains(reply, "%C0");
+    modem_frontend_cleanup(&fe, chr);
+}
+
 static void test_dataport_aol_flow_control(gconstpointer opaque)
 {
     static const char *const probe[] = {
@@ -1474,6 +1522,11 @@ int main(int argc, char **argv)
                          test_dataport_operating_mode);
     g_test_add_data_func("/modem/paradyne/operating-mode-3740",
                          "att-paradyne-3740", test_dataport_operating_mode);
+    g_test_add_data_func("/modem/paradyne/lapm-frame-3711",
+                         "att-paradyne-dataport-3711",
+                         test_dataport_lapm_frame_config);
+    g_test_add_data_func("/modem/paradyne/lapm-frame-3740",
+                         "att-paradyne-3740", test_dataport_lapm_frame_config);
     g_test_add_data_func("/modem/paradyne/aol-flow-control-3711",
                          "att-paradyne-dataport-3711",
                          test_dataport_aol_flow_control);
