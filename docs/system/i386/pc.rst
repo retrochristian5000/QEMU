@@ -358,6 +358,18 @@ not constitute PC97 certification. Loading subsystem IDs from a physical
 board ROM, DAC shadowing and display power management are not implemented
 by this profile.
 
+Revision B honors GR31[5] to suspend an in-progress system-to-screen
+BitBLT. While suspended, primary framebuffer writes bypass the host
+source FIFO and the status register reports the operation as suspended
+rather than busy. Clearing the pause bit resumes the existing transfer
+without discarding buffered source bytes. The alternate PCI source
+aperture does not consume source data while suspended. See TRM 5.10 and
+9.4.4.3. This supports concurrent framebuffer and accelerator access
+used by Windows display drivers. Buffered BitBLT commands, the GR2F
+source DWORD offset and hardware overlay/page-switch synchronization
+remain incomplete; DirectDraw support depends on the guest driver and
+is not implied by the device name.
+
 The CL-GD5422 does not have a hardware BitBLT engine, as documented in
 Table 2-1 of the January 1994 CL-GD542X Technical Reference Manual.
 The GD5426 introduces BitBLT and the GD5428 enhances it. On profiles
