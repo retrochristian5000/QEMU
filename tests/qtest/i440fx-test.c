@@ -286,8 +286,13 @@ static void test_i440fx_pam(gconstpointer opaque)
     qtest_end();
 }
 
-#define BLOB_SIZE ((size_t)65536)
 #define ISA_BIOS_MAXSZ ((size_t)(128 * 1024))
+
+static uint8_t firmware_pattern(size_t offset)
+{
+    /* Distinguish each 64 KiB bank as well as each byte within a bank. */
+    return (uint8_t)(offset ^ (offset >> 16));
+}
 
 /*
  * Create a blob file, and return its absolute pathname as a dynamically
@@ -295,22 +300,22 @@ static void test_i440fx_pam(gconstpointer opaque)
  * The file is closed before the function returns.
  * In case of error, the function aborts and prints the error message.
  */
-static char *create_blob_file(void)
+static char *create_blob_file(size_t size)
 {
-    int i, fd;
+    int fd;
     char *pathname;
     GError *error = NULL;
-    g_autofree uint8_t *buf = g_malloc(BLOB_SIZE);
+    g_autofree uint8_t *buf = g_malloc(size);
 
     fd = g_file_open_tmp("blob_XXXXXX", &pathname, &error);
     g_assert_no_error(error);
     close(fd);
 
-    for (i = 0; i < BLOB_SIZE; i++) {
-        buf[i] = i;
+    for (size_t i = 0; i < size; i++) {
+        buf[i] = firmware_pattern(i);
     }
 
-    g_file_set_contents(pathname, (char *)buf, BLOB_SIZE, &error);
+    g_file_set_contents(pathname, (char *)buf, size, &error);
     g_assert_no_error(error);
 
     return pathname;
@@ -322,14 +327,16 @@ static void test_i440fx_firmware(FirmwareTestFixture *fixture,
     char *fw_pathname, *cmdline;
     uint8_t *buf;
     size_t i, isa_bios_size;
+    size_t size = GPOINTER_TO_UINT(user_data);
 
-    fw_pathname = create_blob_file();
+    fw_pathname = create_blob_file(size);
     g_assert(fw_pathname != NULL);
 
     /* Better hope the user didn't put metacharacters in TMPDIR and co. */
-    cmdline = g_strdup_printf("-S %s%s", fixture->is_bios
-                                         ? "-bios "
-                                         : "-drive if=pflash,format=raw,file=",
+    cmdline = g_strdup_printf("-S -machine pc,max-fw-size=%zu %s%s",
+                              size, fixture->is_bios
+                                    ? "-bios "
+                                    : "-drive if=pflash,format=raw,file=",
                               fw_pathname);
     g_test_message("qemu cmdline: %s", cmdline);
     qtest_start(cmdline);
@@ -345,19 +352,19 @@ static void test_i440fx_firmware(FirmwareTestFixture *fixture,
     g_free(fw_pathname);
 
     /* check below 4G */
-    buf = g_malloc0(BLOB_SIZE);
-    memread(0x100000000ULL - BLOB_SIZE, buf, BLOB_SIZE);
-    for (i = 0; i < BLOB_SIZE; ++i) {
-        g_assert_cmphex(buf[i], ==, (uint8_t)i);
+    buf = g_malloc0(size);
+    memread(0x100000000ULL - size, buf, size);
+    for (i = 0; i < size; ++i) {
+        g_assert_cmphex(buf[i], ==, firmware_pattern(i));
     }
 
-    /* check in ISA space too */
-    memset(buf, 0, BLOB_SIZE);
-    isa_bios_size = ISA_BIOS_MAXSZ < BLOB_SIZE ? ISA_BIOS_MAXSZ : BLOB_SIZE;
+    /* Check that ISA space aliases the top banks, not the first banks. */
+    memset(buf, 0, size);
+    isa_bios_size = MIN(ISA_BIOS_MAXSZ, size);
     memread(0x100000 - isa_bios_size, buf, isa_bios_size);
     for (i = 0; i < isa_bios_size; ++i) {
         g_assert_cmphex(buf[i], ==,
-                        (uint8_t)((BLOB_SIZE - isa_bios_size) + i));
+                        firmware_pattern(size - isa_bios_size + i));
     }
 
     g_free(buf);
@@ -368,8 +375,15 @@ static void add_firmware_test(const char *testpath,
                               void (*setup_fixture)(FirmwareTestFixture *f,
                                                     gconstpointer test_data))
 {
-    qtest_add(testpath, FirmwareTestFixture, NULL, setup_fixture,
-              test_i440fx_firmware, NULL);
+    static const unsigned sizes[] = { 65536, 131072, 262144, 524288 };
+
+    for (size_t i = 0; i < ARRAY_SIZE(sizes); i++) {
+        g_autofree char *path = g_strdup_printf("%s/%uKiB", testpath,
+                                                sizes[i] / 1024);
+
+        qtest_add(path, FirmwareTestFixture, GUINT_TO_POINTER(sizes[i]),
+                  setup_fixture, test_i440fx_firmware, NULL);
+    }
 }
 
 static void request_bios(FirmwareTestFixture *fixture,
