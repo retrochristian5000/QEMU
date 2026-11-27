@@ -51,6 +51,10 @@ void cirrus_gd5446_update_retrace_info(VGACommonState *vga)
     unsigned dots = (vga->sr[1] & 1) ? 8 : 9;
     unsigned divider = (vga->sr[1] & 8) ? 2 : 1;
 
+    /* TRM 8.37: double-clock indexed mode clocks the CRTC at VCLK/2. */
+    if (cirrus_gd5446_double_clock_palette(s)) {
+        divider *= 2;
+    }
     /* TRM 4.16: SR1, not MISC[0], selects the character width. */
     t->character_hz = cirrus_gd5446_vclk(vga) / (dots * divider);
     t->htotal = cr[0] + 5;
