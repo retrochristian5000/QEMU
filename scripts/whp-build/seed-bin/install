@@ -6,6 +6,23 @@ if [ "${1:-}" = --whp-install-adapter-probe ]; then
     printf '%s\n' whp-qemu-install-seed-adapter
     exit 0
 fi
+# Preserve the opt-in diagnostic path in install.sh.
+if [ "${WHP_INSTALL_LOCKED:-0}" = 1 ] &&
+   [ "${WHP_INSTALL_VERBOSE:-0}" = 0 ]; then
+    case "${WHP_INSTALL_SEED:-}" in
+        ""|*/install.sh|*/scripts/whp-build/seed-bin/install)
+            printf '%s\n' 'error: locked install has no independent seed' >&2
+            exit 1 ;;
+        /*) ;;
+        *) printf '%s\n' 'error: locked install must be an absolute path' >&2
+           exit 1 ;;
+    esac
+    [ -f "$WHP_INSTALL_SEED" ] && [ -x "$WHP_INSTALL_SEED" ] || {
+        printf '%s\n' 'error: locked install seed is not executable' >&2
+        exit 1
+    }
+    exec "$WHP_INSTALL_SEED" "$@"
+fi
 case "$0" in
     */*) exec "${0%/*}/../../../seeds/install.sh" "$@" ;;
     *) printf 'error: install bridge must be invoked by path\n' >&2; exit 1 ;;
