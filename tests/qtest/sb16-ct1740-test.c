@@ -417,6 +417,49 @@ static void test_ct1740_dma_id(gconstpointer data)
     qtest_quit(s);
 }
 
+static void test_sb16_machine_reset(gconstpointer data)
+{
+    const char *model = data;
+    bool named = strcmp(model, "sb16-generic") != 0;
+    QTestState *s = qtest_initf("-M pc,chipset-controllers=on -nodefaults "
+                               "-audiodev none,id=snd -device %s,audiodev=snd",
+                               model);
+
+    qtest_outb(s, 0x226, 1);
+    qtest_outb(s, 0x226, 0);
+    g_assert_cmphex(qtest_inb(s, 0x22a), ==, 0xaa);
+    qtest_outb(s, 0x22c, 0xf2);
+    qtest_outb(s, 0x22c, 0xf3);
+    g_assert_cmphex(mixer_read(s, 0x220, 0x82) & 3, !=, 0);
+
+    /* Leave a DSP command incomplete across a warm reset. */
+    qtest_outb(s, 0x22c, 0x41);
+    qtest_outb(s, 0x22c, 0x56);
+    qtest_system_reset(s);
+    g_assert_cmphex(mixer_read(s, 0x220, 0x82) & 7, ==, 0);
+    g_assert_cmphex(qtest_inb(s, 0x22a), ==, 0xaa);
+    qtest_outb(s, 0x22c, 0xe1);
+    g_assert_cmphex(qtest_inb(s, 0x22a), ==, 4);
+    g_assert_cmphex(qtest_inb(s, 0x22a), ==, 5);
+
+    if (named) {
+        /* A masked DMA identification must not survive a system reset. */
+        qtest_writeb(s, 0x1000, 0x11);
+        dma_id_program(s, 0x1000);
+        dma_id_send(s, false, 0xff);
+        g_assert_cmphex(qtest_inb(s, 0x08) & 0x20, ==, 0x20);
+        qtest_system_reset(s);
+        dma_id_program(s, 0x1000);
+        qtest_outb(s, 0xd6, 0xc0);
+        qtest_outb(s, 0xd4, 0);
+        qtest_outb(s, 0x0a, 1);
+        qtest_clock_step(s, 10000000);
+        g_assert_cmphex(qtest_readb(s, 0x1000), ==, 0x11);
+        g_assert_cmphex(qtest_inb(s, 0x08) & 0x20, ==, 0);
+    }
+    qtest_quit(s);
+}
+
 static void test_ct1740_dma_terminal_count(gconstpointer data)
 {
     unsigned int flags = GPOINTER_TO_UINT(data);
@@ -777,6 +820,8 @@ int main(int argc, char **argv)
         qtest_add_data_func("/ct1740/alternate", GUINT_TO_POINTER(1),
                             test_ct1740_probe);
         qtest_add_func("/ct1740/no-csp", test_ct1740_no_csp);
+        qtest_add_data_func("/ct1740/machine-reset", "sb16-ct1740",
+                            test_sb16_machine_reset);
         qtest_add_func("/ct1740/alias", test_ct1740_alias);
         qtest_add_data_func("/ct1740/firmware/8052", "intel-8052",
                             test_ct1740_firmware);
@@ -828,6 +873,8 @@ int main(int argc, char **argv)
                             test_ct1740_invalid);
     }
     if (qtest_has_machine("pc") && qtest_has_device("sb16-generic")) {
+        qtest_add_data_func("/sb16-generic/machine-reset", "sb16-generic",
+                            test_sb16_machine_reset);
         qtest_add_data_func("/sb16-generic/no-emu8000", "sb16-generic",
                             test_sb16_no_emu8000);
     }

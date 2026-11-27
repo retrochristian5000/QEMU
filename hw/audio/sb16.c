@@ -385,8 +385,8 @@ static void dma_cmd8 (SB16State *s, int mask, int dma_len)
                           "block size\n");
             return;
         }
-        ct1741_stop_previous_dma(s);
     }
+    ct1741_stop_previous_dma(s);
     s->fmt = AUDIO_FORMAT_U8;
     s->use_hdma = 0;
     s->fmt_bits = 8;
@@ -446,9 +446,7 @@ static void dma_cmd8 (SB16State *s, int mask, int dma_len)
 
 static void dma_cmd (SB16State *s, uint8_t cmd, uint8_t d0, int dma_len)
 {
-    if (s->legacy_board) {
-        ct1741_stop_previous_dma(s);
-    }
+    ct1741_stop_previous_dma(s);
     s->use_hdma = cmd < 0xc0;
     s->fifo = (cmd >> 1) & 1;
     s->dma_auto = (cmd >> 2) & 1;
@@ -1668,9 +1666,10 @@ static int SB_read_DMA (void *opaque, int nchan, int dma_pos, int dma_len)
         return dma_pos;
     }
 
-    if (s->legacy_board &&
-        (!s->dma_running || nchan != (s->use_hdma ? s->hdma : s->dma) ||
-         dma_len <= 0 || dma_pos < 0 || dma_pos >= dma_len)) {
+    /* A stale request from a previous PCM transfer must not operate on
+     * the newly selected channel or generate another completion IRQ. */
+    if (!s->dma_running || nchan != (s->use_hdma ? s->hdma : s->dma) ||
+        dma_len <= 0 || dma_pos < 0 || dma_pos >= dma_len) {
         return dma_pos;
     }
     if (s->block_size <= 0) {
@@ -1998,13 +1997,27 @@ static void sb16_firmware_reset(DeviceState *dev)
 {
     SB16State *s = SB16(dev);
 
-    if (s->legacy_board) {
-        ct1741_cancel_dma_id(s);
-        s->dma_id_value = 0xaa;
-        s->dma_id_mask = 0x96;
-    }
+    /* A machine reset resets the whole card, not just the optional MCU.
+     * Release both registered DMA requests before resetting DSP state.
+     * Do not synthesize the generic DSP-reset completion IRQ on system reset. */
+    s->dma_auto = 0;
+    s->dma_running = 0;
+    ct1741_cancel_dma_id(s);
+    ISADMA_GET_CLASS(s->isa_dma)->release_DREQ(s->isa_dma, s->dma);
+    ISADMA_GET_CLASS(s->isa_hdma)->release_DREQ(s->isa_hdma, s->hdma);
+    timer_del(s->aux_ts);
+    s->mixer_regs[0x82] = 0;
+    qemu_irq_lower(s->pic);
+    reset(s);
+    s->can_write = 1;
+    s->audio_free = 0;
+    s->use_hdma = 0;
+    s->time_const = -1;
+    s->fmt = AUDIO_FORMAT_U8;
+    s->fifo = 0;
+    s->align = 0;
+    s->bytes_per_second = 11025;
     if (s->firmware) {
-        reset(s);
         s->out_data_len = 0;
         ct1741_fw_reset(s->firmware, true);
         ct1741_fw_reset(s->firmware, false);
