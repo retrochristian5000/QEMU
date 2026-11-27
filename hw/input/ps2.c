@@ -806,8 +806,11 @@ static void ps2_mouse_event(DeviceState *dev, QemuConsole *src,
     };
     PS2MouseState *s = (PS2MouseState *)dev;
 
-    /* Diagnostic echo mode must not accumulate ordinary motion. */
-    if (s->mouse_wrap || !(s->mouse_status & MOUSE_STATUS_ENABLED)) {
+    /* Track physical button releases even during diagnostic echo mode. */
+    if (!(s->mouse_status & MOUSE_STATUS_ENABLED)) {
+        return;
+    }
+    if (s->mouse_wrap && evt->type != INPUT_EVENT_KIND_BTN) {
         return;
     }
 
@@ -823,6 +826,9 @@ static void ps2_mouse_event(DeviceState *dev, QemuConsole *src,
     case INPUT_EVENT_KIND_BTN:
         if (evt->btn.down) {
             s->mouse_buttons |= bmap[evt->btn.button];
+            if (s->mouse_wrap) {
+                break;
+            }
             if (evt->btn.button == INPUT_BUTTON_WHEEL_UP) {
                 s->mouse_dz--;
             } else if (evt->btn.button == INPUT_BUTTON_WHEEL_DOWN) {
