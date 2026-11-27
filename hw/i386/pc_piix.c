@@ -102,6 +102,15 @@ static void piix_intx_routing_notifier_xen(PCIDevice *dev)
     }
 }
 
+static bool pc_chipset_controllers_supported(PCMachineState *pcms)
+{
+    X86MachineState *x86ms = X86_MACHINE(pcms);
+
+    return !xen_enabled() &&
+           (x86ms->pic == ON_OFF_AUTO_OFF || !kvm_pic_in_kernel()) &&
+           (x86ms->pit == ON_OFF_AUTO_OFF || !kvm_pit_in_kernel());
+}
+
 /* PC hardware initialisation */
 static void pc_init1(MachineState *machine, const char *host_type,
                      const char *pci_type)
@@ -127,12 +136,19 @@ static void pc_init1(MachineState *machine, const char *host_type,
     assert(pcmc->pci_enabled);
 
     if (pcms->chipset_controllers &&
-        (xen_enabled() ||
-         (x86ms->pic != ON_OFF_AUTO_OFF && kvm_pic_in_kernel()) ||
-         (x86ms->pit != ON_OFF_AUTO_OFF && kvm_pit_in_kernel()))) {
-        error_report("chipset-controllers requires userspace PIC and PIT "
-                     "emulation");
-        exit(1);
+        !pc_chipset_controllers_supported(pcms)) {
+        /*
+         * The hardware profile prefers the named userspace controllers.
+         * Preserve accelerated configurations unless the user explicitly
+         * requested these controllers.
+         */
+        if (!pcms->chipset_controllers_explicit) {
+            pcms->chipset_controllers = false;
+        } else {
+            error_report("chipset-controllers requires userspace PIC and PIT "
+                         "emulation");
+            exit(EXIT_FAILURE);
+        }
     }
 
     /*
@@ -361,7 +377,10 @@ static bool pc_get_chipset_controllers(Object *obj, Error **errp)
 
 static void pc_set_chipset_controllers(Object *obj, bool value, Error **errp)
 {
-    PC_MACHINE(obj)->chipset_controllers = value;
+    PCMachineState *pcms = PC_MACHINE(obj);
+
+    pcms->chipset_controllers = value;
+    pcms->chipset_controllers_explicit = true;
 }
 
 static int pc_get_south_bridge(Object *obj, Error **errp)
@@ -425,9 +444,6 @@ static void pc_i440fx_init(MachineState *machine)
 #define DEFINE_I440FX_MACHINE(major, minor) \
     DEFINE_PC_VER_MACHINE(pc_i440fx, "pc-i440fx", pc_i440fx_init, false, NULL, major, minor);
 
-#define DEFINE_I440FX_MACHINE_AS_LATEST(major, minor) \
-    DEFINE_PC_VER_MACHINE(pc_i440fx, "pc-i440fx", pc_i440fx_init, true, "pc", major, minor);
-
 static void pc_i440fx_machine_options(MachineClass *m)
 {
     PCMachineClass *pcmc = PC_MACHINE_CLASS(m);
@@ -467,7 +483,39 @@ static void pc_i440fx_machine_11_1_options(MachineClass *m)
     pc_i440fx_machine_options(m);
 }
 
-DEFINE_I440FX_MACHINE_AS_LATEST(11, 1);
+DEFINE_I440FX_MACHINE(11, 1);
+
+/*
+ * Keep the versioned i440FX machine ABI separate from the evolving
+ * hardware-oriented and generic defaults.
+ */
+static void pc_hardware_machine_options(MachineClass *m)
+{
+    PCMachineClass *pcmc = PC_MACHINE_CLASS(m);
+
+    pc_i440fx_machine_11_1_options(m);
+    pcmc->default_chipset_controllers = true;
+    m->desc = "PC (i440FX + PIIX, named motherboard controllers)";
+    m->alias = "pc";
+    m->is_default = true;
+}
+
+DEFINE_PC_MACHINE(hardware, "pc-hardware", pc_i440fx_init,
+                  pc_hardware_machine_options);
+
+static void pc_generic_machine_options(MachineClass *m)
+{
+    pc_i440fx_machine_11_1_options(m);
+    m->desc = "Generic PC (i440FX + PIIX, compatible controllers)";
+    m->alias = "generic-pc";
+}
+
+/*
+ * TYPE_PC_MACHINE already owns the abstract QOM name generic-pc-machine.
+ * Use a different concrete type name and expose the requested CLI alias.
+ */
+DEFINE_PC_MACHINE(generic, "pc-generic", pc_i440fx_init,
+                  pc_generic_machine_options);
 
 #ifdef CONFIG_PCI_I440BX
 static void pc_i440bx_init(MachineState *machine)

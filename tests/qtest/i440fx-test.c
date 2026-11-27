@@ -889,13 +889,64 @@ static void test_piix_pirq_registers(gconstpointer opaque)
     qtest_quit(qts);
 }
 
+typedef struct PCControllerProfileTest {
+    const char *machine;
+    bool named;
+} PCControllerProfileTest;
+
+static void test_pc_controller_profile(gconstpointer opaque)
+{
+    const PCControllerProfileTest *profile = opaque;
+    QTestState *qts = qtest_initf("-M %s -nodefaults", profile->machine);
+    QDict *reply;
+    const char *tree;
+
+    reply = qtest_qmp(qts, "{'execute':'qom-get','arguments':"
+                      "{'path':'/machine','property':'chipset-controllers'}}");
+    g_assert_cmpint(qdict_get_bool(reply, "return"), ==, profile->named);
+    qobject_unref(reply);
+
+    reply = qtest_qmp(qts, "{'execute':'human-monitor-command','arguments':"
+                      "{'command-line':'info qtree'}}");
+    tree = qdict_get_str(reply, "return");
+    g_assert_nonnull(strstr(tree, profile->named ? "dev: i8259a," :
+                                                  "dev: isa-i8259,"));
+    g_assert_nonnull(strstr(tree, profile->named ? "dev: i8254," :
+                                                  "dev: isa-pit,"));
+    g_assert_nonnull(strstr(tree, profile->named ? "dev: piix-82c37," :
+                                                  "dev: i8257,"));
+    g_assert_null(strstr(tree, profile->named ? "dev: isa-i8259," :
+                                               "dev: i8259a,"));
+    g_assert_null(strstr(tree, profile->named ? "dev: isa-pit," :
+                                               "dev: i8254,"));
+    g_assert_null(strstr(tree, profile->named ? "dev: i8257," :
+                                               "dev: piix-82c37,"));
+    qobject_unref(reply);
+    qtest_quit(qts);
+}
+
 int main(int argc, char **argv)
 {
     TestData data;
 
     g_test_init(&argc, &argv, NULL);
 
+    static const PCControllerProfileTest profiles[] = {
+        { "pc", true },
+        { "generic-pc", false },
+        { "pc-i440fx-11.1", false },
+        { "pc,chipset-controllers=off", false },
+        { "generic-pc,chipset-controllers=on", true },
+    };
+
     data.num_cpus = 1;
+
+    for (size_t i = 0; i < ARRAY_SIZE(profiles); i++) {
+        g_autofree char *path = g_strdup_printf("i440fx/controllers/%s",
+                                                profiles[i].machine);
+
+        qtest_add_data_func(path, &profiles[i], test_pc_controller_profile);
+    }
 
     qtest_add_data_func("i440fx/defaults", &data, test_i440fx_defaults);
     qtest_add_data_func("i440fx/pam", &data, test_i440fx_pam);

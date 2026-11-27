@@ -1,6 +1,28 @@
 i440fx PC (``pc-i440fx``, ``pc``)
 =================================
 
+PC machine profiles
+~~~~~~~~~~~~~~~~~~~
+
+The fork provides two unversioned i440FX/PIIX machine profiles:
+
+* ``pc`` (canonical type ``pc-hardware``): the default PC, preferring the
+  named motherboard controller implementations where userspace emulation
+  is available.
+* ``generic-pc`` (canonical type ``pc-generic``): the compatible controller
+  configuration, using the previous default device selections.
+
+Both profiles share the same machine initialization, PCI and ISA layout,
+firmware defaults, and configurable CPU, memory and expansion devices.
+Neither represents a specific retail motherboard. The generic machine
+still requires the i440FX/PIIX host and southbridge topology.
+
+The ``pc`` alias previously selected ``pc-i440fx-11.1``. Existing saved
+states or migration configurations should use their original explicit
+versioned machine type and matching device options. All versioned i440FX
+machine defaults remain unchanged. Treat the two unversioned profiles
+as evolving configurations, not cross-version migration ABIs.
+
 Peripherals
 ~~~~~~~~~~~
 
@@ -592,7 +614,7 @@ sections 3.7 and 3.8, specifies integrated 82C54 timer and cascaded
 82C59 interrupt controller functions. These are chipset functions, not
 separate discrete expansion cards.
 
-The PIIX-family PC machines support an opt-in controller selection::
+The PIIX-family PC machines support an explicit controller selection::
 
     -machine pc,chipset-controllers=on
 
@@ -606,10 +628,15 @@ The option is not a claim of complete 82C54/82C59 silicon emulation;
 the PIC profiles currently share the same behavior. It is incompatible
 with Xen and enabled in-kernel PIC/PIT emulation.
 
-The default is off to retain existing machine-version and migration
-configurations. Use a cold boot when changing the selection, and keep
-it consistent across saved-state or migration endpoints. Do not add
-duplicate standalone timers, DMA controllers or interrupt controllers.
+The default is on for ``pc`` when userspace PIC/PIT emulation is
+available, and off for ``generic-pc`` and the versioned i440FX machines.
+When Xen or an enabled in-kernel PIC/PIT is in use, the implicit
+hardware-profile default falls back to the compatible controller set;
+explicitly requesting ``chipset-controllers=on`` still reports an error.
+Either profile accepts an explicit override. Use a cold boot when
+changing the selection, and keep it consistent across saved-state or
+migration endpoints. Do not add duplicate standalone timers, DMA
+controllers or interrupt controllers.
 CPU, RAM, RTC, storage, display and NIC selections are unchanged. The option
 does not select a physical motherboard model or change Windows driver
 names by itself.
