@@ -3028,8 +3028,11 @@ static const MemoryRegionOps cirrus_swapped_blt_ops = {
 static void map_linear_vram_bank(CirrusVGAState *s, unsigned bank)
 {
     MemoryRegion *mr = &s->cirrus_bank[bank];
-    bool enabled = !(s->cirrus_srcptr != s->cirrus_srcptr_end)
-        && !((s->vga.sr[0x07] & 0x01) == 0)
+    /* The RAM alias bypasses bank-limit checks in the byte handlers.
+     * Use it only if the entire 32 KiB window is backed by installed VRAM. */
+    bool enabled = s->cirrus_bank_limit[bank] >= 0x8000
+        && s->cirrus_srcptr == s->cirrus_srcptr_end
+        && (s->vga.sr[0x07] & 0x01)
         && !((s->vga.gr[0x0B] & 0x14) == 0x14)
         && !(s->vga.gr[0x0B] & 0x02);
 
@@ -3512,6 +3515,13 @@ static void cirrus_reset(void *opaque)
     s->cirrus_srccounter = 0;
     s->cirrus_blt_host_skip = 0;
     vga_common_reset(&s->vga);
+    /* Reset derived state with the registers that define it. In particular,
+     * entering packed-pixel mode before writing GR9/GRB must select bank 0,
+     * not a stale bank from before reset. */
+    s->cirrus_shadow_gr0 = s->vga.gr[0];
+    s->cirrus_shadow_gr1 = s->vga.gr[1];
+    cirrus_update_bank_ptr(s, 0);
+    cirrus_update_bank_ptr(s, 1);
     cirrus_ddc_reset(s);
     if (s->gd5446_revision == CIRRUS_GD5446_REV_B) {
         cirrus_update_shadow(s);

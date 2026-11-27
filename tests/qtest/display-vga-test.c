@@ -718,6 +718,48 @@ static void test_gd5446_revision(gconstpointer opaque)
     qtest_quit(qts);
 }
 
+static void test_gd5446b_bank_reset(void)
+{
+    const uint32_t config = 0x80002000U;
+    const uint32_t lfb = 0xe0000000U;
+    QTestState *qts = qtest_init("-M pc -m 64M -vga none -nic none "
+                                "-device gd5446b-pci,addr=4,romfile=,"
+                                "pci-legacy-decode=on,vgamem_mb=8");
+
+    for (unsigned pass = 0; pass < 2; pass++) {
+        cirrus_pci_command(qts, config, 0);
+        qtest_outl(qts, 0xcf8, config | PCI_BASE_ADDRESS_0);
+        qtest_outl(qts, 0xcfc, lfb);
+        cirrus_pci_command(qts, config, 3);
+        qtest_outb(qts, VGA_MIS_W, VGA_MIS_COLOR | VGA_MIS_ENB_MEM_ACCESS);
+        vga_seq_write(qts, 6, 0x12);
+        /* Do not write bank registers before selecting packed-pixel mode. */
+        vga_seq_write(qts, 7, 1);
+        g_assert_cmphex(vga_gfx_read(qts, 0), ==, 0);
+        g_assert_cmphex(vga_gfx_read(qts, 1), ==, 0);
+        qtest_writeb(qts, lfb, 0x31);
+        qtest_writeb(qts, lfb + 0x8000, 0x42);
+        g_assert_cmphex(qtest_readb(qts, 0xa0000), ==, 0x31);
+        g_assert_cmphex(qtest_readb(qts, 0xa8000), ==, 0x42);
+
+        /* Only 16 KiB of the final 32 KiB bank is physically installed.
+         * The extra compatibility backing allocation must stay hidden. */
+        vga_gfx_write(qts, 0x0b, 0x20);
+        vga_gfx_write(qts, 9, 0xff);
+        qtest_writeb(qts, lfb + 0x3fc000, 0x53);
+        g_assert_cmphex(qtest_readb(qts, 0xa0000), ==, 0x53);
+        g_assert_cmphex(qtest_readb(qts, 0xa4000), ==, 0xff);
+        g_assert_cmphex(qtest_readb(qts, 0xa8000), ==, 0xff);
+        qtest_writeb(qts, 0xa8000, 0x99);
+        g_assert_cmphex(qtest_readb(qts, lfb), ==, 0x31);
+
+        vga_gfx_write(qts, 0, 0x75);
+        vga_gfx_write(qts, 1, 0x86);
+        qtest_system_reset(qts);
+    }
+    qtest_quit(qts);
+}
+
 static void test_gd5446b_pc97(void)
 {
     const uint32_t config = 0x80002000U;
@@ -1657,6 +1699,8 @@ int main(int argc, char **argv)
                                 "gd5446a-pci", test_cirrus_pci_identity);
         }
         if (qtest_has_device("gd5446b-pci")) {
+            qtest_add_func("/display/pci/cirrus-gd5446b-bank-reset",
+                           test_gd5446b_bank_reset);
             qtest_add_func("/display/pci/cirrus-gd5446b-pc97",
                            test_gd5446b_pc97);
             qtest_add_func("/display/pci/cirrus-gd5446b-swapped-apertures",
