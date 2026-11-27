@@ -107,6 +107,7 @@ struct PCMachineClass {
     const char *default_serial_type;
     const char *default_fdc_type;
     bool default_chipset_controllers;
+    bool honor_piix_smbus;
     bool laptop;
 
     /* Compat options: */

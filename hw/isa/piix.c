@@ -329,6 +329,7 @@ static void pci_piix_realize(PCIDevice *dev, const char *uhci_type,
         object_initialize_child(OBJECT(d), "pm", &d->pm, TYPE_PIIX4_PM);
         qdev_prop_set_int32(DEVICE(&d->pm), "addr", dev->devfn + 3);
         qdev_prop_set_uint32(DEVICE(&d->pm), "smb_io_base", d->smb_io_base);
+        qdev_prop_set_bit(DEVICE(&d->pm), "has-smbus", d->has_smbus);
         qdev_prop_set_bit(DEVICE(&d->pm), "smm-enabled", d->smm_enabled);
         if (!qdev_realize(DEVICE(&d->pm), BUS(pci_bus), errp)) {
             return;
@@ -422,6 +423,7 @@ static void pci_piix_init(Object *obj)
 static const Property pci_piix_props[] = {
     DEFINE_PROP_UINT32("smb_io_base", PIIXState, smb_io_base, 0),
     DEFINE_PROP_BOOL("has-acpi", PIIXState, has_acpi, true),
+    DEFINE_PROP_BOOL("has-smbus", PIIXState, has_smbus, true),
     DEFINE_PROP_BOOL("has-pic", PIIXState, has_pic, true),
     DEFINE_PROP_BOOL("has-pit", PIIXState, has_pit, true),
     DEFINE_PROP_BOOL("chipset-dma", PIIXState, chipset_dma, false),

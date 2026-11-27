@@ -109,7 +109,7 @@ static void smbus_io_space_update(PIIX4PMState *s)
 {
     PCIDevice *d = PCI_DEVICE(s);
 
-    bool enabled = d->config[PIIX4_SMBHSTCFG] & 1;
+    bool enabled = s->has_smbus && (d->config[PIIX4_SMBHSTCFG] & 1);
 
     s->smb_io_base = pci_get_long(d->config + PIIX4_SMBBA);
     s->smb_io_base &= s->strict_io_decode ? PIIX4_SMB_BASE_MASK
@@ -490,7 +490,13 @@ static void piix4_pm_realize(PCIDevice *dev, Error **errp)
         s->smb_io_base = 0;
         memory_region_set_size(&s->smb.io, 16);
     }
-    memory_region_set_enabled(&s->smb.io, pci_conf[0xd2] & 1);
+    if (!s->has_smbus) {
+        /* Keep the PM function and migration layout, but disable host decode. */
+        pci_conf[PIIX4_SMBHSTCFG] &= ~1;
+        dev->wmask[PIIX4_SMBHSTCFG] &= ~1;
+    }
+    memory_region_set_enabled(&s->smb.io,
+                              s->has_smbus && (pci_conf[PIIX4_SMBHSTCFG] & 1));
     memory_region_add_subregion(pci_address_space_io(dev),
                                 s->smb_io_base, &s->smb.io);
 
@@ -597,6 +603,7 @@ static void piix4_send_gpe(AcpiDeviceIf *adev, AcpiEventStatusBits ev)
 
 static const Property piix4_pm_properties[] = {
     DEFINE_PROP_UINT32("smb_io_base", PIIX4PMState, smb_io_base, 0),
+    DEFINE_PROP_BOOL("has-smbus", PIIX4PMState, has_smbus, true),
     DEFINE_PROP_UINT8(ACPI_PM_PROP_S3_DISABLED, PIIX4PMState, disable_s3, 0),
     DEFINE_PROP_UINT8(ACPI_PM_PROP_S4_DISABLED, PIIX4PMState, disable_s4, 0),
     DEFINE_PROP_UINT8(ACPI_PM_PROP_S4_VAL, PIIX4PMState, s4_val, 2),

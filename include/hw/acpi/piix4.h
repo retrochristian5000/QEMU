@@ -48,6 +48,7 @@ struct PIIX4PMState {
 
     PMSMBus smb;
     uint32_t smb_io_base;
+    bool has_smbus;
 
     qemu_irq irq;
     qemu_irq smi_irq;

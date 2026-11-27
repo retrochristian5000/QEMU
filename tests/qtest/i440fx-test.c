@@ -1109,6 +1109,42 @@ static void test_pc_bridge_profile(gconstpointer opaque)
     qtest_quit(qts);
 }
 
+static void test_pc_smbus_option(gconstpointer opaque)
+{
+    bool enabled = GPOINTER_TO_INT(opaque);
+    QTestState *qts = qtest_initf("-M pc,smbus=%s,acpi=on -nodefaults "
+                                  "-global PIIX4_PM.strict-io-decode=on",
+                                  enabled ? "on" : "off");
+    QPCIBus *bus = qpci_new_pc(qts, NULL);
+    QPCIDevice *dev = qpci_device_find(bus, QPCI_DEVFN(1, 3));
+
+    g_assert_nonnull(dev);
+    g_assert_cmphex(qpci_config_readl(dev, PCI_VENDOR_ID), ==, 0x71138086);
+
+    for (unsigned pass = 0; pass < 2; pass++) {
+        qpci_config_writel(dev, 0x90, 0x6010);
+        qpci_config_writew(dev, PCI_COMMAND, PCI_COMMAND_IO);
+        qpci_config_writeb(dev, 0xd2, 1);
+        g_assert_cmphex(qpci_config_readb(dev, 0xd2) & 1, ==, enabled);
+        qtest_outb(qts, 0x6013, 0x5a);
+        g_assert_cmphex(qtest_inb(qts, 0x6013), ==, enabled ? 0x5a : 0xff);
+
+        /* Turning off SMBus must not turn off ACPI PM decode. */
+        qpci_config_writel(dev, 0x40, 0x5000);
+        qpci_config_writeb(dev, 0x80, 1);
+        qtest_outw(qts, 0x5002, 0x0100);
+        g_assert_cmphex(qtest_inw(qts, 0x5002), ==, 0x0100);
+
+        qtest_system_reset(qts);
+        g_assert_cmphex(qpci_config_readb(dev, 0xd2) & 1, ==, 0);
+        g_assert_cmphex(qtest_inb(qts, 0x6013), ==, 0xff);
+    }
+
+    g_free(dev);
+    qpci_free_pc(bus);
+    qtest_quit(qts);
+}
+
 static void test_piix4_pm_io_decode(void)
 {
     QTestState *qts = qtest_init("-M pc -nodefaults "
@@ -1625,6 +1661,10 @@ int main(int argc, char **argv)
     }
     if (qtest_has_device("PIIX4_PM")) {
         qtest_add_func("i440fx/piix4-pm-io-decode", test_piix4_pm_io_decode);
+        qtest_add_data_func("i440fx/pc-smbus/on", GINT_TO_POINTER(1),
+                            test_pc_smbus_option);
+        qtest_add_data_func("i440fx/pc-smbus/off", GINT_TO_POINTER(0),
+                            test_pc_smbus_option);
     }
     add_firmware_test("i440fx/firmware/bios", request_bios);
     add_firmware_test("i440fx/firmware/pflash", request_pflash);

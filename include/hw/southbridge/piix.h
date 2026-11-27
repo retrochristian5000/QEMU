@@ -73,6 +73,7 @@ struct PIIXState {
     MemoryRegion rcr_mem;
 
     bool has_acpi;
+    bool has_smbus;
     bool has_pic;
     bool has_pit;
     bool chipset_dma;

@@ -283,6 +283,10 @@ static void pc_init1(MachineState *machine, const char *host_type,
     object_property_set_bool(OBJECT(pci_dev), "chipset-dma",
                              pcms->chipset_controllers, &error_abort);
     qdev_prop_set_uint32(DEVICE(pci_dev), "smb_io_base", 0xb100);
+    if (pcmc->honor_piix_smbus) {
+        qdev_prop_set_bit(DEVICE(pci_dev), "has-smbus",
+                          pcms->smbus_enabled);
+    }
     object_property_set_bool(OBJECT(pci_dev), "smm-enabled",
                              x86_machine_is_smm_enabled(x86ms),
                              &error_abort);
@@ -356,9 +360,11 @@ static void pc_init1(MachineState *machine, const char *host_type,
         smi_irq = qemu_allocate_irq(pc_acpi_smi_interrupt, first_cpu, 0);
 
         qdev_connect_gpio_out_named(DEVICE(piix4_pm), "smi-irq", 0, smi_irq);
-        pcms->smbus = I2C_BUS(qdev_get_child_bus(DEVICE(piix4_pm), "i2c"));
-        /* TODO: Populate SPD eeprom data.  */
-        smbus_eeprom_init(pcms->smbus, 8, NULL, 0);
+        if (object_property_get_bool(piix4_pm, "has-smbus", &error_abort)) {
+            pcms->smbus = I2C_BUS(qdev_get_child_bus(DEVICE(piix4_pm), "i2c"));
+            /* TODO: Populate SPD eeprom data. */
+            smbus_eeprom_init(pcms->smbus, 8, NULL, 0);
+        }
 
         object_property_add_link(OBJECT(machine), PC_MACHINE_ACPI_DEVICE_PROP,
                                  TYPE_HOTPLUG_HANDLER,
@@ -646,7 +652,10 @@ static GlobalProperty pc_desktop_defaults[] = {
 
 static void pc_hardware_machine_options(MachineClass *m)
 {
+    PCMachineClass *pcmc = PC_MACHINE_CLASS(m);
+
     pc_hardware_common_options(m);
+    pcmc->honor_piix_smbus = true;
     compat_props_add(m->compat_props, pc_desktop_defaults,
                      G_N_ELEMENTS(pc_desktop_defaults));
     ObjectClass *oc = OBJECT_CLASS(m);
