@@ -74,6 +74,11 @@ profile-scoped Paradyne configuration commands:
 * ``\N0`` through ``\N7`` on both models: record the requested
   connection/reliability mode. On the 3740, ``\N7`` is accepted for
   compatibility with the archived DataPort Express V.34 driver.
+* ``\C0`` through ``\C2``: record the auto-reliable buffering
+  policy (default 0); mode 2 requests a switch to buffering upon receipt
+  of the configured fallback character
+* ``%A0`` through ``%A127``: record the ASCII fallback character
+  (default 19; 0 disables character-based fallback)
 * ``\Q0`` through ``\Q4``: record the configured flow-control mode
 * ``\K0`` through ``\K5``: record the requested DTE BREAK policy
   (factory default 5, bare command selects 0); reported by AT&V and
@@ -105,6 +110,17 @@ Then send the following from the guest serial terminal::
 The 3740 accepts ``%B28800``; the 3711 rejects that rate. Both accept
 ``\N7`` and reject ``\N8``. The generic Hayes and Rockwell profiles do
 not acquire these Paradyne-specific commands.
+
+The auto-reliable settings are included in AT&V and saved profiles.
+They are manufacturer-specific controls related to error correction,
+not AT commands defined by ITU-T V.42. The historical reference is
+ITU-T V.42 (March 1993), https://www.itu.int/rec/T-REC-V.42-199303-S/en.
+No detection exchange, LAPM framing, retransmission, MNP fallback,
+V.42bis compression or negotiation-time buffering is implemented by
+these settings. The fallback character does not intercept ordinary
+online payload. The EC indicator remains unsupported; TCP reliability
+does not establish V.42 negotiation. The hardware tables disagree on
+the exact modes 6 and 7; their existing numeric acceptance is retained.
 
 The BREAK policy is documented for both the 3711 and 3740 hardware
 tables. The six values describe discard, priority or ordered BREAK

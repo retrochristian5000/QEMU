@@ -417,6 +417,78 @@ static void test_dataport_family_controls(gconstpointer opaque)
     modem_frontend_cleanup(&fe, chr);
 }
 
+static void test_dataport_reliability_config(gconstpointer opaque)
+{
+    const char *model = opaque;
+    ModemOutput out = { 0 };
+    CharFrontend fe = { 0 };
+    Chardev *chr = modem_new("modem-reliability-config", model);
+
+    modem_frontend_init(&fe, &out, chr);
+
+    /* Initial AOL 4.0 probe reported by the user. */
+    static const char *const probe[] = {
+        "AT\r", "AT\r", "ATH\r", "AT\r", "ATEQV1\r",
+    };
+    for (unsigned i = 0; i < ARRAY_SIZE(probe); i++) {
+        assert_response_contains(modem_command(&fe, &out, probe[i]),
+                                 "\r\nOK\r\n");
+    }
+    g_assert_cmpstr(modem_command(&fe, &out, "AT\r"), ==, "\r\nOK\r\n");
+    assert_response_contains(modem_command(&fe, &out, "AT&V\r"),
+                             "\\C0 %A19");
+
+    for (unsigned i = 0; i <= 7; i++) {
+        g_autofree char *command = g_strdup_printf("AT\\N%u\r", i);
+        g_autofree char *setting = g_strdup_printf("\\N%u ", i);
+
+        g_assert_cmpstr(modem_command(&fe, &out, command), ==,
+                        "\r\nOK\r\n");
+        assert_response_contains(modem_command(&fe, &out, "AT&V\r"),
+                                 setting);
+    }
+    for (unsigned i = 0; i <= 2; i++) {
+        g_autofree char *command = g_strdup_printf("AT\\C%u\r", i);
+        g_autofree char *setting = g_strdup_printf("\\C%u ", i);
+
+        g_assert_cmpstr(modem_command(&fe, &out, command), ==,
+                        "\r\nOK\r\n");
+        assert_response_contains(modem_command(&fe, &out, "AT&V\r"),
+                                 setting);
+    }
+    g_assert_cmpstr(modem_command(&fe, &out, "AT%A127\r"), ==,
+                    "\r\nOK\r\n");
+    g_assert_cmpstr(modem_command(&fe, &out, "AT\\C3\r"), ==,
+                    "\r\nERROR\r\n");
+    g_assert_cmpstr(modem_command(&fe, &out, "AT%A128\r"), ==,
+                    "\r\nERROR\r\n");
+    g_assert_cmpstr(modem_command(&fe, &out, "AT\\N8\r"), ==,
+                    "\r\nERROR\r\n");
+    assert_response_contains(modem_command(&fe, &out, "AT&V\r"),
+                             "\\C2 %A127");
+    assert_response_contains(modem_command(&fe, &out, "AT\\C%A\r"),
+                             "\r\nOK\r\n");
+    assert_response_contains(modem_command(&fe, &out, "AT&V\r"),
+                             "\\C0 %A0");
+
+    assert_response_contains(modem_command(&fe, &out, "AT\\C1%A20&W0\r"),
+                             "\r\nOK\r\n");
+    assert_response_contains(modem_command(&fe, &out, "AT\\C2%A0&W1&Y1\r"),
+                             "\r\nOK\r\n");
+    assert_response_contains(modem_command(&fe, &out, "AT&F\r"),
+                             "\r\nOK\r\n");
+    assert_response_contains(modem_command(&fe, &out, "AT&V\r"),
+                             "\\C0 %A19");
+    assert_response_contains(modem_command(&fe, &out, "ATZ\r"),
+                             "\r\nOK\r\n");
+    assert_response_contains(modem_command(&fe, &out, "AT&V\r"),
+                             "\\C1 %A20");
+    qemu_modem_hardware_reset(chr);
+    assert_response_contains(modem_command(&fe, &out, "AT&V\r"),
+                             "\\C2 %A0");
+    modem_frontend_cleanup(&fe, chr);
+}
+
 static void test_dataport_break_config(gconstpointer opaque)
 {
     const char *model = opaque;
@@ -1038,6 +1110,10 @@ static void test_generic_modem_rejects_paradyne_controls(void)
     assert_response_contains(response, "\r\nERROR\r\n");
     response = modem_command(&fe, &out, "AT\\K5\r");
     assert_response_contains(response, "\r\nERROR\r\n");
+    response = modem_command(&fe, &out, "AT\\C1\r");
+    assert_response_contains(response, "\r\nERROR\r\n");
+    response = modem_command(&fe, &out, "AT%A19\r");
+    assert_response_contains(response, "\r\nERROR\r\n");
     response = modem_command(&fe, &out, "AT%M0\r");
     assert_response_contains(response, "\r\nERROR\r\n");
     response = modem_command(&fe, &out, "AT%B14400\r");
@@ -1099,6 +1175,12 @@ int main(int argc, char **argv)
                          "att-paradyne-dataport-3711", test_dataport_macppp_init);
     g_test_add_data_func("/modem/paradyne/macppp-3740",
                          "att-paradyne-3740", test_dataport_macppp_init);
+    g_test_add_data_func("/modem/paradyne/reliability-config-3711",
+                         "att-paradyne-dataport-3711",
+                         test_dataport_reliability_config);
+    g_test_add_data_func("/modem/paradyne/reliability-config-3740",
+                         "att-paradyne-3740",
+                         test_dataport_reliability_config);
     g_test_add_data_func("/modem/paradyne/break-config-3711",
                          "att-paradyne-dataport-3711",
                          test_dataport_break_config);

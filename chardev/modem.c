@@ -87,6 +87,8 @@ typedef struct ModemStoredProfile {
     int x_mode;
     int w_mode;
     int reliable_mode;
+    int auto_reliable_buffer;
+    int auto_reliable_fallback;
     int flow_control_mode;
     bool xon_xoff_passthrough;
     int lapm_frame_size;
@@ -137,6 +139,8 @@ struct ModemChardev {
     int x_mode;
     int w_mode;
     int reliable_mode;
+    int auto_reliable_buffer;
+    int auto_reliable_fallback;
     int flow_control_mode;
     bool xon_xoff_passthrough;
     bool dte_rx_paused;
@@ -472,6 +476,8 @@ static void modem_model_defaults(ModemChardev *modem)
     modem->w_mode = 1;
     /* These are requested settings; no analogue negotiation is simulated. */
     modem->reliable_mode = modem->model->paradyne_commands ? 6 : 0;
+    modem->auto_reliable_buffer = 0;
+    modem->auto_reliable_fallback = 19;
     modem->flow_control_mode = modem->model->paradyne_commands ? 3 : 0;
     modem->xon_xoff_passthrough = false;
     modem->dte_rx_paused = false;
@@ -523,6 +529,8 @@ static void modem_store_profile(ModemChardev *modem, unsigned index)
     profile->x_mode = modem->x_mode;
     profile->w_mode = modem->w_mode;
     profile->reliable_mode = modem->reliable_mode;
+    profile->auto_reliable_buffer = modem->auto_reliable_buffer;
+    profile->auto_reliable_fallback = modem->auto_reliable_fallback;
     profile->flow_control_mode = modem->flow_control_mode;
     profile->xon_xoff_passthrough = modem->xon_xoff_passthrough;
     profile->lapm_frame_size = modem->lapm_frame_size;
@@ -547,6 +555,8 @@ static void modem_restore_profile(ModemChardev *modem, unsigned index)
     modem->x_mode = profile->x_mode;
     modem->w_mode = profile->w_mode;
     modem->reliable_mode = profile->reliable_mode;
+    modem->auto_reliable_buffer = profile->auto_reliable_buffer;
+    modem->auto_reliable_fallback = profile->auto_reliable_fallback;
     modem->flow_control_mode = profile->flow_control_mode;
     modem->xon_xoff_passthrough = profile->xon_xoff_passthrough;
     modem->lapm_frame_size = profile->lapm_frame_size;
@@ -670,6 +680,11 @@ static void modem_report_profile(ModemChardev *modem)
                                modem->lapm_frame_size / 64 - 1,
                                modem->xon_xoff_passthrough,
                                modem->break_mode);
+        modem_queue_line(modem, line);
+        g_clear_pointer(&line, g_free);
+        line = g_strdup_printf("\\C%d %%A%d",
+                               modem->auto_reliable_buffer,
+                               modem->auto_reliable_fallback);
         modem_queue_line(modem, line);
         if (modem->model->dataport_3740_line) {
             g_clear_pointer(&line, g_free);
@@ -1427,6 +1442,15 @@ static void modem_execute_command(ModemChardev *modem, const char *input)
             break;
         case '%':
             switch (*p++) {
+            case 'A':
+                value = modem_parse_number(&p, 0);
+                if (!modem->model->paradyne_commands || value > 127) {
+                    modem_result(modem, MODEM_RESULT_ERROR);
+                    return;
+                }
+                /* Requested fallback character, not an active detector. */
+                modem->auto_reliable_fallback = value;
+                break;
             case 'B':
             {
                 bool legacy = *p == 'L';
@@ -1493,6 +1517,15 @@ static void modem_execute_command(ModemChardev *modem, const char *input)
                     return;
                 }
                 modem->lapm_frame_size = 64 * (value + 1);
+                break;
+            case 'C':
+                value = modem_parse_number(&p, 0);
+                if (!modem->model->paradyne_commands || value > 2) {
+                    modem_result(modem, MODEM_RESULT_ERROR);
+                    return;
+                }
+                /* No line-side auto-reliable negotiation is simulated. */
+                modem->auto_reliable_buffer = value;
                 break;
             case 'D':
                 value = modem_parse_number(&p, 0);
