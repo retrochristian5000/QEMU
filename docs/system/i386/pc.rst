@@ -340,9 +340,16 @@ host BitBLT source paths differ: Revision A uses BC000h-BFFFFh for color
 expansion; Revision B uses the second 16 MiB PCI aperture. The aperture
 sizes describe PCI address space, not installed VRAM. See the November
 1996 CL-GD5446 Technical Reference Manual, sections 5.10, 7.4-7.8
-and Appendix A2. Byte-swapping and YUV apertures, other strap
-configurations and silicon-specific PCI revision ID values are not yet
-modeled. Revision B uses QEMU's virtual board subsystem IDs (with the upper
+and Appendix A2. Revision B maps three 4 MiB framebuffer views
+at BAR0 offsets 0, 4 and 8 MiB (native, word-swapped and DWORD-swapped)
+and three corresponding host BitBLT source views at 16, 20 and 24 MiB.
+All framebuffer views refer to the same 4 MiB physical memory; they do
+not increase installed VRAM. The swapped host-source views accept aligned
+DWORD writes and honor the source-select and pause controls. The 12 MiB
+YUV planar-assist view remains unimplemented; 28-32 MiB is unused.
+Revision A and the historical compatibility profile retain their previous
+aperture behavior. Other strap configurations and silicon-specific PCI
+revision ID values are not yet modeled. Revision B uses QEMU's virtual board subsystem IDs (with the upper
 subsystem byte zero for the GPIO-disabled configuration) rather than
 claiming a specific physical board. SR17[3] enables PCI2C subsystem ID
 writes for motherboard firmware; clearing it locks the register again.
