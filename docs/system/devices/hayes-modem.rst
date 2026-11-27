@@ -267,6 +267,28 @@ the existing requirement for an explicit number is retained.
 Regression coverage exercises all four values, invalid values,
 compression independence and profile restoration.
 
+The Express hardware reference lists V.42bis as well as MNP5.
+For the documented V.42 policies (\N4 and \N5), %C1 makes V.42bis
+eligible and %C0 disables the request. AT&V distinguishes this
+from MNP5 eligibility; synchronous, normal and direct operation
+do not acquire a compression claim. Modes 6/7 are left unchanged
+because the source table is ambiguous.
+
+ITU-T V.42bis (January 1990),
+https://www.itu.int/rec/T-REC-V.42bis-199001-I/en, sections 7.2,
+7.8.3, 8 and 9, defines the transparent-mode escape mechanism.
+The separate modem-v42bis module implements literal escape encoding,
+increment modulo 256, RESET signalling and a byte-at-a-time decoder
+which reports ECM and rejects reserved commands without emitting
+payload. Independent directional state is required. The decoder
+stops at ECM or invalid input; a future dictionary/bitstream layer
+must handle mode changes and reset events. This is not a complete
+V.42bis codec: dictionary updates (including in transparent mode),
+XID negotiation, compressed codewords and link integration are
+unimplemented. The raw TCP stream is unchanged. Standalone tests
+exercise fixed wire vectors, all octet values, RESET, ECM and reserved
+commands.
+
 The auto-reliable settings are included in AT&V and saved profiles.
 They are manufacturer-specific controls related to error correction,
 not AT commands defined by ITU-T V.42. The historical reference is

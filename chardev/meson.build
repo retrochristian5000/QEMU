@@ -35,6 +35,7 @@ system_ss.add(files(
     'modem-models.c',
     'modem-v21.c',
     'modem-mnp5.c',
+    'modem-v42bis.c',
     'msmouse.c',
     'wctablet.c',
     'testdev.c'))

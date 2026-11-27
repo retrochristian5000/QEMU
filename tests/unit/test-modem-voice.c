@@ -807,8 +807,20 @@ static void test_dataport_mnp5_config(gconstpointer opaque)
                              "REQUESTED COMPRESSION: DISABLED");
     assert_response_contains(modem_command(&fe, &out, "AT\\N4%C1\r"),
                              "\r\nOK\r\n");
-    g_assert_null(strstr(modem_command(&fe, &out, "AT&V\r"),
-                         "MNP5 ELIGIBLE"));
+    reply = modem_command(&fe, &out, "AT&V\r");
+    g_assert_null(strstr(reply, "MNP5 ELIGIBLE"));
+    assert_response_contains(reply, "REQUESTED LINK: V.42 ONLY");
+    assert_response_contains(reply, "V.42bis ELIGIBLE");
+    assert_response_contains(modem_command(&fe, &out, "AT\\N5%C0\r"),
+                             "\r\nOK\r\n");
+    reply = modem_command(&fe, &out, "AT&V\r");
+    assert_response_contains(reply, "V.42 WITH NORMAL FALLBACK");
+    assert_response_contains(reply, "REQUESTED COMPRESSION: DISABLED");
+    g_assert_null(strstr(reply, "V.42bis ELIGIBLE"));
+    assert_response_contains(modem_command(&fe, &out, "AT\\N0%C1\r"),
+                             "\r\nOK\r\n");
+    reply = modem_command(&fe, &out, "AT&V\r");
+    g_assert_null(strstr(reply, "V.42bis ELIGIBLE"));
     modem_frontend_cleanup(&fe, chr);
 }
 

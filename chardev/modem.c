@@ -823,6 +823,15 @@ static void modem_report_profile(ModemChardev *modem)
                              "REQUESTED COMPRESSION: ENABLED (MNP5 ELIGIBLE)" :
                              "REQUESTED COMPRESSION: DISABLED");
         }
+        if (modem->operating_mode == MODEM_MODE_ASYNC_RELIABLE &&
+            (modem->reliable_mode == 4 || modem->reliable_mode == 5)) {
+            modem_queue_line(modem, modem->reliable_mode == 4 ?
+                             "REQUESTED LINK: V.42 ONLY" :
+                             "REQUESTED LINK: V.42 WITH NORMAL FALLBACK");
+            modem_queue_line(modem, modem->compression ?
+                             "REQUESTED COMPRESSION: ENABLED (V.42bis ELIGIBLE)" :
+                             "REQUESTED COMPRESSION: DISABLED");
+        }
         if (modem->connect_speed == 300) {
             modem_queue_line(modem, modem->bell_modulation ?
                              "REQUESTED MODULATION: BELL 103" :
