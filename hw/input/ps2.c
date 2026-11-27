@@ -700,13 +700,24 @@ static void ps2_mouse_clear_motion(PS2MouseState *s)
     s->mouse_dw = 0;
 }
 
-static int ps2_mouse_send_packet(PS2MouseState *s)
+/* Input is bounded to the unscaled packet chunk before applying scaling. */
+static int ps2_mouse_scale21(int delta)
+{
+    static const uint8_t scale[] = { 0, 1, 1, 3, 6, 9 };
+    unsigned int magnitude = abs(delta);
+    int scaled = magnitude < ARRAY_SIZE(scale) ?
+                 scale[magnitude] : 2 * magnitude;
+
+    return delta < 0 ? -scaled : scaled;
+}
+
+static int ps2_mouse_send_packet(PS2MouseState *s, bool stream)
 {
     PS2State *ps2 = PS2_DEVICE(s);
     /* IMPS/2 and IMEX send 4 bytes, PS2 sends 3 bytes */
     const int needed = s->mouse_type ? 4 : 3;
     unsigned int b;
-    int dx1, dy1, dz1, dw1;
+    int dx1, dy1, dz1, dw1, report_x, report_y;
 
     if (PS2_QUEUE_SIZE - ps2->queue.count < needed) {
         return 0;
@@ -727,10 +738,23 @@ static int ps2_mouse_send_packet(PS2MouseState *s)
     } else if (dy1 < -127) {
         dy1 = -127;
     }
-    b = 0x08 | ((dx1 < 0) << 4) | ((dy1 < 0) << 5) | (s->mouse_buttons & 0x07);
+    /*
+     * Scaling changes the reported counts, not the amount consumed from
+     * the movement accumulators.  The existing +/-127 input chunks
+     * also keep the scaled values within the signed 9-bit packet range.
+     * Read Data (EBh) always reports unscaled counts.
+     */
+    report_x = dx1;
+    report_y = dy1;
+    if (stream && (s->mouse_status & MOUSE_STATUS_SCALE21)) {
+        report_x = ps2_mouse_scale21(dx1);
+        report_y = ps2_mouse_scale21(dy1);
+    }
+    b = 0x08 | ((report_x < 0) << 4) | ((report_y < 0) << 5) |
+        (s->mouse_buttons & 0x07);
     ps2_queue_noirq(ps2, b);
-    ps2_queue_noirq(ps2, dx1 & 0xff);
-    ps2_queue_noirq(ps2, dy1 & 0xff);
+    ps2_queue_noirq(ps2, report_x & 0xff);
+    ps2_queue_noirq(ps2, report_y & 0xff);
     /* extra byte for IMPS/2 or IMEX */
     switch (s->mouse_type) {
     default:
@@ -868,7 +892,7 @@ static void ps2_mouse_sync(DeviceState *dev)
          * if not remote, send event. Multiple events are sent if
          * too big deltas
          */
-        while (ps2_mouse_send_packet(s)) {
+        while (ps2_mouse_send_packet(s, true)) {
             if (s->mouse_dx == 0 && s->mouse_dy == 0
                     && s->mouse_dz == 0 && s->mouse_dw == 0) {
                 break;
@@ -952,7 +976,7 @@ void ps2_write_mouse(PS2MouseState *s, int val)
             break;
         case AUX_POLL:
             ps2_queue(ps2, AUX_ACK);
-            ps2_mouse_send_packet(s);
+            ps2_mouse_send_packet(s, false);
             break;
         case AUX_ENABLE_DEV:
             s->mouse_status |= MOUSE_STATUS_ENABLED;
