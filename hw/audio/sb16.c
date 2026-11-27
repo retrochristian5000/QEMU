@@ -32,6 +32,7 @@
 #include "sb16-legacy.h"
 #include "ct1745-mixer.h"
 #include "ct1741-dsp.h"
+#include "ct1741-firmware.h"
 #include "hw/core/qdev-properties.h"
 #include "migration/vmstate.h"
 #include "qemu/timer.h"
@@ -74,6 +75,9 @@ struct SB16State {
     char *midi_chardev;
     char *waveblaster_chardev;
     char *waveblaster_soundfont;
+    char *dsp_firmware;
+    char *dsp_cpu;
+    CT1741Firmware *firmware;
     IsaDma *isa_dma;
     IsaDma *isa_hdma;
 
@@ -1094,6 +1098,15 @@ static void dsp_write(void *opaque, uint32_t nport, uint32_t val)
 
     iport = nport - s->port;
 
+    if (s->firmware) {
+        if (iport == 0x06) {
+            ct1741_fw_reset(s->firmware, val & 1);
+        } else if (iport == 0x0c) {
+            ct1741_fw_write(s->firmware, val);
+        }
+        return;
+    }
+
     ldebug("write 0x%x <- 0x%x", nport, val);
     switch (iport) {
     case 0x06:
@@ -1176,6 +1189,19 @@ static uint32_t dsp_read(void *opaque, uint32_t nport)
     int iport, retval, ack = 0;
 
     iport = nport - s->port;
+
+    if (s->firmware) {
+        switch (iport) {
+        case 0x0a:
+            return ct1741_fw_read(s->firmware);
+        case 0x0c:
+            return ct1741_fw_busy(s->firmware) ? 0x80 : 0;
+        case 0x0e:
+            return ct1741_fw_ready(s->firmware) ? 0x80 : 0;
+        default:
+            return 0xff;
+        }
+    }
 
     switch (iport) {
     case 0x06:                  /* reset */
@@ -1703,10 +1729,22 @@ static void sb16_remove_mpu(SB16State *s)
     }
 }
 
+static void sb16_firmware_reset(DeviceState *dev)
+{
+    SB16State *s = SB16(dev);
+
+    if (s->firmware) {
+        ct1741_fw_reset(s->firmware, true);
+        ct1741_fw_reset(s->firmware, false);
+    }
+}
+
 static void sb16_unrealize(DeviceState *dev)
 {
     SB16State *s = SB16(dev);
 
+    ct1741_fw_free(s->firmware);
+    s->firmware = NULL;
     sb16_remove_mpu(s);
     sb16_remove_gameport(s);
 }
@@ -1764,6 +1802,21 @@ static void sb16_realizefn (DeviceState *dev, Error **errp)
         return;
     }
 
+    if (s->dsp_cpu && !s->dsp_firmware) {
+        error_setg(errp, "sb16: dsp-cpu requires dsp-firmware");
+        sb16_remove_mpu(s);
+        sb16_remove_gameport(s);
+        return;
+    }
+    if (s->dsp_firmware) {
+        s->firmware = ct1741_fw_new(s->dsp_firmware, s->dsp_cpu, errp);
+        if (!s->firmware) {
+            sb16_remove_mpu(s);
+            sb16_remove_gameport(s);
+            return;
+        }
+    }
+
     s->mixer_regs[0x80] = magic_of_irq (s->irq);
     s->mixer_regs[0x81] = (1 << s->dma) | (1 << s->hdma);
     s->mixer_regs[0x82] = 2 << 5;
@@ -1774,6 +1827,8 @@ static void sb16_realizefn (DeviceState *dev, Error **errp)
     reset_mixer (s);
     s->aux_ts = timer_new_ns(QEMU_CLOCK_VIRTUAL, aux_timer, s);
     if (!s->aux_ts) {
+        ct1741_fw_free(s->firmware);
+        s->firmware = NULL;
         error_setg(errp, "Could not create SB16 auxiliary timer");
         sb16_remove_mpu(s);
         sb16_remove_gameport(s);
@@ -1807,6 +1862,8 @@ static const Property sb16_legacy_midi_properties[] = {
     DEFINE_PROP_STRING("midi-chardev", SB16State, midi_chardev),
     DEFINE_PROP_STRING("waveblaster-chardev", SB16State, waveblaster_chardev),
     DEFINE_PROP_STRING("waveblaster-soundfont", SB16State, waveblaster_soundfont),
+    DEFINE_PROP_STRING("dsp-firmware", SB16State, dsp_firmware),
+    DEFINE_PROP_STRING("dsp-cpu", SB16State, dsp_cpu),
 };
 
 void sb16_legacy_add_midi_properties(DeviceClass *dc)
@@ -1825,6 +1882,7 @@ static void sb16_class_initfn(ObjectClass *klass, const void *data)
 
     dc->realize = sb16_realizefn;
     dc->unrealize = sb16_unrealize;
+    device_class_set_legacy_reset(dc, sb16_firmware_reset);
     set_bit(DEVICE_CATEGORY_SOUND, dc->categories);
     dc->desc = "Generic Sound Blaster 16 compatible (ISA, non-PnP)";
     dc->fw_name = "sb16";

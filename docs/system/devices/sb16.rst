@@ -476,3 +476,35 @@ complete model of a particular Creative board.
 Reference: IBM Personal Computer Technical Reference (August 1981),
 Game Control Adapter, pp. 2-117 to 2-122; Creative Sound Blaster 16
 User's Guide, Connecting a Joystick (p. 2-3) and Appendix B.
+
+
+Experimental CT1741 firmware execution
+-------------------------------------
+
+Named fixed-jumper SB16 profiles accept an explicit ``dsp-firmware``
+path to an exactly 8192-byte raw MCU ROM. The independent interpreter
+supports ``intel-8052`` and ``intel-80c52`` model identities; the latter
+is the default for this experimental CT1741 path. The models currently
+share instruction semantics, not cycle-accurate timers or power behavior.
+8051 and 80C51 are not registered as aliases. Example::
+
+    -audiodev none,id=snd -device sb16,audiodev=snd,dsp-cpu=intel-8052,dsp-firmware=/path/to/ct1741.bin
+
+The firmware executes from its own ROM, with 256 bytes of internal RAM,
+separate SFRs and an XDATA host latch. P1 bits 0 and 1 report the output
+and input latch state respectively. ISA DSP reset and command/status/data
+ports connect to those latches instead of the compatibility command
+handler. Machine reset restarts the MCU. Execution is bounded to 64
+instructions per 64 us virtual timer event; this is an approximation,
+not Intel machine-cycle timing. Unsupported instructions stop execution
+and log the failing PC. No proprietary firmware is bundled.
+
+This mode is for identification firmware development only: timers,
+interrupts, external program memory, serial, PCM/DMA and DSP audio IRQs
+are not implemented in the MCU path. Do not enable it to repair Windows
+98 playback. Without the property, the existing SB16 PCM model is used
+unchanged. Firmware mode remains unmigratable with the named boards.
+
+References: Intel MCS-51 Microcontroller Family User's Manual,
+https://web.mit.edu/6.115/www/document/8051.pdf ; independent CT1741
+implementation https://sources.debian.org/src/mame/0.289%2Bdfsg1-1/src/devices/sound/ct1741.cpp .

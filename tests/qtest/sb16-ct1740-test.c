@@ -395,6 +395,55 @@ static void test_ct1740_dma_terminal_count(gconstpointer data)
     qtest_quit(s);
 }
 
+static void test_ct1740_firmware(gconstpointer data)
+{
+    const char *cpu = data;
+    /* Independently encoded MCU program: reset reply, wait for input,
+     * complement input, publish reply, wait for host consumption. */
+    static const uint8_t program[] = {
+        0x90, 0x00, 0x00,       /* MOV DPTR,#0 */
+        0x74, 0xaa,             /* MOV A,#0xaa */
+        0xf0,                   /* MOVX @DPTR,A */
+        0x20, 0x90, 0xfd,       /* JB P1.0,$ */
+        0x30, 0x91, 0xfd,       /* JNB P1.1,$ */
+        0xe0, 0xf4, 0xf0,       /* MOVX A,@DPTR; CPL A; MOVX @DPTR,A */
+        0x80, 0xf5,             /* SJMP output wait */
+    };
+    uint8_t rom[8192] = { 0 };
+    g_autofree char *filename = NULL;
+    GError *error = NULL;
+    int fd = g_file_open_tmp("ct1741-XXXXXX", &filename, &error);
+    QTestState *s;
+
+    g_assert_no_error(error);
+    g_assert_cmpint(fd, >=, 0);
+    close(fd);
+    memcpy(rom, program, sizeof(program));
+    g_assert_true(g_file_set_contents(filename, (const char *)rom,
+                                      sizeof(rom), &error));
+    g_assert_no_error(error);
+    s = qtest_initf("-M pc -nodefaults -audiodev none,id=snd "
+                    "-device sb16,audiodev=snd,dsp-cpu=%s,dsp-firmware=%s",
+                    cpu, filename);
+    qtest_outb(s, 0x226, 1);
+    g_assert_cmphex(qtest_inb(s, 0x22c), ==, 0x80);
+    qtest_outb(s, 0x226, 0);
+    qtest_clock_step(s, 1000000);
+    g_assert_cmphex(qtest_inb(s, 0x22e), ==, 0x80);
+    g_assert_cmphex(qtest_inb(s, 0x22a), ==, 0xaa);
+    g_assert_cmphex(qtest_inb(s, 0x22e), ==, 0);
+    qtest_outb(s, 0x22c, 0x31);
+    g_assert_cmphex(qtest_inb(s, 0x22c), ==, 0x80);
+    qtest_clock_step(s, 1000000);
+    g_assert_cmphex(qtest_inb(s, 0x22a), ==, 0xce);
+    qtest_outb(s, 0x226, 1);
+    qtest_outb(s, 0x226, 0);
+    qtest_clock_step(s, 1000000);
+    g_assert_cmphex(qtest_inb(s, 0x22a), ==, 0xaa);
+    qtest_quit(s);
+    unlink(filename);
+}
+
 static void test_ct1740_alias(void)
 {
     static const char *const names[] = { "sb16", "sb16-ct1740" };
@@ -443,6 +492,10 @@ int main(int argc, char **argv)
                             test_ct1740_probe);
         qtest_add_func("/ct1740/no-csp", test_ct1740_no_csp);
         qtest_add_func("/ct1740/alias", test_ct1740_alias);
+        qtest_add_data_func("/ct1740/firmware/8052", "intel-8052",
+                            test_ct1740_firmware);
+        qtest_add_data_func("/ct1740/firmware/80c52", "intel-80c52",
+                            test_ct1740_firmware);
         qtest_add_data_func("/ct1740/dma/8-bit-terminal-count",
                             GUINT_TO_POINTER(0), test_ct1740_dma_terminal_count);
         qtest_add_data_func("/ct1740/dma/16-bit-terminal-count",

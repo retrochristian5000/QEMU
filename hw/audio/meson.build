@@ -19,7 +19,7 @@ system_ss.add(when: 'CONFIG_MPU401_UART',
 if fsynth.found()
   system_ss.add(when: 'CONFIG_MPU401_UART', if_true: fsynth)
 endif
-system_ss.add(when: 'CONFIG_SB16', if_true: files('sb16.c', 'sb16-legacy.c', 'ct1745-mixer.c', 'ct1741-dsp.c'))
+system_ss.add(when: 'CONFIG_SB16', if_true: files('sb16.c', 'sb16-legacy.c', 'ct1745-mixer.c', 'ct1741-dsp.c', 'ct1741-firmware.c'))
 system_ss.add(when: 'CONFIG_SB16_PNP', if_true: files('sb16-pnp.c'))
 system_ss.add(when: 'CONFIG_AWE32', if_true: files('awe32.c'))
 system_ss.add(when: 'CONFIG_SCREAMER', if_true: files('screamer.c'))
