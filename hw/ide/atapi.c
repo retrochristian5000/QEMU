@@ -248,6 +248,16 @@ static inline int media_is_cd(IDEState *s)
     return (media_present(s) && s->nb_sectors <= CD_MAX_SECTORS);
 }
 
+/* Expand packed Mode 1 payloads without overwriting unread sectors. */
+static void cd_expand_raw_sectors(IDEState *s, int nsec)
+{
+    for (int i = nsec - 1; i >= 0; i--) {
+        memmove(s->io_buffer + i * 2352 + 16,
+                s->io_buffer + i * ATAPI_SECTOR_SIZE, ATAPI_SECTOR_SIZE);
+        cdrom_synthesize_mode1_sector(s->io_buffer + i * 2352, s->lba + i);
+    }
+}
+
 static void cd_read_sector_cb(void *opaque, int ret)
 {
     IDEState *s = opaque;
@@ -255,7 +265,6 @@ static void cd_read_sector_cb(void *opaque, int ret)
     int skip = s->io_buffer_index;
     int nsec = DIV_ROUND_UP(skip + et, s->cd_sector_size);
     uint8_t *buf;
-    int i;
 
     trace_cd_read_sector_cb(s->lba, ret);
 
@@ -268,12 +277,7 @@ static void cd_read_sector_cb(void *opaque, int ret)
     block_acct_done(blk_get_stats(s->blk), &s->acct);
 
     if (s->cd_sector_size == 2352) {
-        /* unpack back-to-front so a sector never clobbers an unmoved one */
-        for (i = nsec - 1; i >= 0; i--) {
-            memmove(s->io_buffer + i * 2352 + 16, s->io_buffer + i * 2048,
-                    ATAPI_SECTOR_SIZE);
-            cdrom_synthesize_mode1_sector(s->io_buffer + i * 2352, s->lba + i);
-        }
+        cd_expand_raw_sectors(s, nsec);
     }
 
     s->status &= ~BUSY_STAT;
@@ -506,7 +510,7 @@ static void ide_atapi_cmd_check_status(IDEState *s)
 static void ide_atapi_cmd_read_dma_cb(void *opaque, int ret)
 {
     IDEState *s = opaque;
-    int data_offset, n, dma_result;
+    int n, dma_result;
 
     if (ret < 0) {
         if (ide_handle_rw_error(s, -ret, ide_dma_cmd_to_retry(s->dma_cmd))) {
@@ -527,11 +531,9 @@ static void ide_atapi_cmd_read_dma_cb(void *opaque, int ret)
          * the reply data.
          */
         if (s->lba != -1) {
+            n = s->io_buffer_size / s->cd_sector_size;
             if (s->cd_sector_size == 2352) {
-                n = 1;
-                cdrom_synthesize_mode1_sector(s->io_buffer, s->lba);
-            } else {
-                n = s->io_buffer_size >> 11;
+                cd_expand_raw_sectors(s, n);
             }
             s->lba += n;
         }
@@ -557,20 +559,16 @@ static void ide_atapi_cmd_read_dma_cb(void *opaque, int ret)
     }
 
     s->io_buffer_index = 0;
-    if (s->cd_sector_size == 2352) {
-        n = 1;
-        s->io_buffer_size = s->cd_sector_size;
-        data_offset = 16;
-    } else {
-        n = s->packet_transfer_size >> 11;
-        if (n > (IDE_DMA_BUF_SECTORS / 4))
-            n = (IDE_DMA_BUF_SECTORS / 4);
-        s->io_buffer_size = n * 2048;
-        data_offset = 0;
-    }
+    /*
+     * Both cooked and raw reads use the same bounded DMA staging buffer.
+     * Raw sectors are expanded in place only after the packed read ends.
+     */
+    n = MIN(s->packet_transfer_size / s->cd_sector_size,
+            IDE_DMA_BUF_SECTORS * BDRV_SECTOR_SIZE / s->cd_sector_size);
+    s->io_buffer_size = n * s->cd_sector_size;
     trace_ide_atapi_cmd_read_dma_cb_aio(s, s->lba, n);
-    qemu_iovec_init_buf(&s->bus->dma->qiov, s->io_buffer + data_offset,
-                        n * ATAPI_SECTOR_SIZE);
+    qemu_iovec_init_buf(&s->bus->dma->qiov, s->io_buffer,
+                       n * ATAPI_SECTOR_SIZE);
 
     s->bus->dma->aiocb = ide_buffered_readv(s, (int64_t)s->lba << 2,
                                             &s->bus->dma->qiov, n * 4,
