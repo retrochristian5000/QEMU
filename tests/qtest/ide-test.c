@@ -1724,7 +1724,7 @@ static void test_xm6202b_capabilities(void)
 
     xm6202b_read_packet(qts, inquiry, ident, sizeof(ident));
     g_assert_cmpmem(ident + 8, 8, "TOSHIBA ", 8);
-    g_assert_cmpmem(ident + 16, 16, "CD-ROM XM-6202B  ", 16);
+    g_assert_cmpmem(ident + 16, 16, "CD-ROM XM-6202B ", 16);
 
     xm6202b_read_packet(qts, packet, reply, sizeof(reply));
     g_assert_cmphex(reply[10], ==, 0); /* No DVD media support. */
