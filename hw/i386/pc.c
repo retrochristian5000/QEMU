@@ -1125,15 +1125,17 @@ static const MemoryRegionOps ioportF0_io_ops = {
     },
 };
 
-static void pc_superio_init(ISABus *isa_bus, bool create_fdctrl,
-                            bool create_i8042, bool no_vmport, Error **errp)
+static void pc_superio_init(PCMachineState *pcms, ISABus *isa_bus,
+                            bool create_fdctrl, bool create_i8042,
+                            bool no_vmport, Error **errp)
 {
     int i;
     DriveInfo *fd[MAX_FD];
     qemu_irq *a20_line;
     ISADevice *i8042, *port92, *vmmouse;
 
-    serial_hds_isa_init(isa_bus, 0, MAX_ISA_SERIAL_PORTS);
+    serial_hds_isa_init_type(isa_bus, 0, MAX_ISA_SERIAL_PORTS,
+                             PC_MACHINE_GET_CLASS(pcms)->default_serial_type);
     parallel_hds_isa_init(isa_bus, MAX_PARALLEL_PORTS);
 
     for (i = 0; i < MAX_FD; i++) {
@@ -1282,7 +1284,7 @@ void pc_basic_device_init(struct PCMachineState *pcms,
     }
 
     /* Super I/O */
-    pc_superio_init(isa_bus, create_fdctrl, pcms->i8042_enabled,
+    pc_superio_init(pcms, isa_bus, create_fdctrl, pcms->i8042_enabled,
                     pcms->vmport != ON_OFF_AUTO_ON, &error_fatal);
 
     pcms->machine_done.notify = pc_machine_done;
@@ -1854,6 +1856,7 @@ static void pc_machine_class_init(ObjectClass *oc, const void *data)
     HotplugHandlerClass *hc = HOTPLUG_HANDLER_CLASS(oc);
 
     pcmc->pci_enabled = true;
+    pcmc->default_serial_type = TYPE_ISA_SERIAL;
     pcmc->has_acpi_build = true;
     pcmc->smbios_defaults = true;
     pcmc->gigabyte_align = true;

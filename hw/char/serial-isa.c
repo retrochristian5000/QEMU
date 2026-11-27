@@ -275,7 +275,7 @@ static const TypeInfo ns16450_info = {
 };
 
 static const TypeInfo ns16550a_info = {
-    .name = "ns16550a",
+    .name = TYPE_NS16550A,
     .parent = TYPE_ISA_SERIAL,
     .class_init = ns16550a_class_init,
 };
@@ -364,19 +364,21 @@ static void serial_register_types(void)
 
 type_init(serial_register_types)
 
-static void serial_isa_init(ISABus *bus, int index, Chardev *chr)
+static void serial_isa_init(ISABus *bus, int index, Chardev *chr,
+                            const char *type)
 {
     DeviceState *dev;
     ISADevice *isadev;
 
-    isadev = isa_new(TYPE_ISA_SERIAL);
+    isadev = isa_new(type);
     dev = DEVICE(isadev);
     qdev_prop_set_uint32(dev, "index", index);
     qdev_prop_set_chr(dev, "chardev", chr);
     isa_realize_and_unref(isadev, bus, &error_fatal);
 }
 
-void serial_hds_isa_init(ISABus *bus, int from, int to)
+void serial_hds_isa_init_type(ISABus *bus, int from, int to,
+                             const char *type)
 {
     int i;
 
@@ -385,9 +387,14 @@ void serial_hds_isa_init(ISABus *bus, int from, int to)
 
     for (i = from; i < to; ++i) {
         if (serial_hd(i)) {
-            serial_isa_init(bus, i, serial_hd(i));
+            serial_isa_init(bus, i, serial_hd(i), type);
         }
     }
+}
+
+void serial_hds_isa_init(ISABus *bus, int from, int to)
+{
+    serial_hds_isa_init_type(bus, from, to, TYPE_ISA_SERIAL);
 }
 
 void isa_serial_set_iobase(ISADevice *serial, hwaddr iobase)

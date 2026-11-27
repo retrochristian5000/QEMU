@@ -95,6 +95,7 @@ struct PCMachineClass {
     /* Device configuration: */
     bool pci_enabled;
     const char *default_south_bridge;
+    const char *default_serial_type;
     bool default_chipset_controllers;
 
     /* Compat options: */

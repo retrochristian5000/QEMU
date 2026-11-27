@@ -27,6 +27,8 @@
 
 #include "qemu/units.h"
 #include "hw/char/parallel-isa.h"
+#include "hw/char/serial-isa.h"
+#include "hw/input/i8042.h"
 #include "hw/i386/x86.h"
 #include "hw/i386/pc.h"
 #include "hw/i386/apic.h"
@@ -489,13 +491,21 @@ DEFINE_I440FX_MACHINE(11, 1);
  * Keep the versioned i440FX machine ABI separate from the evolving
  * hardware-oriented and generic defaults.
  */
+static GlobalProperty pc_hardware_defaults[] = {
+    { TYPE_I8042, "mouse-model", "intellimouse" },
+};
+
 static void pc_hardware_machine_options(MachineClass *m)
 {
     PCMachineClass *pcmc = PC_MACHINE_CLASS(m);
 
     pc_i440fx_machine_11_1_options(m);
     pcmc->default_chipset_controllers = true;
-    m->desc = "PC (i440FX + PIIX, named motherboard controllers)";
+    pcmc->default_serial_type = TYPE_NS16550A;
+    m->default_machine_opts = "firmware=bios-256k.bin,vmport=off";
+    compat_props_add(m->compat_props, pc_hardware_defaults,
+                     G_N_ELEMENTS(pc_hardware_defaults));
+    m->desc = "PC (i440FX + PIIX, named hardware defaults)";
     m->alias = "pc";
     m->is_default = true;
 }

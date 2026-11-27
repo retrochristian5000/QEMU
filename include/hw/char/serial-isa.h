@@ -31,7 +31,10 @@
 #define MAX_ISA_SERIAL_PORTS 4
 
 #define TYPE_ISA_SERIAL "isa-serial"
+#define TYPE_NS16550A "ns16550a"
 void serial_hds_isa_init(ISABus *bus, int from, int to);
+void serial_hds_isa_init_type(ISABus *bus, int from, int to,
+                             const char *type);
 void isa_serial_set_iobase(ISADevice *serial, hwaddr iobase);
 void isa_serial_set_enabled(ISADevice *serial, bool enabled);
 

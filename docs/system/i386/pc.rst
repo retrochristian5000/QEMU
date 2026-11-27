@@ -8,14 +8,29 @@ The fork provides two unversioned i440FX/PIIX machine profiles:
 
 * ``pc`` (canonical type ``pc-hardware``): the default PC, preferring the
   named motherboard controller implementations where userspace emulation
-  is available.
+  is available. Automatic COM ports use the NS16550A profile, and the
+  PS/2 mouse uses the IntelliMouse wheel protocol profile. The synthetic
+  VMware backdoor and absolute mouse are disabled by default.
 * ``generic-pc`` (canonical type ``pc-generic``): the compatible controller
   configuration, using the previous default device selections.
 
 Both profiles share the same machine initialization, PCI and ISA layout,
 firmware defaults, and configurable CPU, memory and expansion devices.
 Neither represents a specific retail motherboard. The generic machine
-still requires the i440FX/PIIX host and southbridge topology.
+still requires the i440FX/PIIX host and southbridge topology. The named
+UART and mouse are representative choices, not components claimed to
+be integrated into every PIIX board. VGA, NIC and storage defaults are
+unchanged.
+
+The IntelliMouse profile preserves standard PS/2 operation and wheel
+negotiation, but does not negotiate the five-button Explorer protocol.
+To override the mouse or re-enable VMware integration, use e.g.::
+
+    -machine pc -global i8042.mouse-model=generic
+    -machine pc -global i8042.mouse-model=microsoft-ps2
+    -machine pc,vmport=on
+
+Use ``vmport=on`` only when the configured build supports VMware integration.
 
 The ``pc`` alias previously selected ``pc-i440fx-11.1``. Existing saved
 states or migration configurations should use their original explicit
@@ -104,7 +119,10 @@ paths would attempt to publish the same fw_cfg filename.
 ISA COM port UART profiles
 ~~~~~~~~~~~~~~~~~~~~~~~~~~
 
-The default ``isa-serial`` remains a generic 16550A-compatible UART.
+The ``isa-serial`` device remains a generic 16550A-compatible UART.
+Automatic COM ports on ``pc`` use ``ns16550a``; ``generic-pc`` and the
+versioned machines keep ``isa-serial``. Serial backends, COM indexing,
+I/O addresses, IRQ defaults, and explicit device selection are unchanged.
 The explicit ``ins8250a``, ``ns16450`` and ``ns16550a`` ISA devices
 select National Semiconductor-compatible register interfaces. The
 INS8250A and NS16450 have a scratch register but do not implement

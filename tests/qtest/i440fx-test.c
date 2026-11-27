@@ -925,6 +925,44 @@ static void test_pc_controller_profile(gconstpointer opaque)
     qtest_quit(qts);
 }
 
+typedef struct PCPeripheralProfileTest {
+    const char *machine;
+    const char *serial_type;
+    const char *mouse_model;
+    const char *extra_opts;
+} PCPeripheralProfileTest;
+
+static void test_pc_peripheral_profile(gconstpointer opaque)
+{
+    const PCPeripheralProfileTest *profile = opaque;
+    QTestState *qts = qtest_initf("-M %s -nodefaults -serial null %s",
+                                  profile->machine, profile->extra_opts);
+    g_autofree char *serial = g_strdup_printf("dev: %s,",
+                                              profile->serial_type);
+    g_autofree char *mouse = g_strdup_printf("mouse-model = %s",
+                                             profile->mouse_model);
+    QDict *reply = qtest_qmp(qts,
+        "{'execute':'human-monitor-command','arguments':"
+        "{'command-line':'info qtree'}}");
+    const char *tree = qdict_get_str(reply, "return");
+
+    g_assert_nonnull(strstr(tree, serial));
+    g_assert_nonnull(strstr(tree, mouse));
+    if (!strcmp(profile->serial_type, "ns16550a")) {
+        g_assert_null(strstr(tree, "dev: isa-serial,"));
+        g_assert_null(strstr(tree, "dev: vmmouse,"));
+        g_assert_null(strstr(tree, "dev: vmport,"));
+    }
+    qobject_unref(reply);
+
+    /* Verify that automatic COM1 retains the original address and FIFO. */
+    qtest_outb(qts, 0x3ff, 0x5a);
+    g_assert_cmphex(qtest_inb(qts, 0x3ff), ==, 0x5a);
+    qtest_outb(qts, 0x3fa, 1);
+    g_assert_cmphex(qtest_inb(qts, 0x3fa) & 0xc0, ==, 0xc0);
+    qtest_quit(qts);
+}
+
 int main(int argc, char **argv)
 {
     TestData data;
@@ -939,7 +977,21 @@ int main(int argc, char **argv)
         { "generic-pc,chipset-controllers=on", true },
     };
 
+    static const PCPeripheralProfileTest peripherals[] = {
+        { "pc", "ns16550a", "\"intellimouse\"", "" },
+        { "generic-pc", "isa-serial", "<null>", "" },
+        { "pc-i440fx-11.1", "isa-serial", "<null>", "" },
+        { "pc", "ns16550a", "\"generic\"",
+          "-global i8042.mouse-model=generic" },
+    };
+
     data.num_cpus = 1;
+
+    for (size_t i = 0; i < ARRAY_SIZE(peripherals); i++) {
+        g_autofree char *path = g_strdup_printf("i440fx/peripherals/%zu", i);
+
+        qtest_add_data_func(path, &peripherals[i], test_pc_peripheral_profile);
+    }
 
     for (size_t i = 0; i < ARRAY_SIZE(profiles); i++) {
         g_autofree char *path = g_strdup_printf("i440fx/controllers/%s",
