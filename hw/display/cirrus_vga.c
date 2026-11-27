@@ -190,6 +190,8 @@ struct PCICirrusVGAState {
 #define TYPE_PCI_CIRRUS_VGA_EXPLICIT "cirrus-vga-generic-pci"
 #define TYPE_PCI_CIRRUS_GD5430 "gd5430-pci"
 #define TYPE_PCI_CIRRUS_GD5446 "gd5446-pci"
+#define TYPE_PCI_CIRRUS_GD5446A "gd5446a-pci"
+#define TYPE_PCI_CIRRUS_GD5446B "gd5446b-pci"
 OBJECT_DECLARE_SIMPLE_TYPE(PCICirrusVGAState, PCI_CIRRUS_VGA)
 
 static uint8_t rop_to_index[256];
@@ -3224,6 +3226,13 @@ static void pci_cirrus_vga_realize(PCIDevice *dev, Error **errp)
     CirrusVGAState *s = &d->cirrus_vga;
     PCIDeviceClass *pc = PCI_DEVICE_GET_CLASS(dev);
     int16_t device_id = pc->device_id;
+    bool high_aperture;
+
+    if (object_dynamic_cast(OBJECT(dev), TYPE_PCI_CIRRUS_GD5446A)) {
+        s->gd5446_revision = CIRRUS_GD5446_REV_A;
+    } else if (object_dynamic_cast(OBJECT(dev), TYPE_PCI_CIRRUS_GD5446B)) {
+        s->gd5446_revision = CIRRUS_GD5446_REV_B;
+    }
 
     /*
      * Follow real hardware, cirrus card emulated has 4 MB video memory.
@@ -3271,18 +3280,21 @@ static void pci_cirrus_vga_realize(PCIDevice *dev, Error **errp)
     }
     s->vga.con = qemu_graphic_console_create(DEVICE(dev), 0, s->vga.hw_ops, &s->vga);
 
-    /* setup PCI */
     /*
-     * Alpine TRM 4.18: GD5430 reserves 16 MiB of PCI address space.
-     * The existing GD5446 layout has a separate high BitBLT aperture.
-     * Model the primary GD5430 framebuffer window only.
+     * GD5446 TRM 7.4-7.8: revision A claims 16 MiB, revision B 32 MiB.
+     * Select the CF3=1 revision A board configuration (no relocation/GPIO).
+     * Revision B uses the existing MMIO BAR, with optional GPIO disabled.
+     * Preserve the historical layout for the compatibility profile.
      */
+    high_aperture = device_id == CIRRUS_ID_CLGD5446 &&
+                    s->gd5446_revision != CIRRUS_GD5446_REV_A;
+
     memory_region_init(&s->pci_bar, OBJECT(dev), "cirrus-pci-bar0",
-                       device_id == CIRRUS_ID_CLGD5430 ? 16 * MiB : 32 * MiB);
+                       high_aperture ? 32 * MiB : 16 * MiB);
 
     /* XXX: add byte swapping apertures */
     memory_region_add_subregion(&s->pci_bar, 0, &s->cirrus_linear_io);
-    if (device_id == CIRRUS_ID_CLGD5446) {
+    if (high_aperture) {
         memory_region_add_subregion(&s->pci_bar, 16 * MiB,
                                     &s->cirrus_linear_bitblt_io);
     }
@@ -3292,8 +3304,13 @@ static void pci_cirrus_vga_realize(PCIDevice *dev, Error **errp)
     /* memory #1 memory-mapped I/O */
     /* XXX: s->vga.vram_size must be a power of two */
     pci_register_bar(&d->dev, 0, PCI_BASE_ADDRESS_MEM_PREFETCH, &s->pci_bar);
-    if (device_id == CIRRUS_ID_CLGD5446) {
+    if (high_aperture) {
         pci_register_bar(&d->dev, 1, 0, &s->cirrus_mmio_io);
+    }
+    if (s->gd5446_revision == CIRRUS_GD5446_REV_A) {
+        /* PCI2C is reserved on revision A, not a board identifier. */
+        pci_set_word(dev->config + PCI_SUBSYSTEM_VENDOR_ID, 0);
+        pci_set_word(dev->config + PCI_SUBSYSTEM_ID, 0);
     }
 }
 
@@ -3383,12 +3400,36 @@ static const TypeInfo cirrus_gd5446_pci_info = {
     .class_init = cirrus_gd5446_pci_class_init,
 };
 
+static void cirrus_gd5446a_pci_class_init(ObjectClass *klass, const void *data)
+{
+    DEVICE_CLASS(klass)->desc = "Cirrus Logic CL-GD5446 Revision A PCI VGA";
+}
+
+static const TypeInfo cirrus_gd5446a_pci_info = {
+    .name = TYPE_PCI_CIRRUS_GD5446A,
+    .parent = TYPE_PCI_CIRRUS_GD5446,
+    .class_init = cirrus_gd5446a_pci_class_init,
+};
+
+static void cirrus_gd5446b_pci_class_init(ObjectClass *klass, const void *data)
+{
+    DEVICE_CLASS(klass)->desc = "Cirrus Logic CL-GD5446 Revision B PCI VGA";
+}
+
+static const TypeInfo cirrus_gd5446b_pci_info = {
+    .name = TYPE_PCI_CIRRUS_GD5446B,
+    .parent = TYPE_PCI_CIRRUS_GD5446,
+    .class_init = cirrus_gd5446b_pci_class_init,
+};
+
 static void cirrus_vga_register_types(void)
 {
     type_register_static(&cirrus_vga_info);
     type_register_static(&cirrus_vga_explicit_pci_info);
     type_register_static(&cirrus_gd5430_pci_info);
     type_register_static(&cirrus_gd5446_pci_info);
+    type_register_static(&cirrus_gd5446a_pci_info);
+    type_register_static(&cirrus_gd5446b_pci_info);
 }
 
 type_init(cirrus_vga_register_types)
