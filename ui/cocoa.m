@@ -146,6 +146,48 @@ static NSTextField *pauseLabel;
 /* Shutdown gate: AppKit's timer may outlive QEMU's device model. */
 static bool cocoa_drive_activity_enabled;
 
+/*
+ * A running VM is ongoing user-requested work, even when none of its
+ * windows is visible. Serialize the token with the VM state callbacks;
+ * NSProcessInfo is thread-safe and does not need the AppKit main queue.
+ */
+static VMChangeStateEntry *cocoa_background_state;
+static id cocoa_background_activity;
+
+static void cocoa_background_vm_state(void *opaque, bool running,
+                                      RunState state)
+{
+    @autoreleasepool {
+        NSProcessInfo *process = [NSProcessInfo processInfo];
+
+        if (running && !cocoa_background_activity) {
+            cocoa_background_activity = [[process
+                beginActivityWithOptions:NSActivityUserInitiatedAllowingIdleSystemSleep
+                reason:@"Running QEMU virtual machine"] retain];
+        } else if (!running && cocoa_background_activity) {
+            [process endActivity:cocoa_background_activity];
+            [cocoa_background_activity release];
+            cocoa_background_activity = nil;
+        }
+    }
+}
+
+static void cocoa_background_init(void)
+{
+    cocoa_background_state = qemu_add_vm_change_state_handler(
+        cocoa_background_vm_state, NULL);
+    cocoa_background_vm_state(NULL, runstate_is_running(), runstate_get());
+}
+
+static void cocoa_background_cleanup(void)
+{
+    if (cocoa_background_state) {
+        qemu_del_vm_change_state_handler(cocoa_background_state);
+        cocoa_background_state = NULL;
+        cocoa_background_vm_state(NULL, false, runstate_get());
+    }
+}
+
 static bool allow_events;
 
 static NSInteger cbchangecount = -1;
@@ -2723,6 +2765,10 @@ static void cocoa_display_init(DisplayState *ds, DisplayOptions *opts)
     qatomic_set(&cocoa_drive_activity_enabled, true);
     cocoa_modem_indicators_set_enabled(true);
 
+    if (!opts->u.cocoa.has_background_run || opts->u.cocoa.background_run) {
+        cocoa_background_init();
+    }
+
     // Pull this console process up to being a fully-fledged graphical
     // app with a menubar and Dock icon
     ProcessSerialNumber psn = { 0, kCurrentProcess };
@@ -2798,6 +2844,7 @@ static void cocoa_display_init(DisplayState *ds, DisplayOptions *opts)
 
 static void cocoa_display_cleanup(void)
 {
+    cocoa_background_cleanup();
     /* The AppKit timer stops itself on its next main-runloop invocation. */
     qatomic_set(&cocoa_drive_activity_enabled, false);
     cocoa_modem_indicators_set_enabled(false);

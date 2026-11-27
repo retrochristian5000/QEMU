@@ -866,3 +866,30 @@ epoch is unchanged; deferred loads, gate pause and mode 5 trigger arming
 still require separate work. This is a polarity repair, not a confirmed
 fix for periodic Windows clock drift. See Intel 8254 datasheet figures
 19 and 20 (https://www.scs.stanford.edu/20wi-cs140/pintos/specs/8254.pdf).
+
+macOS background execution
+--------------------------
+
+Cocoa window focus controls input capture, not VM run state. The display
+backend requests an NSProcessInfo user-initiated activity allowing idle
+system sleep while the VM is running. This prevents App Nap from deferring
+ongoing emulation solely because the application is inactive. A VM state
+callback acquires or releases the token on resume or stop, and display
+cleanup unregisters the callback and releases any outstanding token.
+There is one activity per Cocoa process, not one per guest display.
+No real-time scheduling priority, clock multiplier, timer injection or
+sleep-prevention assertion is requested.
+
+The default is ``-display cocoa,background-run=on``. For a comparison,
+repeat the same test with ``background-run=off`` (do not change the guest
+machine, RTC mode or CPU model). In Activity Monitor enable the App Nap
+column, then switch to another application or hide all QEMU windows for
+several minutes. Compare guest elapsed time and the PIT deadline trace
+with host elapsed time; use QMP query-status to distinguish a stopped VM
+from a running but delayed VM. An explicitly paused VM should release the
+activity; after resume it should reacquire it. Actual system sleep and
+host resource contention may still delay guest execution.
+
+Reference: Apple Energy Efficiency Guide for Mac Apps, Prioritize Work
+at the App Level:
+https://developer.apple.com/library/archive/documentation/Performance/Conceptual/power_efficiency_guidelines_osx/PrioritizeWorkAtTheAppLevel.html

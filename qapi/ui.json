@@ -1453,6 +1453,11 @@
 # @zoom-interpolation: Apply interpolation to smooth output when
 #     zoom-to-fit is enabled.  Defaults to "off".  (Since 9.0)
 #
+# @background-run: Request protection from App Nap while the VM is
+#     running, even when its windows are inactive or hidden.  Allows
+#     idle system sleep and does not change explicit VM pause behavior.
+#     Defaults to "on".  (Since 11.1)
+#
 # Since: 7.0
 ##
 { 'struct': 'DisplayCocoa',
@@ -1461,7 +1466,8 @@
       '*full-grab': 'bool',
       '*swap-opt-cmd': 'bool',
       '*zoom-to-fit': 'bool',
-      '*zoom-interpolation': 'bool'
+      '*zoom-interpolation': 'bool',
+      '*background-run': 'bool'
   } }
 
 ##

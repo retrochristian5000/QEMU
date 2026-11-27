@@ -2327,6 +2327,7 @@ DEF("display", HAS_ARG, QEMU_OPTION_display,
     "-display cocoa[,full-grab=on|off][,swap-opt-cmd=on|off]\n"
     "              [,show-cursor=on|off][,left-command-key=on|off]\n"
     "              [,full-screen=on|off][,zoom-to-fit=on|off]\n"
+    "              [,background-run=on|off]\n"
 #endif
 #if defined(CONFIG_OPENGL)
     "-display egl-headless[,rendernode=<file>]\n"
@@ -2456,6 +2457,13 @@ SRST
 
         ``zoom-to-fit=on|off`` : Expand video output to the window size,
                                  defaults to "off"
+
+        ``background-run=on|off`` : Request macOS App Nap protection while
+            the VM is running (default: on). This is independent of window
+            focus and visibility. Pausing or stopping the VM releases the
+            activity; resuming requests it again. Host idle system sleep,
+            explicit guest suspend, and normal scheduling limits are
+            unaffected. Turn off to retain the host's ordinary App Nap policy.
 
     ``egl-headless[,rendernode=<file>]``
         Offload all OpenGL operations to a local DRI device. For any
