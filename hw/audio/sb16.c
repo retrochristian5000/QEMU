@@ -121,6 +121,10 @@ struct SB16State {
 
     int dma_running;
     bool dma_paused; /* Named, currently unmigratable DSP profiles only. */
+    bool dma_id_pending;
+    uint8_t dma_id_byte;
+    uint8_t dma_id_value;
+    uint8_t dma_id_mask;
     int bytes_per_second;
     int align;
     int audio_free;
@@ -279,8 +283,39 @@ static inline int restrict_sampling_rate(int freq)
     }
 }
 
+/* DMA identification owns only the low channel, never the audio voice. */
+static void ct1741_cancel_dma_id(SB16State *s)
+{
+    if (s->dma_id_pending) {
+        s->dma_id_pending = false;
+        ISADMA_GET_CLASS(s->isa_dma)->release_DREQ(s->isa_dma, s->dma);
+    }
+}
+
+static void ct1741_request_dma_id(SB16State *s, uint8_t value)
+{
+    if (s->dma_running || s->dma_paused || s->dma_id_pending) {
+        qemu_log_mask(LOG_GUEST_ERROR,
+                      "ct1741: DMA identification requires an idle DSP\n");
+        return;
+    }
+    s->dma_id_byte = value;
+    s->dma_id_pending = true;
+    ISADMA_GET_CLASS(s->isa_dma)->hold_DREQ(s->isa_dma, s->dma);
+}
+
+static void ct1741_compat_dma_id(SB16State *s, uint8_t challenge)
+{
+    /* Same undocumented identification sequence as the provider firmware.
+     * This path is used only when the named board has no MCU ROM loaded. */
+    s->dma_id_value += challenge ^ s->dma_id_mask;
+    s->dma_id_mask = (s->dma_id_mask >> 2) | (s->dma_id_mask << 6);
+    ct1741_request_dma_id(s, s->dma_id_value);
+}
+
 static void ct1741_stop_previous_dma(SB16State *s)
 {
+    ct1741_cancel_dma_id(s);
     if (s->dma_running) {
         control(s, 0);
     }
@@ -569,6 +604,9 @@ static void sb16_firmware_action(void *opaque, uint8_t action,
             return;
         }
         break;
+    case CT1741_ACTION_DMA_ID:
+        ct1741_request_dma_id(s, cmd);
+        return;
     case CT1741_ACTION_IRQ:
         if (cmd <= 1) {
             s->mixer_regs[0x82] |= 1U << cmd;
@@ -796,6 +834,9 @@ static void command (SB16State *s, uint8_t cmd)
 
         case 0xe2:
             s->needed_bytes = 1;
+            if (s->legacy_board) {
+                break;
+            }
             goto warn;
 
         case 0xe3:
@@ -1046,9 +1087,14 @@ static void complete (SB16State *s)
             break;
 
         case 0xe2:
+            if (s->legacy_board) {
+                ct1741_compat_dma_id(s, dsp_get_data(s));
+            }
 #if DEBUG
-            d0 = dsp_get_data (s);
-            warn_report("sb16: E2 = 0x%x", d0);
+            else {
+                d0 = dsp_get_data(s);
+                warn_report("sb16: E2 = 0x%x", d0);
+            }
 #endif
             break;
 
@@ -1119,6 +1165,9 @@ static void legacy_reset (SB16State *s)
 static void reset (SB16State *s)
 {
     if (s->legacy_board) {
+        ct1741_cancel_dma_id(s);
+        s->dma_id_value = 0xaa;
+        s->dma_id_mask = 0x96;
         /* DSP reset is not a reset of the separate MPU UART. */
         s->mixer_regs[0x82] &= 4;
         qemu_set_irq(s->pic, !!(s->mixer_regs[0x82] & 4));
@@ -1516,6 +1565,20 @@ static int SB_read_DMA (void *opaque, int nchan, int dma_pos, int dma_len)
     SB16State *s = opaque;
     int till, copy, written, free;
 
+    if (s->legacy_board && s->dma_id_pending && nchan == s->dma) {
+        if (dma_pos >= 0 && dma_pos < dma_len) {
+            IsaDmaClass *k = ISADMA_GET_CLASS(s->isa_dma);
+            int done = k->write_memory(s->isa_dma, nchan, &s->dma_id_byte,
+                                       dma_pos, 1);
+
+            if (done == 1) {
+                ct1741_cancel_dma_id(s);
+                return dma_pos + 1;
+            }
+        }
+        return dma_pos;
+    }
+
     if (s->legacy_board &&
         (!s->dma_running || nchan != (s->use_hdma ? s->hdma : s->dma) ||
          dma_len <= 0 || dma_pos < 0 || dma_pos >= dma_len)) {
@@ -1808,6 +1871,11 @@ static void sb16_firmware_reset(DeviceState *dev)
 {
     SB16State *s = SB16(dev);
 
+    if (s->legacy_board) {
+        ct1741_cancel_dma_id(s);
+        s->dma_id_value = 0xaa;
+        s->dma_id_mask = 0x96;
+    }
     if (s->firmware) {
         reset(s);
         s->out_data_len = 0;
@@ -1820,6 +1888,7 @@ static void sb16_unrealize(DeviceState *dev)
 {
     SB16State *s = SB16(dev);
 
+    ct1741_cancel_dma_id(s);
     ct1741_fw_free(s->firmware);
     s->firmware = NULL;
     sb16_remove_mpu(s);
@@ -1923,6 +1992,8 @@ static void sb16_realizefn (DeviceState *dev, Error **errp)
     k->register_channel(s->isa_dma, s->dma, SB_read_DMA, s);
 
     s->can_write = 1;
+    s->dma_id_value = 0xaa;
+    s->dma_id_mask = 0x96;
 }
 
 static const Property sb16_properties[] = {

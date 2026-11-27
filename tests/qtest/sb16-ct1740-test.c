@@ -328,6 +328,94 @@ static void firmware_write(QTestState *s, uint8_t value)
     qtest_clock_step(s, 10000000);
 }
 
+static void dma_id_program(QTestState *s, unsigned int addr)
+{
+    qtest_outb(s, 0x0a, 5); /* Mask channel 1. */
+    qtest_outb(s, 0x0c, 0);
+    qtest_outb(s, 0x02, addr & 0xff);
+    qtest_outb(s, 0x02, addr >> 8);
+    qtest_outb(s, 0x03, 0); /* One byte, count minus one. */
+    qtest_outb(s, 0x03, 0);
+    qtest_outb(s, 0x83, 0);
+    qtest_outb(s, 0x0b, 0x45); /* Single, device-to-memory, ch1. */
+    qtest_inb(s, 0x08);
+}
+
+static void dma_id_send(QTestState *s, bool firmware, uint8_t challenge)
+{
+    if (firmware) {
+        firmware_write(s, 0xe2);
+        firmware_write(s, challenge);
+    } else {
+        qtest_outb(s, 0x22c, 0xe2);
+        qtest_outb(s, 0x22c, challenge);
+    }
+}
+
+static void test_ct1740_dma_id(gconstpointer data)
+{
+    bool firmware = GPOINTER_TO_UINT(data);
+    const char *filename = g_getenv("QTEST_CT1741_FIRMWARE");
+    const uint8_t challenges[] = { 0x00, 0x55, 0xff, 0x5a, 0x00 };
+    const uint8_t expected[] = { 0x40, 0x30, 0xc6, 0xc6, 0x5c };
+    QTestState *s;
+
+    if (firmware && (!filename || !*filename)) {
+        g_test_skip("QTEST_CT1741_FIRMWARE not set");
+        return;
+    }
+    if (firmware) {
+        s = qtest_initf("-M pc,chipset-controllers=on -nodefaults "
+                        "-audiodev none,id=snd "
+                        "-device sb16,audiodev=snd,dsp-firmware=%s", filename);
+    } else {
+        s = qtest_init("-M pc,chipset-controllers=on -nodefaults "
+                       "-audiodev none,id=snd -device sb16,audiodev=snd");
+    }
+    qtest_outb(s, 0x226, 1);
+    qtest_outb(s, 0x226, 0);
+    if (firmware) {
+        qtest_clock_step(s, 10000000);
+    }
+    g_assert_cmphex(qtest_inb(s, 0x22a), ==, 0xaa);
+    qtest_outb(s, 0xd6, 0xc0);
+    qtest_outb(s, 0xd4, 0);
+    for (unsigned int i = 0; i < ARRAY_SIZE(challenges); i++) {
+        qtest_writeb(s, 0x1000, 0x11);
+        qtest_writeb(s, 0x1001, 0x77);
+        dma_id_program(s, 0x1000);
+        dma_id_send(s, firmware, challenges[i]);
+        g_assert_cmphex(qtest_inb(s, 0x08) & 0x20, ==, 0x20);
+        g_assert_cmphex(qtest_readb(s, 0x1000), ==, 0x11);
+        qtest_outb(s, 0x0a, 1);
+        qtest_clock_step(s, 10000000);
+        g_assert_cmphex(qtest_readb(s, 0x1000), ==, expected[i]);
+        g_assert_cmphex(qtest_readb(s, 0x1001), ==, 0x77);
+        g_assert_cmphex(qtest_inb(s, 0x08) & 0x22, ==, 2);
+        g_assert_cmphex(mixer_read(s, 0x220, 0x82) & 3, ==, 0);
+        g_assert_cmphex(qtest_inb(s, 0x22e) & 0x80, ==, 0);
+    }
+
+    /* Reset cancels a masked pending request, and restarts the sequence. */
+    dma_id_program(s, 0x1000);
+    qtest_writeb(s, 0x1000, 0x11);
+    dma_id_send(s, firmware, 0xff);
+    qtest_outb(s, 0x226, 1);
+    qtest_outb(s, 0x226, 0);
+    if (firmware) {
+        qtest_clock_step(s, 10000000);
+    }
+    g_assert_cmphex(qtest_inb(s, 0x22a), ==, 0xaa);
+    g_assert_cmphex(qtest_inb(s, 0x08) & 0x20, ==, 0);
+    qtest_outb(s, 0x0a, 1);
+    qtest_clock_step(s, 10000000);
+    g_assert_cmphex(qtest_readb(s, 0x1000), ==, 0x11);
+    dma_id_send(s, firmware, 0);
+    qtest_clock_step(s, 10000000);
+    g_assert_cmphex(qtest_readb(s, 0x1000), ==, 0x40);
+    qtest_quit(s);
+}
+
 static void test_ct1740_dma_terminal_count(gconstpointer data)
 {
     unsigned int flags = GPOINTER_TO_UINT(data);
@@ -570,6 +658,10 @@ int main(int argc, char **argv)
                             test_ct1740_firmware);
         qtest_add_func("/ct1740/firmware/external",
                        test_ct1740_external_firmware);
+        qtest_add_data_func("/ct1740/dma/identification", GUINT_TO_POINTER(0),
+                            test_ct1740_dma_id);
+        qtest_add_data_func("/ct1740/firmware/dma-identification",
+                            GUINT_TO_POINTER(1), test_ct1740_dma_id);
         qtest_add_data_func("/ct1740/firmware/pcm8",
                             GUINT_TO_POINTER(8), test_ct1740_dma_terminal_count);
         qtest_add_data_func("/ct1740/firmware/pcm16",

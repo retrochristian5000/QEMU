@@ -501,8 +501,8 @@ and log the failing PC. No proprietary firmware is bundled.
 
 This mode is experimental: firmware now controls the board PCM/DMA
 engine and DSP audio IRQs through a private XDATA mailbox. MCU timers,
-MCU interrupt handling, external program memory, serial, capture, ADPCM
-and DMA identification remain unimplemented. Windows 98 playback is not
+MCU interrupt handling, external program memory, serial, capture and ADPCM
+remain unimplemented. Windows 98 playback is not
 validated. Without the property, the existing SB16 PCM model is used
 unchanged. Firmware mode remains unmigratable with the named boards.
 
@@ -549,3 +549,22 @@ reads of base+0Eh and base+0Fh acknowledge the respective IRQ sources.
 With QTEST_CT1741_FIRMWARE set, qtests exercise 8/16-bit single-cycle and
 auto-init playback, terminal count and IRQ acknowledgement using the
 separately built ROM. No production default has changed.
+
+DMA identification (E2h)
+~~~~~~~~~~~~~~~~~~~~~~~~
+
+Named fixed-jumper boards implement the undocumented E2h command as a
+one-byte device-to-memory transfer on the configured 8-bit ISA DMA
+channel. In firmware mode the MCU computes the stateful response and
+commits mailbox action 9; otherwise the named compatibility DSP computes
+the same response. The generic migratable SB16 path is unchanged.
+The DMA controller observes the actual byte position and terminal count.
+The DSP does not generate a PCM IRQ or a data-port response. Masked
+requests wait for unmasking; reset or starting PCM cancels a pending
+identification request. Identification is admitted only while playback
+is idle. The sequence follows the independent DOSBox-X implementation
+of the undocumented command, not a verified physical CT1741 trace:
+https://dosbox-x.com/doxygen/html/sblaster_8cpp_source.html .
+Qtests check guest memory, neighboring bytes, DREQ, terminal count,
+IRQ absence, sequence progression and reset cancellation. Firmware
+cases require QTEST_CT1741_FIRMWARE.
