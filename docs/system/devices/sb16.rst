@@ -568,3 +568,26 @@ https://dosbox-x.com/doxygen/html/sblaster_8cpp_source.html .
 Qtests check guest memory, neighboring bytes, DREQ, terminal count,
 IRQ absence, sequence progression and reset cancellation. Firmware
 cases require QTEST_CT1741_FIRMWARE.
+
+PCM output mixer
+~~~~~~~~~~~~~~~~
+
+Named CT1745 boards convert DMA samples into signed little-endian stereo
+PCM before writing to the selected host audio backend. Mono samples are
+routed to both channels with independent gain. The mixer applies the two
+5-bit voice and master attenuators (2 dB steps) and 2-bit output gain
+(6 dB steps), using fixed-point coefficients and clipping to S16. Mixer
+register writes affect newly rendered samples, not already queued audio.
+DSP 4.xx D1h/D3h affect speaker status only; they do not mute this path.
+Backend credit is converted to guest bytes and decremented on accepted
+writes; DMA reports only the accepted guest bytes. The generic board
+keeps its existing format and migration behavior. Both the firmware and
+named compatibility command paths use this hardware mixer.
+
+This is a digital approximation, not a circuit simulation: tone controls,
+analog filtering, non-PCM sources, DAC reconstruction and incomplete
+stereo frames at a DMA boundary are not covered by this change. The
+existing aligned DMA transfers remain the supported playback contract.
+See Creative Sound Blaster Series Hardware Programming Guide, chapters
+4 and 6. The standalone CT1745 PCM tests cover format conversion, mono
+routing, asymmetric levels, reset attenuation and saturation.

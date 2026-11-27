@@ -194,7 +194,7 @@ static void log_dsp (SB16State *dsp)
 static void speaker (SB16State *s, int on)
 {
     s->speaker = on;
-    /* audio_be_enable (s->voice, on); */
+    /* DSP 4.xx speaker status is not an analog output mute. */
 }
 
 static void control (SB16State *s, int hold)
@@ -207,6 +207,18 @@ static void control (SB16State *s, int hold)
     ldebug("hold %d high %d dma %d", hold, s->use_hdma, dma);
 
     if (hold) {
+        if (s->legacy_board) {
+            if (!s->voice) {
+                s->dma_running = 0;
+                qemu_log_mask(LOG_GUEST_ERROR,
+                              "sb16: unable to open PCM output voice\n");
+                return;
+            }
+            /* DREQ can invoke the controller synchronously. */
+            audio_be_set_active_out(s->audio_be, s->voice, true);
+            k->hold_DREQ(isa_dma, dma);
+            return;
+        }
         k->hold_DREQ(isa_dma, dma);
         audio_be_set_active_out(s->audio_be, s->voice, 1);
     }
@@ -249,8 +261,8 @@ static void continue_dma8 (SB16State *s)
         s->audio_free = 0;
 
         as.freq = s->freq;
-        as.nchannels = 1 << s->fmt_stereo;
-        as.fmt = s->fmt;
+        as.nchannels = s->legacy_board ? 2 : 1 << s->fmt_stereo;
+        as.fmt = s->legacy_board ? AUDIO_FORMAT_S16 : s->fmt;
         as.big_endian = false;
 
         s->voice = audio_be_open_out(
@@ -473,8 +485,8 @@ static void dma_cmd (SB16State *s, uint8_t cmd, uint8_t d0, int dma_len)
         s->audio_free = 0;
 
         as.freq = s->freq;
-        as.nchannels = 1 << s->fmt_stereo;
-        as.fmt = s->fmt;
+        as.nchannels = s->legacy_board ? 2 : 1 << s->fmt_stereo;
+        as.fmt = s->legacy_board ? AUDIO_FORMAT_S16 : s->fmt;
         as.big_endian = false;
 
         s->voice = audio_be_open_out(
@@ -1145,8 +1157,8 @@ static void legacy_reset (SB16State *s)
     s->fmt_stereo = 0;
 
     as.freq = s->freq;
-    as.nchannels = 1;
-    as.fmt = AUDIO_FORMAT_U8;
+    as.nchannels = s->legacy_board ? 2 : 1;
+    as.fmt = s->legacy_board ? AUDIO_FORMAT_S16 : AUDIO_FORMAT_U8;
     as.big_endian = false;
 
     s->voice = audio_be_open_out(
@@ -1531,6 +1543,7 @@ static int write_audio (SB16State *s, int nchan, int dma_pos,
     IsaDmaClass *k = ISADMA_GET_CLASS(isa_dma);
     int temp, net;
     QEMU_UNINITIALIZED uint8_t tmpbuf[4096];
+    QEMU_UNINITIALIZED uint8_t rendered[4096];
 
     temp = len;
     net = 0;
@@ -1545,8 +1558,30 @@ static int write_audio (SB16State *s, int nchan, int dma_pos,
             to_copy = sizeof (tmpbuf);
         }
 
-        copied = k->read_memory(isa_dma, nchan, tmpbuf, dma_pos, to_copy);
-        copied = audio_be_write(s->audio_be, s->voice, tmpbuf, copied);
+        if (s->legacy_board) {
+            size_t frame = s->align + 1;
+            size_t frames, bytes, accepted;
+
+            /* Keep the DMA position in guest bytes; the mixer consumes
+             * stereo S16 frames, independently of the guest PCM format. */
+            to_copy = MIN(to_copy / frame, sizeof(rendered) / 4) * frame;
+            if (!to_copy) {
+                break;
+            }
+            copied = k->read_memory(isa_dma, nchan, tmpbuf, dma_pos, to_copy);
+            if (copied <= 0) {
+                break;
+            }
+            frames = copied / frame;
+            bytes = ct1745_pcm_render(s->mixer_regs, tmpbuf, frames,
+                                      s->fmt_bits == 16, s->fmt_signed,
+                                      s->fmt_stereo, rendered);
+            accepted = audio_be_write(s->audio_be, s->voice, rendered, bytes);
+            copied = MIN(accepted, bytes) / 4 * frame;
+        } else {
+            copied = k->read_memory(isa_dma, nchan, tmpbuf, dma_pos, to_copy);
+            copied = audio_be_write(s->audio_be, s->voice, tmpbuf, copied);
+        }
 
         temp -= copied;
         dma_pos = (dma_pos + copied) % dma_len;
@@ -1628,6 +1663,9 @@ static int SB_read_DMA (void *opaque, int nchan, int dma_pos, int dma_len)
     }
 
     written = write_audio (s, nchan, dma_pos, dma_len, copy);
+    if (s->legacy_board) {
+        s->audio_free = MAX(0, s->audio_free - written);
+    }
     dma_pos += written;
     if (!s->legacy_board) {
         dma_pos %= dma_len;
@@ -1661,7 +1699,17 @@ static int SB_read_DMA (void *opaque, int nchan, int dma_pos, int dma_len)
 static void SB_audio_callback (void *opaque, int free)
 {
     SB16State *s = opaque;
-    s->audio_free = free;
+    if (s->legacy_board) {
+        /* Backend credit is in stereo S16 bytes, not ISA DMA bytes. */
+        s->audio_free = MAX(0, free) / 4 * (s->align + 1);
+        if (s->dma_running && s->audio_free > 0) {
+            IsaDma *dma = s->use_hdma ? s->isa_hdma : s->isa_dma;
+
+            ISADMA_GET_CLASS(dma)->schedule(dma);
+        }
+    } else {
+        s->audio_free = free;
+    }
 }
 
 static int sb16_post_load (void *opaque, int version_id)
