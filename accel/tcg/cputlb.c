@@ -373,7 +373,7 @@ static void tlb_flush_by_mmuidx_async_work(CPUState *cpu, run_on_cpu_data data)
 
     assert_cpu_is_self(cpu);
 
-    tlb_debug("mmu_idx:0x%04" PRIx16 "\n", asked);
+    tlb_debug("mmu_idx:0x%08" PRIx32 "\n", asked);
 
     qemu_spin_lock(&cpu->neg.tlb.c.lock);
 
@@ -400,11 +400,11 @@ static void tlb_flush_by_mmuidx_async_work(CPUState *cpu, run_on_cpu_data data)
                     cpu->neg.tlb.c.full_flush_count + 1);
     } else {
         qatomic_set(&cpu->neg.tlb.c.part_flush_count,
-                    cpu->neg.tlb.c.part_flush_count + ctpop16(to_clean));
+                    cpu->neg.tlb.c.part_flush_count + ctpop32(to_clean));
         if (to_clean != asked) {
             qatomic_set(&cpu->neg.tlb.c.elide_flush_count,
                         cpu->neg.tlb.c.elide_flush_count +
-                        ctpop16(asked & ~to_clean));
+                        ctpop32(asked & ~to_clean));
         }
     }
 }
@@ -933,10 +933,12 @@ static inline void copy_tlb_helper_locked(CPUTLBEntry *d, const CPUTLBEntry *s)
  */
 void tlb_reset_dirty(CPUState *cpu, uintptr_t start, uintptr_t length)
 {
-    int mmu_idx;
+    MMUIdxMap work;
 
     qemu_spin_lock(&cpu->neg.tlb.c.lock);
-    for (mmu_idx = 0; mmu_idx < NB_MMU_MODES; mmu_idx++) {
+    /* A context with no fills since its last flush has no live entries. */
+    for (work = cpu->neg.tlb.c.dirty; work; work &= work - 1) {
+        int mmu_idx = ctz32(work);
         CPUTLBDesc *desc = &cpu->neg.tlb.d[mmu_idx];
         CPUTLBDescFast *fast = cpu_tlb_fast(cpu, mmu_idx);
         unsigned int n = tlb_n_entries(fast);
