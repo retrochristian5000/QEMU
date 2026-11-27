@@ -3,6 +3,14 @@ set -euo pipefail
 
 prefix="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)"
 clang="$prefix/llvm/bin/clang"
+# The installed entry point determines the bare-metal architecture.
+# Explicit -march selects a CPU within that architecture.
+case "${0##*/}" in
+    i586-none-elf-gcc) target=i586-none-elf; baseline=i586 ;;
+    i386-none-elf-gcc|seabios-clang-gcc.bash) target=i386-none-elf; baseline=i386 ;;
+    *) printf 'error: unrecognized SeaBIOS compiler entry point: %s\n' "${0##*/}" >&2; exit 2 ;;
+esac
+assembly_cpu="$baseline"
 
 # The 128 KiB diagnostic may opt into Clang's smaller -Oz output without
 # changing default -Os builds or any SeaBIOS ABI and section handling.
@@ -109,6 +117,14 @@ for arg in "$@"; do
     fi
 
     case "$arg" in
+        -march=native|-m64|--target|--target=*|-target|-target=*)
+            printf 'error: incompatible firmware target option: %s\n' "$arg" >&2
+            exit 2
+            ;;
+        -march=*)
+            assembly_cpu="${arg#-march=}"
+            args+=("$arg")
+            ;;
         -m16|-m32)
             assembly_mode="$arg"
             args+=("$arg")
@@ -210,7 +226,7 @@ done
     exit 1
 }
 
-driver_args=(--target=i386-none-elf)
+driver_args=(--target="$target" -march="$baseline")
 if ((link_step)); then
     driver_args+=(-fuse-ld=lld)
 fi
@@ -341,7 +357,7 @@ if ((merge_constants == 0 && has_c_input == 1)) && [[ "$action" == -c || "$actio
         exit 0
     fi
 
-    "$clang" --target=i386-none-elf "$assembly_mode" -c -x assembler \
+    "$clang" --target="$target" -march="$assembly_cpu" "$assembly_mode" -c -x assembler \
         "$fixed_asm" -o "$output"
     exit $?
 fi
