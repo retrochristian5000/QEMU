@@ -979,8 +979,8 @@ int main(int argc, char **argv)
 
     static const PCPeripheralProfileTest peripherals[] = {
         { "pc", "ns16550a", "\"intellimouse\"", "" },
-        { "generic-pc", "isa-serial", "<null>", "" },
-        { "pc-i440fx-11.1", "isa-serial", "<null>", "" },
+        { "generic-pc", "isa-serial", "\"\"", "" },
+        { "pc-i440fx-11.1", "isa-serial", "\"\"", "" },
         { "pc", "ns16550a", "\"generic\"",
           "-global i8042.mouse-model=generic" },
     };
