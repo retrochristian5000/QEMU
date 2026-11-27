@@ -128,6 +128,23 @@ Carrier acquisition, timing recovery, call establishment, physical
 line levels and asynchronous framing remain unimplemented. Bell 103
 waveforms and T.30 fax framing are separate future work.
 
+MNP Class 5 uses compression over an MNP link, not LAPM error
+correction. The DataPort hardware table defines \\N2 as MNP only,
+\\N3 as MNP with normal-mode fallback, and %C0/%C1 as compression
+disabled/enabled. These differ from generic Rockwell command mappings.
+AT&V describes MNP5 eligibility for these explicit MNP modes; no
+negotiated compression is claimed. Modes 6/7 remain unresolved.
+
+The separate modem-mnp5 module implements the 257 rank codewords
+(including the flush token), with exact-length validation and no
+unbounded allocation. Tests check published codeword examples, all
+ranks, incomplete codewords and malformed input. References:
+https://www.ece.unb.ca/tervo/ece4253/mnp5.shtml and
+https://d-modem.github.io/D-Modem/mnp/mnp5/.
+Adaptive ranking, run-length coding, streaming bit packing, link
+negotiation and retransmission are not implemented by this module.
+No raw TCP payload is compressed or changed.
+
 The auto-reliable settings are included in AT&V and saved profiles.
 They are manufacturer-specific controls related to error correction,
 not AT commands defined by ITU-T V.42. The historical reference is

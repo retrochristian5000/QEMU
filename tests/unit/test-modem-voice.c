@@ -9,6 +9,7 @@
 #include "qemu/osdep.h"
 #include <math.h>
 #include "chardev/modem-v21.h"
+#include "chardev/modem-mnp5.h"
 #include "qapi/error.h"
 #include "qemu/config-file.h"
 #include "qemu/module.h"
@@ -488,6 +489,91 @@ static void test_dataport_reliability_config(gconstpointer opaque)
     qemu_modem_hardware_reset(chr);
     assert_response_contains(modem_command(&fe, &out, "AT&V\r"),
                              "\\C2 %A0");
+    modem_frontend_cleanup(&fe, chr);
+}
+
+static void test_mnp5_rank_codes(void)
+{
+    static const struct {
+        unsigned rank;
+        uint16_t code;
+        unsigned bits;
+    } vectors[] = {
+        { 0, 0x0, 4 }, { 3, 0x3, 4 }, { 4, 0x8, 5 },
+        { 7, 0xb, 5 }, { 8, 0x18, 6 }, { 22, 0x46, 7 },
+        { 55, 0xb7, 8 }, { 65, 0x181, 9 }, { 127, 0x1bf, 9 },
+        { 128, 0x380, 10 }, { 254, 0x3fe, 10 },
+        { 255, 0x7fe, 11 }, { MODEM_MNP5_FLUSH, 0x7ff, 11 },
+    };
+
+    for (unsigned i = 0; i < ARRAY_SIZE(vectors); i++) {
+        uint16_t code = 0;
+        unsigned rank = UINT_MAX;
+
+        g_assert_cmpuint(modem_mnp5_rank_encode(vectors[i].rank, &code),
+                         ==, vectors[i].bits);
+        g_assert_cmpuint(code, ==, vectors[i].code);
+        g_assert_true(modem_mnp5_rank_decode(code, vectors[i].bits, &rank));
+        g_assert_cmpuint(rank, ==, vectors[i].rank);
+    }
+
+    for (unsigned i = 0; i <= MODEM_MNP5_FLUSH; i++) {
+        uint16_t code = 0;
+        unsigned rank = UINT_MAX;
+        unsigned length = modem_mnp5_rank_encode(i, &code);
+
+        g_assert_true(modem_mnp5_rank_decode(code, length, &rank));
+        g_assert_cmpuint(rank, ==, i);
+        for (unsigned j = 0; j < length; j++) {
+            g_assert_false(modem_mnp5_rank_decode(code >> (length - j),
+                                                 j, &rank));
+            g_assert_cmpuint(rank, ==, i);
+        }
+    }
+    uint16_t code = 123;
+    unsigned rank = 999;
+
+    g_assert_cmpuint(modem_mnp5_rank_encode(257, &code), ==, 0);
+    g_assert_cmpuint(code, ==, 123);
+    g_assert_false(modem_mnp5_rank_decode(0x3ff, 10, &rank));
+    g_assert_false(modem_mnp5_rank_decode(0x7fd, 11, &rank));
+    g_assert_false(modem_mnp5_rank_decode(0x10, 4, &rank));
+    g_assert_cmpuint(rank, ==, 999);
+}
+
+static void test_dataport_mnp5_config(gconstpointer opaque)
+{
+    ModemOutput out = { 0 };
+    CharFrontend fe = { 0 };
+    Chardev *chr = modem_new("modem-mnp5-config", opaque);
+    const char *reply;
+
+    modem_frontend_init(&fe, &out, chr);
+    assert_response_contains(modem_command(&fe, &out,
+                             "ATE0Q0V1\\N2%C1&W0\r"), "\r\nOK\r\n");
+    reply = modem_command(&fe, &out, "AT&V\r");
+    assert_response_contains(reply, "REQUESTED LINK: MNP ONLY");
+    assert_response_contains(reply, "MNP5 ELIGIBLE");
+    assert_response_contains(modem_command(&fe, &out,
+                             "AT\\N3%C0&W1&Y1\r"), "\r\nOK\r\n");
+    reply = modem_command(&fe, &out, "AT&V\r");
+    assert_response_contains(reply, "MNP WITH NORMAL FALLBACK");
+    assert_response_contains(reply, "REQUESTED COMPRESSION: DISABLED");
+    assert_response_contains(modem_command(&fe, &out, "AT%C3\r"),
+                             "\r\nERROR\r\n");
+    assert_response_contains(modem_command(&fe, &out, "AT&V\r"),
+                             "REQUESTED COMPRESSION: DISABLED");
+    assert_response_contains(modem_command(&fe, &out, "ATZ\r"),
+                             "\r\nOK\r\n");
+    assert_response_contains(modem_command(&fe, &out, "AT&V\r"),
+                             "MNP5 ELIGIBLE");
+    qemu_modem_hardware_reset(chr);
+    assert_response_contains(modem_command(&fe, &out, "AT&V\r"),
+                             "REQUESTED COMPRESSION: DISABLED");
+    assert_response_contains(modem_command(&fe, &out, "AT\\N4%C1\r"),
+                             "\r\nOK\r\n");
+    g_assert_null(strstr(modem_command(&fe, &out, "AT&V\r"),
+                         "MNP5 ELIGIBLE"));
     modem_frontend_cleanup(&fe, chr);
 }
 
@@ -1250,6 +1336,12 @@ int main(int argc, char **argv)
     g_test_add_data_func("/modem/paradyne/reliability-config-3740",
                          "att-paradyne-3740",
                          test_dataport_reliability_config);
+    g_test_add_func("/modem/mnp5/rank-codes", test_mnp5_rank_codes);
+    g_test_add_data_func("/modem/paradyne/mnp5-config-3711",
+                         "att-paradyne-dataport-3711",
+                         test_dataport_mnp5_config);
+    g_test_add_data_func("/modem/paradyne/mnp5-config-3740",
+                         "att-paradyne-3740", test_dataport_mnp5_config);
     g_test_add_func("/modem/v21/signals", test_v21_signals);
     g_test_add_data_func("/modem/paradyne/v21-selection-3711",
                          "att-paradyne-dataport-3711",

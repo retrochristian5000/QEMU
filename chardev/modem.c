@@ -694,6 +694,15 @@ static void modem_report_profile(ModemChardev *modem)
         g_clear_pointer(&line, g_free);
         line = g_strdup_printf("B%d", modem->bell_modulation);
         modem_queue_line(modem, line);
+        /* Report requested policy, never an inferred negotiated link. */
+        if (modem->reliable_mode == 2 || modem->reliable_mode == 3) {
+            modem_queue_line(modem, modem->reliable_mode == 2 ?
+                             "REQUESTED LINK: MNP ONLY" :
+                             "REQUESTED LINK: MNP WITH NORMAL FALLBACK");
+            modem_queue_line(modem, modem->compression ?
+                             "REQUESTED COMPRESSION: ENABLED (MNP5 ELIGIBLE)" :
+                             "REQUESTED COMPRESSION: DISABLED");
+        }
         if (modem->connect_speed == 300) {
             modem_queue_line(modem, modem->bell_modulation ?
                              "REQUESTED MODULATION: BELL 103" :

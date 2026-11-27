@@ -211,6 +211,7 @@ if have_system
             meson.project_source_root() / 'chardev/modem.c',
             meson.project_source_root() / 'chardev/modem-models.c',
             meson.project_source_root() / 'chardev/modem-v21.c',
+            meson.project_source_root() / 'chardev/modem-mnp5.c',
             qom,
             io,
             chardev,
