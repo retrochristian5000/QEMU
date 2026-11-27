@@ -853,6 +853,16 @@ static const AtaHdIdentity ata_hd_identities[] = {
       ",model=Override HDD,rotation_rate=0" },
 };
 
+static void read_ata_identify(QPCIDevice *dev, QPCIBar bar, uint16_t *id)
+{
+    qpci_io_writeb(dev, bar, reg_command, CMD_IDENTIFY);
+    for (unsigned i = 0; i < 256; i++) {
+        assert_bit_set(qpci_io_readb(dev, bar, reg_status), DRDY | DRQ);
+        id[i] = qpci_io_readw(dev, bar, reg_data);
+    }
+    assert_bit_clear(qpci_io_readb(dev, bar, reg_status), BSY | DRQ | ERR);
+}
+
 static void test_ata_hd_identity(gconstpointer opaque)
 {
     const AtaHdIdentity *profile = opaque;
@@ -883,6 +893,34 @@ static void test_ata_hd_identity(gconstpointer opaque)
     g_assert_cmpuint(buf[217], ==, 0);
     g_assert_cmpuint((uint32_t)buf[60] | ((uint32_t)buf[61] << 16),
                      ==, TEST_IMAGE_SIZE / 512);
+
+    /* IDENTIFY must reflect each new multiple-sector count. */
+    const uint8_t counts[] = { 1, 8, 0, 16 };
+
+    for (size_t i = 0; i < ARRAY_SIZE(counts); i++) {
+        qpci_io_writeb(dev, ide_bar, reg_nsectors, counts[i]);
+        qpci_io_writeb(dev, ide_bar, reg_command, 0xc6);
+        assert_bit_clear(qpci_io_readb(dev, ide_bar, reg_status), ERR);
+        read_ata_identify(dev, ide_bar, buf);
+        g_assert_cmphex(buf[59], ==, 0x100 | counts[i]);
+    }
+
+    /* Mode selection must not fabricate supported DMA modes. */
+    qpci_io_writeb(dev, ide_bar, reg_feature, 3);
+    qpci_io_writeb(dev, ide_bar, reg_nsectors, 0x22);
+    qpci_io_writeb(dev, ide_bar, reg_command, 0xef);
+    assert_bit_clear(qpci_io_readb(dev, ide_bar, reg_status), ERR);
+    read_ata_identify(dev, ide_bar, buf);
+    g_assert_cmphex(buf[63], ==, 0x407);
+    g_assert_cmphex(buf[88], ==, profile->udma);
+
+    qpci_io_writeb(dev, ide_bar, reg_feature, 3);
+    qpci_io_writeb(dev, ide_bar, reg_nsectors, 0x47);
+    qpci_io_writeb(dev, ide_bar, reg_command, 0xef);
+    assert_bit_set(qpci_io_readb(dev, ide_bar, reg_status), ERR);
+    read_ata_identify(dev, ide_bar, buf);
+    g_assert_cmphex(buf[63], ==, 0x407);
+    g_assert_cmphex(buf[88], ==, profile->udma);
 
     if (profile->major != 0xf0) {
         g_assert_cmphex(buf[83] & 0x0400, ==, 0);
