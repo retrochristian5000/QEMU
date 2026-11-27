@@ -1633,12 +1633,17 @@ static void test_pc_legacy_cd_model(const void *opaque)
 {
     const char *profile = opaque;
     bool early = g_str_equal(profile, "oti-011");
-    const char *expected = early ? "NEC CD-ROM DRIVE:260" :
+    bool is_default = g_str_equal(profile, "default");
+    bool toshiba = is_default || g_str_equal(profile, "toshiba-xm-6202b");
+    const char *expected = toshiba ? "TOSHIBA CD-ROM XM-6202B" :
+                           early ? "NEC CD-ROM DRIVE:260" :
                            g_str_equal(profile, "oti-910") ?
                            "QEMU OTI-910 CD-ROM" : "QEMU DVD-ROM";
+    g_autofree char *machine = is_default ? g_strdup("pc") :
+        g_strdup_printf("pc,ide-cd-model=%s", profile);
     QTestState *qts = qtest_initf(
-        "-machine pc,ide-cd-model=%s -nodefaults "
-        "-drive if=ide,index=0,media=cdrom", profile);
+        "-machine %s -nodefaults "
+        "-drive if=ide,index=0,media=cdrom", machine);
     uint8_t model[40];
 
     qtest_outb(qts, 0x1f6, 0xe0);
@@ -1659,6 +1664,59 @@ static void test_pc_legacy_cd_model(const void *opaque)
         g_assert_cmphex(model[i], ==,
                         index < strlen(expected) ? expected[index] : ' ');
     }
+    qtest_quit(qts);
+}
+
+static void test_xm6202b_capabilities(void)
+{
+    QTestState *qts = qtest_init(
+        "-machine pc -nodefaults -device toshiba-xm-6202b,bus=ide.0,unit=0");
+    uint16_t id[256];
+    const uint8_t packet[12] = { 0x5a, 0, 0x2a, 0, 0, 0, 0, 0, 30 };
+    uint8_t reply[30];
+
+    qtest_outb(qts, 0x1f6, 0xa0);
+    qtest_outb(qts, 0x1f7, CMD_PACKET_IDENTIFY);
+    assert_bit_set(qtest_inb(qts, 0x1f7), DRQ);
+    for (unsigned i = 0; i < ARRAY_SIZE(id); i++) {
+        id[i] = qtest_inw(qts, 0x1f0);
+    }
+    g_assert_cmpuint(id[21], ==, 512);
+    g_assert_cmphex(id[49] & 0x100, ==, 0);
+    g_assert_cmphex(id[62] | id[63] | id[88], ==, 0);
+    g_assert_cmphex(id[64], ==, 3);
+    g_assert_cmpuint(id[68], ==, 120);
+
+    qtest_outb(qts, 0x1f1, 3);
+    qtest_outb(qts, 0x1f2, 0x0c); /* PIO mode 4 */
+    qtest_outb(qts, 0x1f7, 0xef);
+    assert_bit_clear(qtest_inb(qts, 0x1f7), ERR);
+    qtest_outb(qts, 0x1f1, 3);
+    qtest_outb(qts, 0x1f2, 0x22); /* MWDMA mode 2 */
+    qtest_outb(qts, 0x1f7, 0xef);
+    assert_bit_set(qtest_inb(qts, 0x1f7), ERR);
+    qtest_outb(qts, 0x1f1, 1);
+    qtest_outb(qts, 0x1f7, CMD_PACKET);
+    assert_bit_set(qtest_inb(qts, 0x1f7), ERR);
+
+    qtest_outb(qts, 0x1f1, 0);
+    qtest_outb(qts, 0x1f4, sizeof(reply));
+    qtest_outb(qts, 0x1f5, 0);
+    qtest_outb(qts, 0x1f7, CMD_PACKET);
+    assert_bit_set(qtest_inb(qts, 0x1f7), DRQ);
+    for (unsigned i = 0; i < sizeof(packet); i += 2) {
+        qtest_outw(qts, 0x1f0, packet[i] | (packet[i + 1] << 8));
+    }
+    assert_bit_set(qtest_inb(qts, 0x1f7), DRQ);
+    for (unsigned i = 0; i < sizeof(reply); i += 2) {
+        uint16_t word = qtest_inw(qts, 0x1f0);
+        reply[i] = word;
+        reply[i + 1] = word >> 8;
+    }
+    assert_bit_clear(qtest_inb(qts, 0x1f7), BSY | DRQ | ERR);
+    g_assert_cmphex(reply[10], ==, 0); /* No DVD media support. */
+    g_assert_cmpuint((reply[16] << 8) | reply[17], ==, 4800);
+    g_assert_cmpuint((reply[20] << 8) | reply[21], ==, 256);
     qtest_quit(qts);
 }
 
@@ -2174,6 +2232,12 @@ int main(int argc, char **argv)
     qtest_add_func("/ide/flush/retry_pci", test_pci_retry_flush);
 
     if (qtest_has_machine("pc")) {
+        qtest_add_data_func("/ide/legacy-model/default-cd", "default",
+                            test_pc_legacy_cd_model);
+        qtest_add_data_func("/ide/legacy-model/toshiba-xm-6202b",
+                            "toshiba-xm-6202b", test_pc_legacy_cd_model);
+        qtest_add_func("/ide/toshiba-xm-6202b/capabilities",
+                       test_xm6202b_capabilities);
         qtest_add_data_func("/ide/legacy-model/ide-cd", "ide-cd",
                             test_pc_legacy_cd_model);
         qtest_add_data_func("/ide/legacy-model/oti-910", "oti-910",
