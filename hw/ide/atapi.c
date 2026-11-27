@@ -77,7 +77,8 @@ static void ide_atapi_identify(IDEState *s)
     ide_put_le16(p + 0, (2 << 14) | (5 << 8) | (1 << 7) | (2 << 5) | (0 << 0));
     ide_padstr((char *)(p + 10), s->drive_serial_str, 20); /* serial number */
     ide_put_le16(p + 20, 3); /* buffer type */
-    ide_put_le16(p + 21, 512); /* cache size in sectors */
+    ide_put_le16(p + 21, s->atapi_buffer_kib ?
+                 s->atapi_buffer_kib * 2 : 512); /* 512-byte units */
     ide_put_le16(p + 22, 4); /* ecc bytes */
     ide_padstr((char *)(p + 23), s->version, 8); /* firmware version */
     ide_padstr((char *)(p + 27), s->drive_model_str, 40); /* model */
@@ -123,6 +124,19 @@ static void ide_atapi_identify(IDEState *s)
     ide_put_le16(p + 88, 0x3f | (1 << 13)); /* udma5 set and supported */
 #endif
 
+    if (s->atapi_pio_only) {
+        /* Documented PIO mode 4, no verified DMA capability. */
+        ide_put_le16(p + 48, 0);
+        ide_put_le16(p + 49, (1 << 11) | (1 << 9)); /* IORDY, LBA */
+        ide_put_le16(p + 53, 3);
+        ide_put_le16(p + 62, 0);
+        ide_put_le16(p + 63, 0);
+        ide_put_le16(p + 65, 0);
+        ide_put_le16(p + 66, 0);
+        ide_put_le16(p + 68, 120); /* PIO mode 4 cycle time, ns */
+        ide_put_le16(p + 88, 0);
+    }
+
     if (s->wwn) {
         /* LE 16-bit words 111-108 contain 64-bit World Wide Name */
         ide_put_le16(p + 108, s->wwn >> 48);
@@ -148,8 +162,8 @@ bool ide_atapi_cmd_identify_packet(IDEState *s, uint8_t cmd)
 
 bool ide_atapi_cmd_packet(IDEState *s, uint8_t cmd)
 {
-    /* overlapping commands not supported */
-    if (s->feature & 0x02) {
+    /* Overlapping commands and unadvertised DMA are not supported. */
+    if ((s->feature & 0x02) || (s->atapi_pio_only && (s->feature & 1))) {
         ide_abort_command(s);
         return true;
     }
@@ -858,7 +872,7 @@ static void cmd_inquiry(IDEState *s, uint8_t *buf)
         buf[5] = 0;    /* reserved */
         buf[6] = 0;    /* reserved */
         buf[7] = 0;    /* reserved */
-        padstr8(buf + 8, 8, "QEMU");
+        padstr8(buf + 8, 8, s->atapi_inquiry_vendor ?: "QEMU");
         padstr8(buf + 16, 16, s->atapi_inquiry_product ?:
                 "QEMU DVD-ROM");
         padstr8(buf + 32, 4, s->version);
@@ -992,11 +1006,11 @@ static void cmd_mode_sense(IDEState *s, uint8_t *buf)
                 buf[14] |= 1 << 1;
             }
             buf[15] = 0x00; /* No volume & mute control, no changer */
-            stw_be_p(&buf[16], 704); /* 4x read speed */
+            stw_be_p(&buf[16], s->atapi_read_speed ?: 704);
             buf[18] = 0; /* Two volume levels */
             buf[19] = 2;
-            stw_be_p(&buf[20], 512); /* 512k buffer */
-            stw_be_p(&buf[22], 704); /* 4x read speed current */
+            stw_be_p(&buf[20], s->atapi_buffer_kib ?: 512);
+            stw_be_p(&buf[22], s->atapi_read_speed ?: 704);
             buf[24] = 0;
             buf[25] = 0;
             buf[26] = 0;
