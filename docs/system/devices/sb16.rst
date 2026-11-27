@@ -591,3 +591,9 @@ existing aligned DMA transfers remain the supported playback contract.
 See Creative Sound Blaster Series Hardware Programming Guide, chapters
 4 and 6. The standalone CT1745 PCM tests cover format conversion, mono
 routing, asymmetric levels, reset attenuation and saturation.
+
+The optional ``/ct1740/firmware/wave-output`` QTest also inspects host
+WAV output for nonzero PCM and different left/right mixer gains after
+DMA completion. Set ``QTEST_CT1741_FIRMWARE`` to the built ROM and
+``QTEST_CT1741_WAV=1`` with the WAV backend enabled. It uses synthetic
+samples, not an external audio file, and leaves normal builds unchanged.

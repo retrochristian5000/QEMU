@@ -3,6 +3,7 @@
  * SPDX-License-Identifier: GPL-2.0-or-later
  */
 #include "qemu/osdep.h"
+#include "qemu/bswap.h"
 #include "libqtest.h"
 
 static uint8_t mixer_read(QTestState *s, unsigned int base, uint8_t reg)
@@ -524,6 +525,106 @@ static void test_ct1740_dma_terminal_count(gconstpointer data)
     qtest_quit(s);
 }
 
+/* Optional end-to-end test: inspect audio emitted by the host WAV backend,
+ * not merely the controller's terminal count. Requires a built provider ROM
+ * and a QEMU build with the WAV backend. */
+static void test_ct1740_firmware_wave(void)
+{
+    const char *rom = g_getenv("QTEST_CT1741_FIRMWARE");
+    g_autofree char *directory = NULL;
+    g_autofree char *path = NULL;
+    g_autofree char *contents = NULL;
+    g_autofree char *quoted_rom = NULL;
+    g_autofree char *quoted_path = NULL;
+    GError *error = NULL;
+    gsize len;
+    uint8_t samples[1024];
+    unsigned int left_peak = 0, right_peak = 0;
+    QTestState *s;
+    unsigned int i;
+    const uint8_t commands[] = {
+        0xd3, 0x41, 0x2b, 0x11, 0xc0, 0, 0xff, 3
+    };
+
+    if (!rom || !*rom || !g_getenv("QTEST_CT1741_WAV")) {
+        g_test_skip("Requires QTEST_CT1741_FIRMWARE and QTEST_CT1741_WAV");
+        return;
+    }
+    directory = g_dir_make_tmp("ct1741-wave-XXXXXX", &error);
+    g_assert_no_error(error);
+    g_assert_nonnull(directory);
+    path = g_build_filename(directory, "output.wav", NULL);
+    quoted_path = g_shell_quote(path);
+    quoted_rom = g_shell_quote(rom);
+    s = qtest_initf("-M pc,chipset-controllers=on -nodefaults "
+                    "-audiodev wav,id=snd,path=%s,out.frequency=11025,"
+                    "out.channels=2,out.format=s16 "
+                    "-device sb16,audiodev=snd,dsp-firmware=%s",
+                    quoted_path, quoted_rom);
+
+    qtest_outb(s, 0x226, 1);
+    qtest_outb(s, 0x226, 0);
+    qtest_clock_step(s, 10000000);
+    g_assert_cmphex(qtest_inb(s, 0x22a), ==, 0xaa);
+
+    /* Left channel at unity; right has two 14 dB attenuators.
+     * D3h must not physically mute a DSP 4.xx PCM stream. */
+    mixer_write(s, 0x220, 0x30, 0xf8);
+    mixer_write(s, 0x220, 0x32, 0xf8);
+    for (i = 0; i < ARRAY_SIZE(samples); i++) {
+        samples[i] = (i & 32) ? 0xc0 : 0x40;
+    }
+    qtest_memwrite(s, 0x1000, samples, sizeof(samples));
+    qtest_outb(s, 0x0a, 5);
+    qtest_outb(s, 0x0c, 0);
+    qtest_outb(s, 0x02, 0);
+    qtest_outb(s, 0x02, 0x10);
+    qtest_outb(s, 0x03, 0xff);
+    qtest_outb(s, 0x03, 3);
+    qtest_outb(s, 0x83, 0);
+    qtest_outb(s, 0x0b, 0x49);
+    qtest_outb(s, 0xd6, 0xc0);
+    qtest_outb(s, 0xd4, 0);
+    qtest_outb(s, 0x0a, 1);
+    for (i = 0; i < ARRAY_SIZE(commands); i++) {
+        firmware_write(s, commands[i]);
+    }
+    for (i = 0; i < 200; i++) {
+        qtest_clock_step(s, 10000000);
+        if (mixer_read(s, 0x220, 0x82) & 1) {
+            break;
+        }
+    }
+    g_assert_cmpuint(i, <, 200);
+    g_assert_cmphex(qtest_inb(s, 0x08) & 2, ==, 2);
+    qtest_inb(s, 0x22e);
+    /* Let the backend drain the final queued samples. */
+    for (i = 0; i < 50; i++) {
+        qtest_clock_step(s, 10000000);
+    }
+    qtest_quit(s);
+
+    g_assert_true(g_file_get_contents(path, &contents, &len, &error));
+    g_assert_no_error(error);
+    g_assert_cmpuint(len, >, 44);
+    g_assert_cmpmem(contents, 4, "RIFF", 4);
+    g_assert_cmpmem(contents + 36, 4, "data", 4);
+    g_assert_cmpuint(lduw_le_p(contents + 22), ==, 2);
+    g_assert_cmpuint(lduw_le_p(contents + 34), ==, 16);
+    for (gsize offset = 44; offset + 4 <= len; offset += 4) {
+        int l = (int16_t)lduw_le_p(contents + offset);
+        int r = (int16_t)lduw_le_p(contents + offset + 2);
+
+        left_peak = MAX(left_peak, (unsigned int)abs(l));
+        right_peak = MAX(right_peak, (unsigned int)abs(r));
+    }
+    g_assert_cmpuint(left_peak, >, 1000);
+    g_assert_cmpuint(right_peak, >, 0);
+    g_assert_cmpuint(left_peak, >, right_peak * 4);
+    unlink(path);
+    rmdir(directory);
+}
+
 static void test_ct1740_firmware(gconstpointer data)
 {
     const char *cpu = data;
@@ -658,6 +759,8 @@ int main(int argc, char **argv)
                             test_ct1740_firmware);
         qtest_add_func("/ct1740/firmware/external",
                        test_ct1740_external_firmware);
+        qtest_add_func("/ct1740/firmware/wave-output",
+                       test_ct1740_firmware_wave);
         qtest_add_data_func("/ct1740/dma/identification", GUINT_TO_POINTER(0),
                             test_ct1740_dma_id);
         qtest_add_data_func("/ct1740/firmware/dma-identification",
