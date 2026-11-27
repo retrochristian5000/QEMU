@@ -14,6 +14,8 @@ config VGA_CIRRUS
     default y if PCI_DEVICES
     depends on PCI
     select VGA
+    select BITBANG_I2C
+    select DDC
 
 config G364FB
     bool
