@@ -51,6 +51,7 @@
 //#define PCNET_DEBUG_MATCH
 
 #define TYPE_PCI_PCNET "pcnet"
+#define TYPE_AM79C970A_PCI "am79c970a-pci"
 
 OBJECT_DECLARE_SIMPLE_TYPE(PCIPCNetState, PCI_PCNET)
 
@@ -205,7 +206,13 @@ static void pci_pcnet_realize(PCIDevice *pci_dev, Error **errp)
         sizeof(struct pcnet_RMD), sizeof(struct pcnet_TMD));
 #endif
 
+    s->am79c970a = object_dynamic_cast(OBJECT(d), TYPE_AM79C970A_PCI) != NULL;
     pci_conf = pci_dev->config;
+    if (s->am79c970a) {
+        /* AMD 19436 Rev E, PCI register summary: reserved fields. */
+        pci_dev->wmask[PCI_CACHE_LINE_SIZE] = 0;
+        memset(pci_dev->wmask + 0x40, 0, 0xc0);
+    }
 
     pci_set_word(pci_conf + PCI_STATUS,
                  PCI_STATUS_FAST_BACK | PCI_STATUS_DEVSEL_MEDIUM);
@@ -287,9 +294,21 @@ static const TypeInfo pcnet_info = {
     },
 };
 
+static void am79c970a_class_init(ObjectClass *klass, const void *data)
+{
+    DEVICE_CLASS(klass)->desc = "AMD Am79C970A PCnet-PCI II Ethernet controller";
+}
+
+static const TypeInfo am79c970a_info = {
+    .name = TYPE_AM79C970A_PCI,
+    .parent = TYPE_PCI_PCNET,
+    .class_init = am79c970a_class_init,
+};
+
 static void pci_pcnet_register_types(void)
 {
     type_register_static(&pcnet_info);
+    type_register_static(&am79c970a_info);
 }
 
 type_init(pci_pcnet_register_types)
