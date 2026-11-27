@@ -5,6 +5,14 @@
 
 whp_cc_session_context()
 (
+    # Relative PATH entries depend on the working directory. Do not reuse
+    # an admission across child stages when those entries are present.
+    case ":${PATH:-}:" in *::*) exit 1 ;; esac
+    IFS=:
+    set -f
+    for entry in $PATH; do
+        case "$entry" in /*) ;; *) exit 1 ;; esac
+    done
     # The probe sanitizes target flags; retain the environment which may
     # change the native compiler, SDK, linker or its default configuration.
     printf '%s\n' "${PATH:-}" "${SDKROOT:-}" "${DEVELOPER_DIR:-}" \
@@ -67,8 +75,8 @@ whp_cc_session_lookup()
         [ "$requested" = "$selected" ] || exit 1
     # Relative explicit selections may resolve differently after a chdir.
     case "$requested" in /*|'') ;; */*) exit 1 ;; esac
-    [ "$(whp_cc_session_context)" = "${WHP_CC_SESSION_CONTEXT:-}" ] ||
-        exit 1
+    context=$(whp_cc_session_context) || exit 1
+    [ "$context" = "${WHP_CC_SESSION_CONTEXT:-}" ] || exit 1
     current=$(whp_cc_session_fingerprint "$selected") || exit 1
     [ "$current" = "${WHP_CC_SESSION_FINGERPRINT:-}" ] || exit 1
     printf '%s\n' "$selected"
