@@ -692,6 +692,14 @@ void ps2_keyboard_set_translation(PS2KbdState *s, int mode)
     s->translate = mode;
 }
 
+static void ps2_mouse_clear_motion(PS2MouseState *s)
+{
+    s->mouse_dx = 0;
+    s->mouse_dy = 0;
+    s->mouse_dz = 0;
+    s->mouse_dw = 0;
+}
+
 static int ps2_mouse_send_packet(PS2MouseState *s)
 {
     PS2State *ps2 = PS2_DEVICE(s);
@@ -798,8 +806,8 @@ static void ps2_mouse_event(DeviceState *dev, QemuConsole *src,
     };
     PS2MouseState *s = (PS2MouseState *)dev;
 
-    /* check if deltas are recorded when disabled */
-    if (!(s->mouse_status & MOUSE_STATUS_ENABLED)) {
+    /* Diagnostic echo mode must not accumulate ordinary motion. */
+    if (s->mouse_wrap || !(s->mouse_status & MOUSE_STATUS_ENABLED)) {
         return;
     }
 
@@ -841,8 +849,8 @@ static void ps2_mouse_sync(DeviceState *dev)
 {
     PS2MouseState *s = (PS2MouseState *)dev;
 
-    /* do not sync while disabled to prevent stream corruption */
-    if (!(s->mouse_status & MOUSE_STATUS_ENABLED)) {
+    /* Do not mix movement packets with diagnostic echo bytes. */
+    if (s->mouse_wrap || !(s->mouse_status & MOUSE_STATUS_ENABLED)) {
         return;
     }
 
@@ -866,6 +874,9 @@ static void ps2_mouse_sync(DeviceState *dev)
 void ps2_mouse_fake_event(PS2MouseState *s)
 {
     trace_ps2_mouse_fake_event(s);
+    if (s->mouse_wrap) {
+        return;
+    }
     s->mouse_dx++;
     ps2_mouse_sync(DEVICE(s));
 }
@@ -882,6 +893,7 @@ void ps2_write_mouse(PS2MouseState *s, int val)
         if (s->mouse_wrap) {
             if (val == AUX_RESET_WRAP) {
                 s->mouse_wrap = 0;
+                ps2_mouse_clear_motion(s);
                 ps2_queue(ps2, AUX_ACK);
                 return;
             } else if (val != AUX_RESET) {
@@ -904,6 +916,7 @@ void ps2_write_mouse(PS2MouseState *s, int val)
             break;
         case AUX_SET_WRAP:
             s->mouse_wrap = 1;
+            ps2_mouse_clear_motion(s);
             ps2_queue(ps2, AUX_ACK);
             break;
         case AUX_SET_REMOTE:
@@ -947,6 +960,7 @@ void ps2_write_mouse(PS2MouseState *s, int val)
             s->mouse_sample_rate = 100;
             s->mouse_resolution = 2;
             s->mouse_status = 0;
+            ps2_mouse_clear_motion(s);
             if (s->profile != PS2_MOUSE_PROFILE_GENERIC) {
                 s->mouse_detect_state = 0;
             }
@@ -961,10 +975,7 @@ void ps2_write_mouse(PS2MouseState *s, int val)
             s->mouse_wrap = 0;
             s->mouse_detect_state = 0;
             /* Do not replay movement accumulated before the device reset. */
-            s->mouse_dx = 0;
-            s->mouse_dy = 0;
-            s->mouse_dz = 0;
-            s->mouse_dw = 0;
+            ps2_mouse_clear_motion(s);
             ps2_reset_queue(ps2);
             ps2_queue_3(ps2,
                 AUX_ACK,
@@ -1112,10 +1123,7 @@ static void ps2_mouse_reset_hold(Object *obj, ResetType type)
     s->mouse_wrap = 0;
     s->mouse_type = 0;
     s->mouse_detect_state = 0;
-    s->mouse_dx = 0;
-    s->mouse_dy = 0;
-    s->mouse_dz = 0;
-    s->mouse_dw = 0;
+    ps2_mouse_clear_motion(s);
     s->mouse_buttons = 0;
 }
 
