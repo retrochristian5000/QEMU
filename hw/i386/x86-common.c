@@ -32,6 +32,7 @@
 #include "trace.h"
 
 #include "hw/i386/x86.h"
+#include "hw/i386/pc.h" /* PC_MACHINE_MAX_FW_SIZE */
 #include "target/i386/cpu.h"
 #include "hw/rtc/mc146818rtc.h"
 #include "target/i386/sev.h"
@@ -1016,23 +1017,31 @@ void x86_isa_bios_init(MemoryRegion *isa_bios, MemoryRegion *isa_memory,
 static int get_bios_size(X86MachineState *x86ms,
                          const char *bios_name, char *filename)
 {
-    int bios_size;
+    int64_t bios_size = filename ? get_image_size(filename, NULL) : -1;
+    Object *obj = OBJECT(x86ms);
 
-    if (filename) {
-        bios_size = get_image_size(filename, NULL);
-    } else {
-        bios_size = -1;
+    if (bios_size <= 0 || bios_size > INT_MAX ||
+        !QEMU_IS_ALIGNED(bios_size, 64 * KiB)) {
+        error_report("Could not load PC BIOS '%s': expected a non-zero "
+                     "multiple of 64 KiB within the supported image size",
+                     bios_name);
+        exit(EXIT_FAILURE);
     }
-    if (bios_size <= 0 ||
-        (bios_size % 65536) != 0) {
-        goto bios_error;
+
+    /* PC firmware mappings share the same address window as pflash. */
+    if (object_property_find(obj, PC_MACHINE_MAX_FW_SIZE)) {
+        uint64_t limit = object_property_get_uint(obj, PC_MACHINE_MAX_FW_SIZE,
+                                                  &error_fatal);
+
+        if ((uint64_t)bios_size > limit) {
+            error_report("PC BIOS '%s' size %" PRId64 " exceeds maximum "
+                         "firmware size %" PRIu64 " bytes",
+                         bios_name, bios_size, limit);
+            exit(EXIT_FAILURE);
+        }
     }
 
     return bios_size;
-
- bios_error:
-    fprintf(stderr, "qemu: could not load PC BIOS '%s'\n", bios_name);
-    exit(1);
 }
 
 static void load_bios_from_file(X86MachineState *x86ms, const char *bios_name,
@@ -1061,7 +1070,9 @@ static void load_bios_from_file(X86MachineState *x86ms, const char *bios_name,
          * Just go for a straight file load instead.
          */
         void *ptr = memory_region_get_ram_ptr(&x86ms->bios);
-        load_image_size(filename, ptr, bios_size);
+        if (load_image_size(filename, ptr, bios_size) != bios_size) {
+            goto bios_error;
+        }
         x86_firmware_configure(0x100000000ULL - bios_size, ptr, bios_size);
     } else {
         memory_region_set_readonly(&x86ms->bios, !isapc_ram_fw);
@@ -1082,9 +1093,10 @@ void x86_bios_rom_reload(X86MachineState *x86ms)
 {
     int bios_size;
     const char *bios_name;
-    char *filename;
+    g_autofree char *filename = NULL;
+    uint64_t capacity = memory_region_size(&x86ms->bios);
 
-    if (memory_region_size(&x86ms->bios) == 0) {
+    if (!capacity) {
         /* if -bios is not used */
         return;
     }
@@ -1093,10 +1105,19 @@ void x86_bios_rom_reload(X86MachineState *x86ms)
     filename = qemu_find_file(QEMU_FILE_TYPE_BIOS, bios_name);
 
     bios_size = get_bios_size(x86ms, bios_name, filename);
+    if ((uint64_t)bios_size != capacity) {
+        error_report("PC BIOS '%s' size changed from %" PRIu64
+                     " to %d bytes; firmware mapping cannot be resized",
+                     bios_name, capacity, bios_size);
+        exit(EXIT_FAILURE);
+    }
 
     void *ptr = memory_region_get_ram_ptr(&x86ms->bios);
-    load_image_size(filename, ptr, bios_size);
-    x86_firmware_configure(0x100000000ULL - bios_size, ptr, bios_size);
+    if (load_image_size(filename, ptr, capacity) != bios_size) {
+        error_report("Could not reload PC BIOS '%s'", bios_name);
+        exit(EXIT_FAILURE);
+    }
+    x86_firmware_configure(0x100000000ULL - capacity, ptr, capacity);
 }
 
 void x86_bios_rom_init(X86MachineState *x86ms, const char *default_firmware,
