@@ -6,6 +6,11 @@ if [ "${1:-}" = --whp-ln-adapter-probe ]; then
     printf '%s\n' whp-qemu-ln-seed-adapter
     exit 0
 fi
+# Retain seed-management commands as explicit fresh validation requests.
+case "${1:-}" in
+    --print-seed|--check)
+        exec "${0%/*}/../../../seeds/ln.sh" "$@" ;;
+esac
 # The parent has already exercised symbolic and hardlink semantics.
 # Avoid launching the full seed adapter for every locked link operation.
 if [ "${WHP_LN_LOCKED:-0}" = 1 ]; then
