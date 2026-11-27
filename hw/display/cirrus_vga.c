@@ -186,6 +186,8 @@ struct PCICirrusVGAState {
     CirrusVGAState cirrus_vga;
     MemoryRegion legacy_io_lo;
     MemoryRegion legacy_io_hi;
+    MemoryRegion swapped_fb;
+    MemoryRegion swapped_blt;
     bool pci_legacy_decode;
     bool precise_timing;
     uint32_t reset_subsystem_id;
@@ -2764,6 +2766,103 @@ static const MemoryRegionOps cirrus_linear_bitblt_io_ops = {
     },
 };
 
+/*
+ * TRM 9.2.7.3, table 9-6: two additional 4 MiB views exchange
+ * bytes within each 16-bit word or each 32-bit DWORD, respectively.
+ * The address within a view still names the same physical VRAM.
+ */
+static unsigned cirrus_swapped_lane(hwaddr addr)
+{
+    return addr < 4 * MiB ? 1 : 3;
+}
+
+static uint64_t cirrus_swapped_fb_read(void *opaque, hwaddr addr,
+                                      unsigned size)
+{
+    uint64_t value = 0;
+    unsigned lane = cirrus_swapped_lane(addr);
+
+    for (unsigned i = 0; i < size; i++) {
+        hwaddr offset = ((addr + i) & (4 * MiB - 1)) ^ lane;
+
+        value |= cirrus_linear_read(opaque, offset, 1) << (8 * i);
+    }
+    return value;
+}
+
+/* The host BitBLT source port consumes DWORDs in swapped byte order. */
+static void cirrus_swapped_source_write(CirrusVGAState *s, hwaddr addr,
+                                        uint64_t value, unsigned size)
+{
+    unsigned lane = cirrus_swapped_lane(addr);
+
+    if (size != 4 || (addr & 3)) {
+        return;
+    }
+
+    for (unsigned i = 0; i < 4 &&
+         s->cirrus_srcptr != s->cirrus_srcptr_end; i++) {
+        *s->cirrus_srcptr++ = value >> (8 * (i ^ lane));
+        if (s->cirrus_srcptr == s->cirrus_srcptr_end) {
+            cirrus_bitblt_cputovideo_next(s);
+        }
+    }
+}
+
+static void cirrus_swapped_fb_write(void *opaque, hwaddr addr,
+                                    uint64_t value, unsigned size)
+{
+    CirrusVGAState *s = opaque;
+    unsigned lane = cirrus_swapped_lane(addr);
+    hwaddr offset = addr & (4 * MiB - 1);
+
+    /* Preserve the legacy MMIO window at the end of each FB view. */
+    bool mmio = (s->vga.sr[0x17] & 0x44) == 0x44 &&
+                offset >= 4 * MiB - 256;
+
+    if (!mmio && s->cirrus_srcptr != s->cirrus_srcptr_end &&
+        !cirrus_blt_host_paused(s) && !cirrus_blt_alternate_source(s)) {
+        cirrus_swapped_source_write(s, addr, value, size);
+        return;
+    }
+
+    for (unsigned i = 0; i < size; i++) {
+        cirrus_linear_write(s, (offset + i) ^ lane, value >> (8 * i), 1);
+    }
+}
+
+static void cirrus_swapped_blt_write(void *opaque, hwaddr addr,
+                                     uint64_t value, unsigned size)
+{
+    CirrusVGAState *s = opaque;
+
+    if (cirrus_blt_alternate_source(s) && !cirrus_blt_host_paused(s)) {
+        cirrus_swapped_source_write(s, addr, value, size);
+    }
+}
+
+static uint64_t cirrus_swapped_blt_read(void *opaque, hwaddr addr,
+                                       unsigned size)
+{
+    return UINT64_MAX;
+}
+
+static const MemoryRegionOps cirrus_swapped_fb_ops = {
+    .read = cirrus_swapped_fb_read,
+    .write = cirrus_swapped_fb_write,
+    .endianness = DEVICE_LITTLE_ENDIAN,
+    .valid = { .min_access_size = 1, .max_access_size = 4 },
+    .impl = { .min_access_size = 1, .max_access_size = 4 },
+};
+
+static const MemoryRegionOps cirrus_swapped_blt_ops = {
+    .read = cirrus_swapped_blt_read,
+    .write = cirrus_swapped_blt_write,
+    .endianness = DEVICE_LITTLE_ENDIAN,
+    .valid = { .min_access_size = 1, .max_access_size = 4 },
+    .impl = { .min_access_size = 1, .max_access_size = 4 },
+};
+
 static void map_linear_vram_bank(CirrusVGAState *s, unsigned bank)
 {
     MemoryRegion *mr = &s->cirrus_bank[bank];
@@ -2778,7 +2877,10 @@ static void map_linear_vram_bank(CirrusVGAState *s, unsigned bank)
 
 static void map_linear_vram(CirrusVGAState *s)
 {
-    if (s->bustype == CIRRUS_BUSTYPE_PCI && !s->linear_vram) {
+    /* Oversized historical allocations must not cover the B swap views. */
+    if (s->bustype == CIRRUS_BUSTYPE_PCI && !s->linear_vram &&
+        (s->gd5446_revision != CIRRUS_GD5446_REV_B ||
+         s->vga.vram_size_mb == 4)) {
         s->linear_vram = true;
         memory_region_add_subregion_overlap(&s->pci_bar, 0, &s->vga.vram, 1);
     }
@@ -3338,7 +3440,8 @@ void cirrus_init_common(CirrusVGAState *s, Object *owner,
     memory_region_init_io(&s->cirrus_linear_io, owner, &cirrus_linear_io_ops, s,
                           "cirrus-linear-io",
                           (bustype == CIRRUS_BUSTYPE_VLBFAST ||
-                           bustype == CIRRUS_BUSTYPE_VLBSLOW) ?
+                           bustype == CIRRUS_BUSTYPE_VLBSLOW ||
+                           s->gd5446_revision == CIRRUS_GD5446_REV_B) ?
                           4 * MiB : s->vga.vram_size_mb * MiB);
     memory_region_set_flush_coalesced(&s->cirrus_linear_io);
 
@@ -3452,8 +3555,20 @@ static void pci_cirrus_vga_realize(PCIDevice *dev, Error **errp)
     memory_region_init(&s->pci_bar, OBJECT(dev), "cirrus-pci-bar0",
                        high_aperture ? 32 * MiB : 16 * MiB);
 
-    /* XXX: add byte swapping apertures */
     memory_region_add_subregion(&s->pci_bar, 0, &s->cirrus_linear_io);
+    if (s->gd5446_revision == CIRRUS_GD5446_REV_B) {
+        memory_region_init_io(&d->swapped_fb, OBJECT(dev),
+                              &cirrus_swapped_fb_ops, s,
+                              "cirrus-swapped-fb", 8 * MiB);
+        memory_region_init_io(&d->swapped_blt, OBJECT(dev),
+                              &cirrus_swapped_blt_ops, s,
+                              "cirrus-swapped-blt", 8 * MiB);
+        memory_region_set_flush_coalesced(&d->swapped_fb);
+        memory_region_set_flush_coalesced(&d->swapped_blt);
+        memory_region_add_subregion(&s->pci_bar, 4 * MiB, &d->swapped_fb);
+        memory_region_add_subregion(&s->pci_bar, 20 * MiB, &d->swapped_blt);
+    }
+    /* The YUV planar-assist aperture is still unimplemented. */
     if (high_aperture) {
         memory_region_add_subregion(&s->pci_bar, 16 * MiB,
                                     &s->cirrus_linear_bitblt_io);
