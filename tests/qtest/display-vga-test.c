@@ -824,6 +824,70 @@ static void test_gd5446b_swapped_apertures(void)
     qtest_quit(qts);
 }
 
+static void test_gd5446b_source_padding(gconstpointer opaque)
+{
+    unsigned path = GPOINTER_TO_UINT(opaque);
+    const uint32_t config = 0x80002000U;
+    const uint32_t lfb = 0xe0000000U;
+    const uint32_t dst = lfb + 0x100;
+    static const uint32_t offsets[] = {
+        0x200, 0, 0x400200, 0x800200, 0x1000200,
+        0x1400200, 0x1800200,
+    };
+    static const uint32_t source_data[] = {
+        0xdeaa00ffU, 0xdeaa00ffU, 0xaadeff00U, 0xff00aadeU,
+        0xdeaa00ffU, 0xaadeff00U, 0xff00aadeU,
+    };
+    uint32_t source = path == 1 ? 0xa0200 : lfb + offsets[path];
+    uint8_t control = path >= 4 ? 0x40 : 0;
+    QTestState *qts = qtest_init("-M pc -device gd5446b-pci,addr=4,romfile=");
+
+    cirrus_pci_command(qts, config, 0);
+    qtest_outl(qts, 0xcf8, config | 0x10);
+    qtest_outl(qts, 0xcfc, lfb);
+    cirrus_pci_command(qts, config, 3);
+    qtest_outb(qts, VGA_MIS_W, VGA_MIS_COLOR | VGA_MIS_ENB_MEM_ACCESS);
+    vga_seq_write(qts, 0x06, 0x12);
+    vga_seq_write(qts, 0x07, 1);
+    vga_gfx_write(qts, 0x09, 0);
+    vga_gfx_write(qts, 0x0b, 0);
+
+    /* Three byte-packed, eight-pixel rows in a single source DWORD. */
+    vga_gfx_write(qts, 0x00, 0x11);
+    vga_gfx_write(qts, 0x01, 0x77);
+    vga_gfx_write(qts, 0x20, 7);
+    vga_gfx_write(qts, 0x22, 2);
+    vga_gfx_write(qts, 0x24, 8);
+    vga_gfx_write(qts, 0x29, 1);
+    vga_gfx_write(qts, 0x30, 0x84);
+    vga_gfx_write(qts, 0x32, 0x0d);
+    vga_gfx_write(qts, 0x33, 0);
+    vga_gfx_write(qts, 0x2f, 0);
+    qtest_writel(qts, lfb + 0x200, 0x5a5a5a5aU);
+    vga_gfx_write(qts, 0x31, control | 2);
+    g_assert_cmphex(vga_gfx_read(qts, 0x31) & 1, ==, 1);
+    qtest_writel(qts, source, source_data[path]);
+
+    g_assert_cmphex(vga_gfx_read(qts, 0x31) & 3, ==, 0);
+    for (unsigned i = 0; i < 8; i++) {
+        g_assert_cmphex(qtest_readb(qts, dst + i), ==, 0x77);
+        g_assert_cmphex(qtest_readb(qts, dst + 8 + i), ==, 0x11);
+        g_assert_cmphex(qtest_readb(qts, dst + 16 + i), ==,
+                        i % 2 ? 0x11 : 0x77);
+    }
+    /* The fourth byte was bus padding, not a new framebuffer write. */
+    g_assert_cmphex(qtest_readl(qts, lfb + 0x200), ==, 0x5a5a5a5aU);
+    qtest_writel(qts, lfb + 0x200, 0x12345678U);
+    g_assert_cmphex(qtest_readl(qts, lfb + 0x200), ==, 0x12345678U);
+
+    /* Reject a color-expanded row narrower than one complete pixel. */
+    vga_gfx_write(qts, 0x20, 0);
+    vga_gfx_write(qts, 0x30, 0xb4);
+    vga_gfx_write(qts, 0x31, control | 2);
+    g_assert_cmphex(vga_gfx_read(qts, 0x31) & 3, ==, 0);
+    qtest_quit(qts);
+}
+
 static void test_cirrus_pci_dword_expand(void)
 {
     const uint32_t config = 0x80000000U | (5U << 11);
@@ -1312,6 +1376,20 @@ int main(int argc, char **argv)
                            test_gd5446b_pc97);
             qtest_add_func("/display/pci/cirrus-gd5446b-swapped-apertures",
                            test_gd5446b_swapped_apertures);
+            qtest_add_data_func("/display/pci/cirrus-gd5446b-padding-native",
+                                GUINT_TO_POINTER(0), test_gd5446b_source_padding);
+            qtest_add_data_func("/display/pci/cirrus-gd5446b-padding-banked",
+                                GUINT_TO_POINTER(1), test_gd5446b_source_padding);
+            qtest_add_data_func("/display/pci/cirrus-gd5446b-padding-word-swap",
+                                GUINT_TO_POINTER(2), test_gd5446b_source_padding);
+            qtest_add_data_func("/display/pci/cirrus-gd5446b-padding-dword-swap",
+                                GUINT_TO_POINTER(3), test_gd5446b_source_padding);
+            qtest_add_data_func("/display/pci/cirrus-gd5446b-padding-alternate",
+                                GUINT_TO_POINTER(4), test_gd5446b_source_padding);
+            qtest_add_data_func("/display/pci/cirrus-gd5446b-padding-alternate-word-swap",
+                                GUINT_TO_POINTER(5), test_gd5446b_source_padding);
+            qtest_add_data_func("/display/pci/cirrus-gd5446b-padding-alternate-dword-swap",
+                                GUINT_TO_POINTER(6), test_gd5446b_source_padding);
             qtest_add_func("/display/pci/cirrus-gd5446b-overlay-registers",
                            test_gd5446b_overlay_registers);
             qtest_add_func("/display/pci/cirrus-gd5446b-vport",
