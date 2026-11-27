@@ -65,6 +65,7 @@
 #include "migration/global_state.h"
 #include "migration/misc.h"
 #include "system/runstate.h"
+#include "system/system.h"
 #include "system/numa.h"
 #include "hw/hyperv/vmbus-bridge.h"
 #include "hw/mem/nvdimm.h"
@@ -394,6 +395,27 @@ static void pc_set_chipset_controllers(Object *obj, bool value, Error **errp)
     pcms->chipset_controllers_explicit = true;
 }
 
+static int pc_get_chipset_controllers_mode(Object *obj, Error **errp)
+{
+    PCMachineState *pcms = PC_MACHINE(obj);
+
+    if (!pcms->chipset_controllers_explicit) {
+        return ON_OFF_AUTO_AUTO;
+    }
+    return pcms->chipset_controllers ? ON_OFF_AUTO_ON : ON_OFF_AUTO_OFF;
+}
+
+static void pc_set_chipset_controllers_mode(Object *obj, int value,
+                                            Error **errp)
+{
+    PCMachineState *pcms = PC_MACHINE(obj);
+
+    pcms->chipset_controllers_explicit = value != ON_OFF_AUTO_AUTO;
+    pcms->chipset_controllers = value == ON_OFF_AUTO_ON ||
+        (value == ON_OFF_AUTO_AUTO &&
+         PC_MACHINE_GET_CLASS(pcms)->default_chipset_controllers);
+}
+
 static bool pc_get_pcmcia(Object *obj, Error **errp)
 {
     return PC_MACHINE(obj)->pcmcia_enabled;
@@ -401,7 +423,25 @@ static bool pc_get_pcmcia(Object *obj, Error **errp)
 
 static void pc_set_pcmcia(Object *obj, bool value, Error **errp)
 {
-    PC_MACHINE(obj)->pcmcia_enabled = value;
+    PCMachineState *pcms = PC_MACHINE(obj);
+
+    pcms->pcmcia_mode = value ? ON_OFF_AUTO_ON : ON_OFF_AUTO_OFF;
+    pcms->pcmcia_enabled = value;
+}
+
+static int pc_get_pcmcia_mode(Object *obj, Error **errp)
+{
+    return PC_MACHINE(obj)->pcmcia_mode;
+}
+
+static void pc_set_pcmcia_mode(Object *obj, int value, Error **errp)
+{
+    PCMachineState *pcms = PC_MACHINE(obj);
+
+    pcms->pcmcia_mode = value;
+    pcms->pcmcia_enabled = value == ON_OFF_AUTO_ON ||
+        (value == ON_OFF_AUTO_AUTO && PC_MACHINE_GET_CLASS(pcms)->laptop &&
+         defaults_enabled() && module_object_class_by_name("i82092aa"));
 }
 
 static int pc_get_south_bridge(Object *obj, Error **errp)
@@ -495,10 +535,19 @@ static void pc_i440fx_machine_options(MachineClass *m)
                                    pc_set_chipset_controllers);
     object_class_property_set_description(oc, "chipset-controllers",
         "Select explicit 8259A, 8254, 82C37 and userspace 82093AA profiles");
+    object_class_property_add_enum(oc, "chipset-controllers-mode", "OnOffAuto",
+        &OnOffAuto_lookup, pc_get_chipset_controllers_mode,
+        pc_set_chipset_controllers_mode);
+    object_class_property_set_description(oc, "chipset-controllers-mode",
+        "Named controller policy (on/off/auto; auto follows profile and accel)");
     object_class_property_add_bool(oc, "pcmcia",
                                    pc_get_pcmcia, pc_set_pcmcia);
     object_class_property_set_description(oc, "pcmcia",
         "Enable automatic Intel 82092AA PCI-to-PCMCIA bridge creation");
+    object_class_property_add_enum(oc, "pcmcia-mode", "OnOffAuto",
+        &OnOffAuto_lookup, pc_get_pcmcia_mode, pc_set_pcmcia_mode);
+    object_class_property_set_description(oc, "pcmcia-mode",
+        "PCMCIA policy (on/off/auto; auto follows profile and default devices)");
     compat_props_add(m->compat_props,
                      pc_piix_compat_defaults, pc_piix_compat_defaults_len);
 }

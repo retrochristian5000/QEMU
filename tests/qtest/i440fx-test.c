@@ -1079,6 +1079,19 @@ static void test_pc_laptop_profile(gconstpointer opaque)
     qtest_quit(qts);
 }
 
+static void test_pc_hpet_mode(gconstpointer opaque)
+{
+    const char *machine = opaque;
+    QTestState *qts = qtest_initf("-M %s -nodefaults", machine);
+    QDict *reply = qtest_qmp(qts, "{'execute':'qom-get','arguments':"
+                                  "{'path':'/machine','property':'hpet'}}");
+    bool enabled = strstr(machine, "hpet-mode=on") != NULL;
+
+    g_assert_cmpint(qdict_get_bool(reply, "return"), ==, enabled);
+    qobject_unref(reply);
+    qtest_quit(qts);
+}
+
 int main(int argc, char **argv)
 {
     TestData data;
@@ -1091,6 +1104,10 @@ int main(int argc, char **argv)
         { "pc-i440fx-11.1", false },
         { "pc,chipset-controllers=off", false },
         { "generic-pc,chipset-controllers=on", true },
+        { "pc,chipset-controllers-mode=auto", true },
+        { "pc,chipset-controllers-mode=off", false },
+        { "generic-pc,chipset-controllers-mode=auto", false },
+        { "generic-pc,chipset-controllers-mode=on", true },
     };
 
     static const PCPeripheralProfileTest peripherals[] = {
@@ -1134,9 +1151,22 @@ int main(int argc, char **argv)
         { "-M laptop-pc,pcmcia=on -nodefaults", true, false },
         { "-M pc", false, true },
         { "-M pc,pcmcia=on", true, true },
+        { "-M laptop-pc,pcmcia-mode=auto,fdc-mode=auto", true, false },
+        { "-M laptop-pc,pcmcia-mode=off,fdc-mode=on", false, true },
+        { "-M pc,pcmcia-mode=on,fdc-mode=off", true, false },
+        { "-M laptop-pc,pcmcia-mode=auto -nodefaults", false, false },
     };
 
     data.num_cpus = 1;
+
+    if (qtest_has_device("hpet")) {
+        qtest_add_data_func("i440fx/hpet/off", "pc,hpet-mode=off",
+                            test_pc_hpet_mode);
+        qtest_add_data_func("i440fx/hpet/laptop-auto", "laptop-pc,hpet-mode=auto",
+                            test_pc_hpet_mode);
+        qtest_add_data_func("i440fx/hpet/laptop-on", "laptop-pc,hpet-mode=on",
+                            test_pc_hpet_mode);
+    }
 
     if (qtest_has_device("i82092aa") && qtest_has_device("i82078")) {
         for (size_t i = 0; i < ARRAY_SIZE(laptops); i++) {

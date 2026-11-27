@@ -33,7 +33,37 @@ when ISA FDC support is available. The named userspace I/O APIC is
 existing implementation. Generic and versioned machines retain their
 previous defaults unless explicitly overridden.
 
-Optional devices can be configured independently::
+Optional devices can be configured independently. Use
+``-machine pc,help`` (or ``-M pc,help``) to list supported properties.
+
+The existing boolean properties retain their QOM/QMP types and accept
+``on`` or ``off`` as before. The corresponding policy properties add
+``auto`` without breaking callers that read boolean values:
+
+* ``chipset-controllers-mode=on|off|auto``: select named controllers,
+  generic controllers, or the profile preference with accelerator fallback.
+* ``fdc-mode=on|off|auto``: permit automatic floppy controller creation,
+  disable it, or follow the profile and explicitly supplied legacy drives.
+* ``pcmcia-mode=on|off|auto``: require the bridge, omit it, or follow the
+  profile, build support and ``-nodefaults``.
+* ``hpet-mode=on|off|auto``: enable, disable, or follow the profile and
+  build support.
+* ``pit-strict-programming=on|off|auto``: override the userspace PIT
+  programming behavior, or leave its device properties unchanged.
+  Explicit on/off overrides the corresponding ``-global`` device setting;
+  on requires an enabled userspace PIT.
+
+Do not specify both the legacy boolean and its policy property in the
+same machine configuration; use one spelling per feature. Auto does
+not mean every feature is enabled. Host battery telemetry stays
+explicitly opt-in and is not controlled by an automatic policy.
+
+For example::
+
+    -machine pc,chipset-controllers-mode=auto,hpet-mode=off,pit-strict-programming=on
+    -machine pc,fdc-mode=off,pcmcia-mode=on
+
+The legacy spellings remain valid::
 
     -machine pc,fdc=off -nic none
     -machine pc,fdc=on -nic user,model=am79c970a-pci
@@ -105,8 +135,8 @@ different socket configuration, disable automatic creation first::
     -machine laptop-pc,pcmcia=off -device i82092aa,id=pcic,sockets=1
 
 The floppy controller and HPET are off by default on the laptop.
-Explicit ``fdc=on`` restores the Intel 82078 controller; use it with
-legacy floppy images. ``hpet=on`` restores the timer if built. The host
+Explicit ``fdc=on`` restores the Intel 82078 controller; automatic
+mode also enables it when a legacy floppy drive is explicitly supplied. ``hpet=on`` restores the timer if built. The host
 battery remains opt-in and is never a prerequisite for running the
 laptop profile on a desktop host::
 
@@ -996,6 +1026,9 @@ Generic and versioned profiles retain their previous programming
 behavior. For a controlled comparison, disable only this change::
 
     -machine pc -global i8254.strict-programming=off
+
+The equivalent machine-level override is
+``-machine pc,pit-strict-programming=off``.
 
 The oscillator remains 1193182 Hz, with guest-programmed divisors and
 absolute virtual-clock deadlines. The BIOS divisor 65536 produces about

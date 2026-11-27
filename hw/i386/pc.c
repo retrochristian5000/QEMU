@@ -1138,10 +1138,20 @@ static void pc_superio_init(PCMachineState *pcms, ISABus *isa_bus,
                              PC_MACHINE_GET_CLASS(pcms)->default_serial_type);
     parallel_hds_isa_init(isa_bus, MAX_PARALLEL_PORTS);
 
+    if (pcms->fdc_mode == ON_OFF_AUTO_ON &&
+        !module_object_class_by_name(TYPE_ISA_FDC)) {
+        error_setg(errp, "fdc=on requires ISA floppy controller support");
+        return;
+    }
+
     for (i = 0; i < MAX_FD; i++) {
         fd[i] = drive_get(IF_FLOPPY, 0, i);
+        if (pcms->fdc_mode == ON_OFF_AUTO_AUTO && fd[i] &&
+            !fd[i]->is_default) {
+            pcms->fdc_enabled = true;
+        }
         if (!pcms->fdc_enabled && fd[i] && !fd[i]->is_default) {
-            error_setg(errp, "fdc=off conflicts with a legacy floppy drive; "
+            error_setg(errp, "Floppy controller disabled with a legacy drive; "
                        "enable fdc or attach an explicit controller and drive");
             return;
         }
@@ -1265,14 +1275,22 @@ void pc_basic_device_init(struct PCMachineState *pcms,
     set_boot_dev(pcms, MC146818_RTC(rtc_state),
                  MACHINE(pcms)->boot_config.order, &error_fatal);
 
+    if (pcms->pit_strict_programming == ON_OFF_AUTO_ON &&
+        (xen_enabled() || x86ms->pit == ON_OFF_AUTO_OFF ||
+         kvm_pit_in_kernel())) {
+        error_report("pit-strict-programming=on requires a userspace PIT");
+        exit(EXIT_FAILURE);
+    }
+
     if (!xen_enabled() &&
         (x86ms->pit == ON_OFF_AUTO_AUTO || x86ms->pit == ON_OFF_AUTO_ON)) {
         if (kvm_pit_in_kernel()) {
             pit = kvm_pit_init(isa_bus, 0x40);
         } else {
-            pit = i8254_pit_init_type(isa_bus, 0x40, pit_isa_irq, pit_alt_irq,
-                                     pcms->chipset_controllers ?
-                                     TYPE_INTEL_8254 : TYPE_I8254);
+            pit = i8254_pit_init_type_options(
+                isa_bus, 0x40, pit_isa_irq, pit_alt_irq,
+                pcms->chipset_controllers ? TYPE_INTEL_8254 : TYPE_I8254,
+                pcms->pit_strict_programming);
         }
         if (hpet) {
             /* connect PIT to output control line of the HPET */
@@ -1601,7 +1619,25 @@ static bool pc_machine_get_fdc(Object *obj, Error **errp)
 
 static void pc_machine_set_fdc(Object *obj, bool value, Error **errp)
 {
-    PC_MACHINE(obj)->fdc_enabled = value;
+    PCMachineState *pcms = PC_MACHINE(obj);
+
+    pcms->fdc_mode = value ? ON_OFF_AUTO_ON : ON_OFF_AUTO_OFF;
+    pcms->fdc_enabled = value;
+}
+
+static int pc_machine_get_fdc_mode(Object *obj, Error **errp)
+{
+    return PC_MACHINE(obj)->fdc_mode;
+}
+
+static void pc_machine_set_fdc_mode(Object *obj, int value, Error **errp)
+{
+    PCMachineState *pcms = PC_MACHINE(obj);
+
+    pcms->fdc_mode = value;
+    pcms->fdc_enabled = value == ON_OFF_AUTO_ON ||
+                         (value == ON_OFF_AUTO_AUTO &&
+                          !PC_MACHINE_GET_CLASS(pcms)->laptop);
 }
 
 static bool pc_machine_get_fd_bootchk(Object *obj, Error **errp)
@@ -1657,7 +1693,24 @@ static void pc_machine_set_hpet(Object *obj, bool value, Error **errp)
 {
     PCMachineState *pcms = PC_MACHINE(obj);
 
+    pcms->hpet_mode = value ? ON_OFF_AUTO_ON : ON_OFF_AUTO_OFF;
     pcms->hpet_enabled = value;
+}
+
+static int pc_machine_get_hpet_mode(Object *obj, Error **errp)
+{
+    return PC_MACHINE(obj)->hpet_mode;
+}
+
+static void pc_machine_set_hpet_mode(Object *obj, int value, Error **errp)
+{
+    PCMachineState *pcms = PC_MACHINE(obj);
+
+    pcms->hpet_mode = value;
+    pcms->hpet_enabled = value == ON_OFF_AUTO_ON ||
+                         (value == ON_OFF_AUTO_AUTO &&
+                          !PC_MACHINE_GET_CLASS(pcms)->laptop &&
+                         module_object_class_by_name(TYPE_HPET));
 }
 
 static bool pc_machine_get_i8042(Object *obj, Error **errp)
@@ -1672,6 +1725,17 @@ static void pc_machine_set_i8042(Object *obj, bool value, Error **errp)
     PCMachineState *pcms = PC_MACHINE(obj);
 
     pcms->i8042_enabled = value;
+}
+
+static int pc_machine_get_pit_strict_programming(Object *obj, Error **errp)
+{
+    return PC_MACHINE(obj)->pit_strict_programming;
+}
+
+static void pc_machine_set_pit_strict_programming(Object *obj, int value,
+                                                  Error **errp)
+{
+    PC_MACHINE(obj)->pit_strict_programming = value;
 }
 
 static bool pc_machine_get_host_battery(Object *obj, Error **errp)
@@ -1813,6 +1877,10 @@ static void pc_machine_initfn(Object *obj)
     pcms->smbus_enabled = true;
     pcms->sata_enabled = true;
     pcms->i8042_enabled = true;
+    pcms->fdc_mode = ON_OFF_AUTO_AUTO;
+    pcms->hpet_mode = ON_OFF_AUTO_AUTO;
+    pcms->pcmcia_mode = ON_OFF_AUTO_AUTO;
+    pcms->pit_strict_programming = ON_OFF_AUTO_AUTO;
     pcms->fdc_enabled = !pcmc->laptop;
     pcms->pcmcia_enabled = pcmc->laptop && defaults_enabled() &&
                            module_object_class_by_name("i82092aa");
@@ -1935,6 +2003,15 @@ static void pc_machine_class_init(ObjectClass *oc, const void *data)
         pc_machine_get_hpet, pc_machine_set_hpet);
     object_class_property_set_description(oc, "hpet",
         "Enable/disable high precision event timer emulation");
+    object_class_property_add_enum(oc, "hpet-mode", "OnOffAuto",
+        &OnOffAuto_lookup, pc_machine_get_hpet_mode, pc_machine_set_hpet_mode);
+    object_class_property_set_description(oc, "hpet-mode",
+        "HPET policy (on/off/auto; auto follows profile and build support)");
+    object_class_property_add_enum(oc, "pit-strict-programming", "OnOffAuto",
+        &OnOffAuto_lookup, pc_machine_get_pit_strict_programming,
+        pc_machine_set_pit_strict_programming);
+    object_class_property_set_description(oc, "pit-strict-programming",
+        "Userspace PIT initial-count handling (on/off/auto)");
 
     object_class_property_add_bool(oc, "host-battery",
         pc_machine_get_host_battery, pc_machine_set_host_battery);
@@ -1966,6 +2043,10 @@ static void pc_machine_class_init(ObjectClass *oc, const void *data)
         pc_machine_get_fdc, pc_machine_set_fdc);
     object_class_property_set_description(oc, "fdc",
         "Enable automatic floppy disk controller creation");
+    object_class_property_add_enum(oc, "fdc-mode", "OnOffAuto",
+        &OnOffAuto_lookup, pc_machine_get_fdc_mode, pc_machine_set_fdc_mode);
+    object_class_property_set_description(oc, "fdc-mode",
+        "Floppy controller policy (on/off/auto; auto follows profile and drives)");
 
     object_class_property_add_bool(oc, "fd-bootchk",
         pc_machine_get_fd_bootchk,

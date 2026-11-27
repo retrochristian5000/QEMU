@@ -43,6 +43,10 @@ typedef struct PCMachineState {
     /* Configuration options: */
     uint64_t max_ram_below_4g;
     OnOffAuto vmport;
+    OnOffAuto fdc_mode;
+    OnOffAuto hpet_mode;
+    OnOffAuto pcmcia_mode;
+    OnOffAuto pit_strict_programming;
     SmbiosEntryPointType smbios_entry_point_type;
     const char *south_bridge;
 

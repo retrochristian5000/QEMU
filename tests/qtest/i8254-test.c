@@ -413,9 +413,10 @@ static void test_pcspk_port61(gconstpointer opaque)
     qtest_quit(s);
 }
 
-static void test_pc_reprogram_pending(void)
+static void test_pc_reprogram_pending(gconstpointer opaque)
 {
-    QTestState *s = qtest_init("-M pc,hpet=off -nodefaults");
+    const char *machine = opaque;
+    QTestState *s = qtest_initf("-M %s,hpet=off -nodefaults", machine);
     uint64_t elapsed = 0;
 
     qtest_irq_intercept_in(s, "ioapic");
@@ -451,10 +452,10 @@ static void test_pc_reprogram_pending(void)
     qtest_quit(s);
 }
 
-static void test_pc_reprogram_compat(void)
+static void test_pc_reprogram_compat(gconstpointer opaque)
 {
-    QTestState *s = qtest_init("-M pc,hpet=off -nodefaults "
-                              "-global i8254.strict-programming=off");
+    const char *args = opaque;
+    QTestState *s = qtest_initf("%s -nodefaults", args);
     uint64_t elapsed = 0;
 
     qtest_irq_intercept_in(s, "ioapic");
@@ -508,8 +509,17 @@ int main(int argc, char **argv)
     qtest_add_func("/i8254/mode3/bios-tick-latch", test_bios_tick_latch);
     qtest_add_func("/i8254/mode-aliases", test_mode_aliases);
     qtest_add_func("/i8254/reprogram-latch", test_reprogram_latch);
-    qtest_add_func("/i8254/reprogram/pending", test_pc_reprogram_pending);
-    qtest_add_func("/i8254/reprogram/compat", test_pc_reprogram_compat);
+    qtest_add_data_func("/i8254/reprogram/pending", "pc",
+                        test_pc_reprogram_pending);
+    qtest_add_data_func("/i8254/reprogram/machine-on",
+                        "generic-pc,pit-strict-programming=on",
+                        test_pc_reprogram_pending);
+    qtest_add_data_func("/i8254/reprogram/compat",
+                        "-M pc,hpet=off -global i8254.strict-programming=off",
+                        test_pc_reprogram_compat);
+    qtest_add_data_func("/i8254/reprogram/machine-off",
+                        "-M pc,hpet=off,pit-strict-programming=off",
+                        test_pc_reprogram_compat);
     qtest_add_data_func("/i8254/cadence/bios", GUINT_TO_POINTER(65536),
                         test_pc_periodic_cadence);
     qtest_add_data_func("/i8254/cadence/1193", GUINT_TO_POINTER(1193),
