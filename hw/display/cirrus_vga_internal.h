@@ -112,6 +112,17 @@ typedef struct CirrusVGAState {
     int bustype;
 } CirrusVGAState;
 
+/*
+ * GD5446 TRM 8.2 and 8.37: HDR mode 0x4a with SR7[3:0] = 7
+ * routes two successive indexed pixels per CRTC pixel clock.
+ */
+static inline bool cirrus_gd5446_double_clock_palette(const CirrusVGAState *s)
+{
+    return s->device_id == CIRRUS_ID_CLGD5446 &&
+           (s->vga.sr[7] & 0x0f) == 0x07 &&
+           (s->cirrus_hidden_dac_data & 0xcf) == 0x4a;
+}
+
 void cirrus_init_common(CirrusVGAState *s, Object *owner,
                         int device_id, int bustype,
                         MemoryRegion *system_memory, MemoryRegion *system_io);
