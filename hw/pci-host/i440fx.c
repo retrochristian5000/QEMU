@@ -56,6 +56,9 @@ struct I440FXState {
     uint64_t above_4g_mem_size;
     uint64_t pci_hole64_size;
     bool pci_hole64_fix;
+    bool pam_spaces_initialized;
+    AddressSpace pam_ram_as;
+    AddressSpace pam_pci_as;
 
     char *pci_type;
 };
@@ -411,12 +414,21 @@ static void i440fx_pcihost_realize(DeviceState *dev, Error **errp)
     object_property_add_const_link(qdev_get_machine(), "smram",
                                    OBJECT(&f->smram));
 
-    init_pam(&f->pam_regions[0], OBJECT(d), s->ram_memory, s->system_memory,
-             s->pci_address_space, PAM_BIOS_BASE, PAM_BIOS_SIZE);
-    for (i = 0; i < ARRAY_SIZE(f->pam_regions) - 1; ++i) {
-        init_pam(&f->pam_regions[i + 1], OBJECT(d), s->ram_memory,
-                 s->system_memory, s->pci_address_space,
-                 PAM_EXPAN_BASE + i * PAM_EXPAN_SIZE, PAM_EXPAN_SIZE);
+    if (f->strict_pam_write_only && i440fx_is_native(d)) {
+        address_space_init(&s->pam_ram_as, s->ram_memory, "pam-dram");
+        address_space_init(&s->pam_pci_as, s->pci_address_space, "pam-pci");
+        s->pam_spaces_initialized = true;
+    }
+    for (i = 0; i < ARRAY_SIZE(f->pam_regions); ++i) {
+        uint32_t start = i ? PAM_EXPAN_BASE + (i - 1) * PAM_EXPAN_SIZE
+                           : PAM_BIOS_BASE;
+        uint32_t size = i ? PAM_EXPAN_SIZE : PAM_BIOS_SIZE;
+
+        init_pam_write_only(&f->pam_regions[i], OBJECT(d), s->ram_memory,
+                            s->system_memory, s->pci_address_space, start,
+                            size,
+                            s->pam_spaces_initialized ? &s->pam_ram_as : NULL,
+                            s->pam_spaces_initialized ? &s->pam_pci_as : NULL);
     }
 
     if (!f->skip_legacy_coreboot_ram_size) {
@@ -436,6 +448,8 @@ static const Property i440fx_device_props[] = {
                      strict_reserved_config, false),
     DEFINE_PROP_BOOL("strict-shadow-reset", PCII440FXState,
                      strict_shadow_reset, false),
+    DEFINE_PROP_BOOL("strict-pam-write-only", PCII440FXState,
+                     strict_pam_write_only, false),
 };
 
 static void i440fx_class_init(ObjectClass *klass, const void *data)
@@ -519,11 +533,22 @@ static void i440fx_pcihost_class_init(ObjectClass *klass, const void *data)
                               NULL, NULL, NULL);
 }
 
+static void i440fx_pcihost_finalize(Object *obj)
+{
+    I440FXState *s = I440FX_PCI_HOST_BRIDGE(obj);
+
+    if (s->pam_spaces_initialized) {
+        address_space_destroy(&s->pam_pci_as);
+        address_space_destroy(&s->pam_ram_as);
+    }
+}
+
 static const TypeInfo i440fx_pcihost_info = {
     .name          = TYPE_I440FX_PCI_HOST_BRIDGE,
     .parent        = TYPE_PCI_HOST_BRIDGE,
     .instance_size = sizeof(I440FXState),
     .instance_init = i440fx_pcihost_initfn,
+    .instance_finalize = i440fx_pcihost_finalize,
     .class_init    = i440fx_pcihost_class_init,
 };
 

@@ -934,6 +934,48 @@ static void test_i440fx_hpet_intcap(void)
     qtest_quit(qts);
 }
 
+static void test_pc_pam_write_only(void)
+{
+    QTestState *qts = qtest_init("-M pc -m 64M -nodefaults -vga none");
+    QPCIBus *bus = qpci_new_pc(qts, NULL);
+    QPCIDevice *dev = qpci_device_find(bus, QPCI_DEVFN(0, 0));
+
+    g_assert_nonnull(dev);
+    for (unsigned i = 1; i <= 13; i++) {
+        uint32_t start = i == 1 ? 0xf0000 : 0xc0000 + (i - 2) * 0x4000;
+        uint32_t size = i == 1 ? 0x10000 : 0x4000;
+        uint32_t original = qtest_readl(qts, start);
+        uint8_t last = qtest_readb(qts, start + size - 1);
+        uint32_t shadow = original ^ UINT32_MAX;
+
+        pam_set(dev, i, PAM_WE);
+        qtest_writel(qts, start, shadow);
+        qtest_writeb(qts, start + size - 1, last ^ 0xff);
+        /* The original ROM must remain readable throughout the copy. */
+        g_assert_cmphex(qtest_readl(qts, start), ==, original);
+        g_assert_cmphex(qtest_readb(qts, start + size - 1), ==, last);
+
+        pam_set(dev, i, PAM_RE | PAM_WE);
+        g_assert_cmphex(qtest_readl(qts, start), ==, shadow);
+        g_assert_cmphex(qtest_readb(qts, start + size - 1), ==, last ^ 0xff);
+        pam_set(dev, i, PAM_RE);
+        g_assert_cmphex(qtest_readl(qts, start), ==, shadow);
+        pam_set(dev, i, 0);
+        g_assert_cmphex(qtest_readl(qts, start), ==, original);
+    }
+
+    /* Reset from the write-only state restores ROM forwarding. */
+    uint32_t original = qtest_readl(qts, 0xf0000);
+    pam_set(dev, 1, PAM_WE);
+    qtest_system_reset(qts);
+    g_assert_cmphex(qpci_config_readb(dev, 0x59), ==, 0);
+    g_assert_cmphex(qtest_readl(qts, 0xf0000), ==, original);
+
+    g_free(dev);
+    qpci_free_pc(bus);
+    qtest_quit(qts);
+}
+
 static void test_pc_shadow_reset(void)
 {
     QTestState *qts = qtest_init("-M pc -m 64M -nodefaults -vga none");
@@ -1513,6 +1555,7 @@ int main(int argc, char **argv)
     qtest_add_data_func("i440fx/pam", &data, test_i440fx_pam);
     qtest_add_func("i440fx/timing-config", test_i440fx_timing_config);
     qtest_add_func("i440fx/pc-shadow-reset", test_pc_shadow_reset);
+    qtest_add_func("i440fx/pc-pam-write-only", test_pc_pam_write_only);
     for (size_t i = 0; i < ARRAY_SIZE(bridges); i++) {
         g_autofree char *path = g_strdup_printf("i440fx/bridge-profile/%zu", i);
 

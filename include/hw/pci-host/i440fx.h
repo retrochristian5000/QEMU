@@ -35,6 +35,7 @@ struct PCII440FXState {
     bool strict_timing_config;
     bool strict_reserved_config;
     bool strict_shadow_reset;
+    bool strict_pam_write_only;
 };
 
 void i440fx_update_memory_mappings(PCII440FXState *d, uint8_t smram);

@@ -28,11 +28,52 @@
  */
 
 #include "qemu/osdep.h"
+#include "qemu/bswap.h"
 #include "hw/pci-host/pam.h"
 
-void init_pam(PAMMemoryRegion *mem, Object *owner, MemoryRegion *ram_memory,
-              MemoryRegion *system_memory, MemoryRegion *pci_address_space,
-              uint32_t start, uint32_t size)
+/*
+ * Intel 82441FX datasheet 290549-001, section 3.2.18: WE=1, RE=0
+ * directs writes to DRAM and reads to PCI, allowing in-place ROM shadowing.
+ * Use separate address spaces to avoid reentering the system PAM mapping.
+ */
+static MemTxResult pam_write_only_read(void *opaque, hwaddr addr,
+                                       uint64_t *data, unsigned size,
+                                       MemTxAttrs attrs)
+{
+    PAMMemoryRegion *mem = opaque;
+    uint64_t value = 0;
+    MemTxResult ret;
+
+    ret = address_space_read(mem->pci_as, mem->start + addr, attrs,
+                             &value, size);
+    *data = le64_to_cpu(value);
+    return ret;
+}
+
+static MemTxResult pam_write_only_write(void *opaque, hwaddr addr,
+                                        uint64_t data, unsigned size,
+                                        MemTxAttrs attrs)
+{
+    PAMMemoryRegion *mem = opaque;
+    uint64_t value = cpu_to_le64(data);
+
+    return address_space_write(mem->ram_as, mem->start + addr, attrs,
+                               &value, size);
+}
+
+static const MemoryRegionOps pam_write_only_ops = {
+    .read_with_attrs = pam_write_only_read,
+    .write_with_attrs = pam_write_only_write,
+    .endianness = DEVICE_LITTLE_ENDIAN,
+    .valid = { .min_access_size = 1, .max_access_size = 8, .unaligned = true },
+    .impl = { .min_access_size = 1, .max_access_size = 8, .unaligned = true },
+};
+
+void init_pam_write_only(PAMMemoryRegion *mem, Object *owner,
+                         MemoryRegion *ram_memory, MemoryRegion *system_memory,
+                         MemoryRegion *pci_address_space, uint32_t start,
+                         uint32_t size, AddressSpace *ram_as,
+                         AddressSpace *pci_as)
 {
     int i;
 
@@ -44,11 +85,19 @@ void init_pam(PAMMemoryRegion *mem, Object *owner, MemoryRegion *ram_memory,
                              start, size);
     memory_region_set_readonly(&mem->alias[1], true);
 
-    /* XXX: should distinguish read/write cases */
     memory_region_init_alias(&mem->alias[0], owner, "pam-pci", pci_address_space,
                              start, size);
-    memory_region_init_alias(&mem->alias[2], owner, "pam-pci", ram_memory,
-                             start, size);
+    if (ram_as && pci_as) {
+        mem->ram_as = ram_as;
+        mem->pci_as = pci_as;
+        mem->start = start;
+        memory_region_init_io(&mem->alias[2], owner, &pam_write_only_ops,
+                              mem, "pam-write-only", size);
+    } else {
+        /* Preserve the legacy mapping for existing machine profiles. */
+        memory_region_init_alias(&mem->alias[2], owner, "pam-pci", ram_memory,
+                                 start, size);
+    }
 
     memory_region_transaction_begin();
     for (i = 0; i < 4; ++i) {
@@ -59,6 +108,14 @@ void init_pam(PAMMemoryRegion *mem, Object *owner, MemoryRegion *ram_memory,
     memory_region_transaction_commit();
     /* No alias is enabled until the first register update. */
     mem->current = ARRAY_SIZE(mem->alias);
+}
+
+void init_pam(PAMMemoryRegion *mem, Object *owner, MemoryRegion *ram_memory,
+              MemoryRegion *system_memory, MemoryRegion *pci_address_space,
+              uint32_t start, uint32_t size)
+{
+    init_pam_write_only(mem, owner, ram_memory, system_memory,
+                        pci_address_space, start, size, NULL, NULL);
 }
 
 void pam_update(PAMMemoryRegion *pam, int idx, uint8_t val)

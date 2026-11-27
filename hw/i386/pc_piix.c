@@ -641,6 +641,7 @@ static void pc_set_ide_cd_model(Object *obj, const char *value, Error **errp)
 
 static GlobalProperty pc_desktop_defaults[] = {
     { TYPE_I440FX_PCI_DEVICE, "strict-shadow-reset", "on" },
+    { TYPE_I440FX_PCI_DEVICE, "strict-pam-write-only", "on" },
 };
 
 static void pc_hardware_machine_options(MachineClass *m)

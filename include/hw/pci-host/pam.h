@@ -85,11 +85,18 @@
 typedef struct PAMMemoryRegion {
     MemoryRegion alias[4];  /* index = PAM value */
     unsigned current;
+    AddressSpace *ram_as;
+    AddressSpace *pci_as;
+    uint32_t start;
 } PAMMemoryRegion;
 
 void init_pam(PAMMemoryRegion *mem, Object *owner, MemoryRegion *ram,
               MemoryRegion *system, MemoryRegion *pci,
               uint32_t start, uint32_t size);
+void init_pam_write_only(PAMMemoryRegion *mem, Object *owner,
+                         MemoryRegion *ram, MemoryRegion *system,
+                         MemoryRegion *pci, uint32_t start, uint32_t size,
+                         AddressSpace *ram_as, AddressSpace *pci_as);
 void pam_update(PAMMemoryRegion *mem, int idx, uint8_t val);
 
 #endif /* QEMU_PAM_H */
