@@ -933,6 +933,55 @@ static void cirrus_crtc_write(QTestState *qts, uint8_t index, uint8_t value)
     qtest_outb(qts, VGA_CRT_DC, value);
 }
 
+static void test_gd5446b_overlay_registers(void)
+{
+    const uint32_t config = 0x80002000U;
+    const uint32_t mmio = 0xe2000000U;
+    static const struct {
+        uint8_t index, mask;
+    } registers[] = {
+        { 0x31, 0xff }, { 0x32, 0xff }, { 0x33, 0xff },
+        { 0x34, 0xff }, { 0x35, 0xff }, { 0x36, 0x3f },
+        { 0x37, 0xff }, { 0x38, 0xff }, { 0x39, 0x0f },
+        { 0x3a, 0xff }, { 0x3b, 0xff }, { 0x3c, 0x2f },
+        { 0x3d, 0xff }, { 0x3e, 0xbf }, { 0x3f, 0x33 },
+        { 0x58, 0x6f }, { 0x59, 0xff }, { 0x5a, 0xff },
+        { 0x5d, 0x3f }, { 0x5e, 0x37 },
+    };
+    QTestState *qts = qtest_init("-M pc -device gd5446b-pci,addr=4,romfile=,"
+                                "pci-legacy-decode=on");
+
+    qtest_outl(qts, 0xcf8, config | 0x14);
+    qtest_outl(qts, 0xcfc, mmio);
+    cirrus_pci_command(qts, config, 3);
+    qtest_outb(qts, VGA_MIS_W, VGA_MIS_COLOR | VGA_MIS_ENB_MEM_ACCESS);
+    vga_seq_write(qts, 0x06, 0x12);
+
+    for (unsigned i = 0; i < ARRAY_SIZE(registers); i++) {
+        uint8_t index = registers[i].index;
+
+        g_assert_cmphex(vga_crtc_read(qts, index), ==, 0);
+        cirrus_crtc_write(qts, index, 0xff);
+        g_assert_cmphex(vga_crtc_read(qts, index), ==, registers[i].mask);
+    }
+
+    /* Relocated CRTC ports must address the same video-window state. */
+    qtest_writeb(qts, mmio + 0x14, 0x3e);
+    qtest_writeb(qts, mmio + 0x15, 0x0b);
+    g_assert_cmphex(vga_crtc_read(qts, 0x3e), ==, 0x0b);
+    cirrus_crtc_write(qts, 0x3e, 0);
+    g_assert_cmphex(qtest_readb(qts, mmio + 0x15), ==, 0);
+
+    qtest_system_reset(qts);
+    cirrus_pci_command(qts, config, 3);
+    qtest_outb(qts, VGA_MIS_W, VGA_MIS_COLOR | VGA_MIS_ENB_MEM_ACCESS);
+    vga_seq_write(qts, 0x06, 0x12);
+    for (unsigned i = 0; i < ARRAY_SIZE(registers); i++) {
+        g_assert_cmphex(vga_crtc_read(qts, registers[i].index), ==, 0);
+    }
+    qtest_quit(qts);
+}
+
 static void test_cirrus_pci_timing(void)
 {
     QTestState *qts = qtest_init("-M pc -vga none -nodefaults "
@@ -1126,6 +1175,8 @@ int main(int argc, char **argv)
         if (qtest_has_device("gd5446b-pci")) {
             qtest_add_func("/display/pci/cirrus-gd5446b-pc97",
                            test_gd5446b_pc97);
+            qtest_add_func("/display/pci/cirrus-gd5446b-overlay-registers",
+                           test_gd5446b_overlay_registers);
             qtest_add_data_func("/display/pci/cirrus-gd5446b-pause-primary",
                                 GINT_TO_POINTER(0), test_gd5446b_blt_pause);
             qtest_add_data_func("/display/pci/cirrus-gd5446b-pause-alternate",
