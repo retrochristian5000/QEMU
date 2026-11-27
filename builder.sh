@@ -158,6 +158,9 @@ if [ -n "$cache_cmd" ]; then
             ;;
     esac
 
+    . "$script_dir/scripts/whp-build/compiler-cache-policy.sh"
+    whp_compiler_cache_budget "$cache_base" || exit 1
+
     # Cache applies to QEMU artifact compilers CC/CXX only. Bootstrap
     # compiler choices must not be inferred from these possibly cross-target
     # or already wrapped commands; build-machine defaults are independent.
