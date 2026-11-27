@@ -91,6 +91,49 @@ class SeaBiosClangAbiTests(unittest.TestCase):
         (prefix / 'llvm' / 'bin' / 'clang').symlink_to(self.clang)
         return prefix
 
+    def test_legacy_firmware_prefixes(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = pathlib.Path(tmp)
+            prefix = self.make_prefix(root)
+            i386 = prefix / 'bin' / 'i386-none-elf-gcc'
+            i586 = prefix / 'bin' / 'i586-none-elf-gcc'
+            i586.symlink_to(i386.name)
+            source = root / 'cpu.c'
+            source.write_text(
+                '#if defined(__SSE__) || defined(__SSE2__)\n'
+                '#error Unexpected SIMD baseline\n#endif\n'
+                '#ifdef EXPECT_I586\n#ifndef __i586__\n'
+                '#error Missing i586 baseline\n#endif\n'
+                '#else\n#ifdef __i586__\n#error Unexpected i586\n'
+                '#endif\n#endif\n'
+                '_Static_assert(__SIZEOF_POINTER__ == 4, "ELF32 ABI");\n'
+                'const char *probe(void) { return "CPU profile"; }\n',
+                encoding='utf-8')
+            for compiler in (i386, i586):
+                for mode in ('-m16', '-m32'):
+                    for split in (False, True):
+                        with self.subTest(compiler=compiler.name, mode=mode,
+                                          split=split):
+                            output = root / 'cpu.o'
+                            extra = ['-DEXPECT_I586'] if compiler == i586 else []
+                            if split:
+                                extra += ['-fno-merge-constants']
+                            result = subprocess.run(
+                                [str(compiler), mode, '-ffreestanding',
+                                 '-fno-pic', '-fno-pie', *extra,
+                                 '-c', str(source), '-o', str(output)],
+                                capture_output=True, text=True, check=False)
+                            self.assertEqual(result.returncode, 0, result.stderr)
+                            self.assertIn('.text', elf32_sections(output))
+            for flag in ('-m64', '--target=x86_64-none-elf', '-march=native'):
+                result = subprocess.run(
+                    [str(i586), flag, '-c', str(source),
+                     '-o', str(root / 'bad.o')],
+                    capture_output=True, text=True, check=False)
+                self.assertNotEqual(result.returncode, 0)
+                self.assertIn('incompatible firmware target option',
+                              result.stderr)
+
     def compile(self, compiler: pathlib.Path, source: pathlib.Path,
                 output: pathlib.Path, *extra: str) -> subprocess.CompletedProcess[str]:
         return subprocess.run([
