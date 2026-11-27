@@ -54,9 +54,11 @@ static inline bool cirrus_overlay_decode(const uint8_t *cr, unsigned depth,
 {
     unsigned bytes, left, width, select = (cr[0x5e] >> 4) & 3;
     unsigned format = (cr[0x3e] >> 1) & 7;
+    unsigned required;
 
     if (!(cr[0x3e] & 1) || (cr[0x3e] & 0x80) || cr[0x31] ||
-        select >= 2 || (format != 0 && format != 4 && format != 5) ||
+        select >= 2 || (format != 0 && format != 1 &&
+                        format != 4 && format != 5) ||
         (format != 0 && (cr[0x3f] & 0x10))) {
         return false;
     }
@@ -93,9 +95,11 @@ static inline bool cirrus_overlay_decode(const uint8_t *cr, unsigned depth,
     }
     w->base |= (cr[0x5d] >> 2) & 3;
 
-    return w->width && w->bottom > w->top &&
-           w->source_bytes >= (format == 0 ? (w->width + 1) / 2 * 4 :
-                                             w->width * 2);
+    /* TRM 9.5.2: source fetches are DWORDs, including a partial packet. */
+    required = format == 1 ? (w->width + 3) / 4 * 4 :
+               format == 0 ? (w->width + 1) / 2 * 4 : w->width * 2;
+
+    return w->width && w->bottom > w->top && w->source_bytes >= required;
 }
 
 static inline unsigned cirrus_overlay_clamp(int value)
@@ -134,6 +138,61 @@ static inline uint32_t cirrus_overlay_rgb(uint16_t pixel, bool rgb565)
     return (r << 16) | (g << 8) | b;
 }
 
+/*
+ * TRM 9.3.2.4, figure 9-6: each little-endian DWORD contains Y3:Y2:Y1:Y0
+ * (5 bits each), then U:V (6 bits each). The low sample bits are zero
+ * padded, not DAC-expanded; preserve the CCIR601 chroma bias of 128.
+ */
+static inline uint32_t cirrus_accupak_load(const uint8_t *src)
+{
+    return (uint32_t)src[0] | ((uint32_t)src[1] << 8) |
+           ((uint32_t)src[2] << 16) | ((uint32_t)src[3] << 24);
+}
+
+static inline unsigned cirrus_accupak_y(uint32_t packet, unsigned pixel)
+{
+    return ((packet >> (12 + 5 * (pixel & 3))) & 31) << 3;
+}
+
+static inline unsigned cirrus_accupak_u(uint32_t packet)
+{
+    return ((packet >> 6) & 63) << 2;
+}
+
+static inline unsigned cirrus_accupak_v(uint32_t packet)
+{
+    return (packet & 63) << 2;
+}
+
+/*
+ * The manual specifies expansion to YUV422 followed by color conversion,
+ * but not the exact interpolation rounding. Use linear quarter steps
+ * between neighboring packets and extend the last chroma sample at the
+ * source edge. Never sample padding or the next scanline.
+ */
+static inline void cirrus_accupak_draw(const uint8_t *src, uint32_t *dst,
+                                       unsigned source_width,
+                                       unsigned visible_width)
+{
+    for (unsigned x = 0; x < visible_width; x += 4) {
+        uint32_t packet = cirrus_accupak_load(src + x);
+        uint32_t next = x + 4 < source_width ?
+                        cirrus_accupak_load(src + x + 4) : packet;
+        unsigned u0 = cirrus_accupak_u(packet);
+        unsigned v0 = cirrus_accupak_v(packet);
+        unsigned u1 = cirrus_accupak_u(next);
+        unsigned v1 = cirrus_accupak_v(next);
+
+        for (unsigned i = 0; i < 4 && x + i < visible_width; i++) {
+            unsigned u = (u0 * (4 - i) + u1 * i + 2) / 4;
+            unsigned v = (v0 * (4 - i) + v1 * i + 2) / 4;
+
+            dst[x + i] = cirrus_overlay_yuv(cirrus_accupak_y(packet, i),
+                                            u, v);
+        }
+    }
+}
+
 /* Compose into an already rendered 32-bit host scanline, never into VRAM. */
 static inline void cirrus_overlay_draw(const CirrusOverlay *w,
                                       const uint8_t *vram, unsigned vram_size,
@@ -154,6 +213,11 @@ static inline void cirrus_overlay_draw(const CirrusOverlay *w,
     width = w->width < screen_width - w->x ? w->width : screen_width - w->x;
     src = vram + addr;
     dst += w->x;
+
+    if (w->format == 1) {
+        cirrus_accupak_draw(src, dst, w->width, width);
+        return;
+    }
 
     for (unsigned x = 0; x < width; x++) {
         if (w->format == 0) {
