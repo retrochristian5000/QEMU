@@ -9,6 +9,7 @@ i386_ss.add(when: 'CONFIG_TCG', if_true: files(
   'int_helper.c',
   'mem_helper.c',
   'misc_helper.c',
+  'vme_helper.c',
   'mpx_helper.c',
   'seg_helper.c',
   'tcg-cpu.c',
