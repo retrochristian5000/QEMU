@@ -220,6 +220,19 @@ static void test_plus_minus(void)
     g_test_trap_assert_stdout("");
 }
 
+static void test_p55c_reserved_ebx_property(const void *opaque)
+{
+    const char *model = opaque;
+    g_autofree char *args = g_strdup_printf("-cpu %s", model);
+    g_autofree char *path = NULL;
+
+    qtest_start(args);
+    path = get_cpu0_qom_path();
+    g_assert_cmpint(qom_get_bool(path, "x-p5-cpuid1-reserved-ebx"), ==,
+                    strcmp(model, "pentium_mmx-v1") != 0);
+    qtest_end();
+}
+
 static const CpuidTestArgs cpuid_tests[] = {
     { "x86/cpuid/pentium/family", "pentium", NULL, NULL, "family", 5 },
     { "x86/cpuid/pentium/model", "pentium", NULL, NULL, "model", 2 },
@@ -228,6 +241,10 @@ static const CpuidTestArgs cpuid_tests[] = {
     { "x86/cpuid/pentium-mmx/model", "pentium_mmx", NULL, NULL, "model", 4 },
     { "x86/cpuid/pentium-mmx-v1/model", "pentium_mmx-v1", NULL, NULL,
       "model", 4 },
+    { "x86/cpuid/pentium-mmx-v2/model", "pentium_mmx-v2", NULL, NULL,
+      "model", 4 },
+    { "x86/cpuid/pentium-mmx-v2/level", "pentium_mmx-v2", NULL, NULL,
+      "level", 1 },
     { "x86/cpuid/pentium-mmx-v1/stepping", "pentium_mmx-v1", NULL, NULL,
       "stepping", 3 },
     { "x86/cpuid/pentium-mmx/stepping", "pentium_mmx", NULL, NULL,
@@ -477,6 +494,18 @@ int main(int argc, char **argv)
     g_test_add_func("/x86/cpuid/parsing-plus-minus/subprocess",
                     test_plus_minus_subprocess);
     g_test_add_func("/x86/cpuid/parsing-plus-minus", test_plus_minus);
+
+    const char *p55c_models[] = {
+        "pentium_mmx", "pentium_mmx-v1", "pentium_mmx-v2",
+    };
+    for (unsigned i = 0; i < ARRAY_SIZE(p55c_models); i++) {
+        if (qtest_has_cpu_model(p55c_models[i])) {
+            g_autofree char *name = g_strdup_printf(
+                "/x86/cpuid/%s/reserved-ebx", p55c_models[i]);
+            qtest_add_data_func(name, p55c_models[i],
+                                test_p55c_reserved_ebx_property);
+        }
+    }
 
     for (int i = 0; i < ARRAY_SIZE(cpuid_tests); i++) {
         if (!qtest_has_cpu_model(cpuid_tests[i].cpu)) {
