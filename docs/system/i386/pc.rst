@@ -342,8 +342,21 @@ sizes describe PCI address space, not installed VRAM. See the November
 1996 CL-GD5446 Technical Reference Manual, sections 5.10, 7.4-7.8
 and Appendix A2. Byte-swapping and YUV apertures, other strap
 configurations and silicon-specific PCI revision ID values are not yet
-modeled. Revision B retains QEMU's default subsystem IDs rather than
-claiming a specific physical board.
+modeled. Revision B uses QEMU's virtual board subsystem IDs (with the upper
+subsystem byte zero for the GPIO-disabled configuration) rather than
+claiming a specific physical board. SR17[3] enables PCI2C subsystem ID
+writes for motherboard firmware; clearing it locks the register again.
+Reset restores the virtual board ID. BAR0 is non-prefetchable as specified
+in TRM 7.4, BAR1 provides relocated VGA and BitBLT registers, and the
+interrupt pin is zero because no interrupt is implemented.
+
+For PCI-controlled legacy VGA resource decoding, select
+``gd5446b-pci,pci-legacy-decode=on``. The historical decode default is
+unchanged pending firmware boot validation. These changes address parts
+of PC 97 Hardware Design Guide chapter 15 (requirements 43-46); they do
+not constitute PC97 certification. Loading subsystem IDs from a physical
+board ROM, DAC shadowing and display power management are not implemented
+by this profile.
 
 The CL-GD5422 does not have a hardware BitBLT engine, as documented in
 Table 2-1 of the January 1994 CL-GD542X Technical Reference Manual.
