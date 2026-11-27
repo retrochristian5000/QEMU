@@ -439,7 +439,7 @@ class CompilerCachePolicyTests(unittest.TestCase):
     def test_cache_directory_alignment(self):
         ninja = load_module(NINJA_BOOTSTRAP, 'whp_ninja_cache_directory_test')
         with tempfile.TemporaryDirectory() as directory:
-            root = pathlib.Path(directory)
+            root = pathlib.Path(directory).resolve()
             build = root / 'build'
             for provider in ('ccache', 'sccache'):
                 with self.subTest(provider=provider), \
@@ -504,7 +504,9 @@ class CompilerCachePolicyTests(unittest.TestCase):
             self.assertIn('whp_sccache_memory_policy', source)
             self.assertIn('sccache-$cache_tag', source)
         self.assertIn("cache_tag = f'{platform.system()}-{platform.machine()}'", ninja)
+        self.assertIn("requested = os.environ.get('CCACHE_DIR')", ninja)
         self.assertIn("requested = os.environ.get('SCCACHE_DIR')", ninja)
+        self.assertIn('compiler_cache_directory(', ninja)
         self.assertIn("'WHP_COMPILER_CACHE_ROOT'", ninja)
 
     def test_host_tool_discovery_keeps_artifact_and_build_compilers_separate(self):
