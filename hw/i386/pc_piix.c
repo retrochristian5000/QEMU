@@ -311,7 +311,12 @@ static void pc_init1(MachineState *machine, const char *host_type,
                                                           "rtc"));
     piix4_pm = object_resolve_path_component(OBJECT(pci_dev), "pm");
     dev = DEVICE(object_resolve_path_component(OBJECT(pci_dev), "ide"));
-    pci_ide_create_devs(PCI_DEVICE(dev));
+    pci_ide_create_devs_with_models(PCI_DEVICE(dev),
+                                    pcms->ide_hd_model ?:
+                                    (object_property_find(OBJECT(pcms),
+                                                          "ide-hd-model")
+                                     ? "auto" : NULL),
+                                    pcms->ide_cd_model);
     pcms->idebus[0] = qdev_get_child_bus(dev, "ide.0");
     pcms->idebus[1] = qdev_get_child_bus(dev, "ide.1");
 
@@ -593,9 +598,60 @@ static void pc_hardware_common_options(MachineClass *m)
                      G_N_ELEMENTS(pc_hardware_defaults));
 }
 
+static char *pc_get_ide_hd_model(Object *obj, Error **errp)
+{
+    return g_strdup(PC_MACHINE(obj)->ide_hd_model ?: "auto");
+}
+
+static void pc_set_ide_hd_model(Object *obj, const char *value, Error **errp)
+{
+    PCMachineState *pcms = PC_MACHINE(obj);
+
+    if (strcmp(value, "auto") && strcmp(value, "ide-hd") &&
+        strcmp(value, "seagate-st31640a") &&
+        strcmp(value, "seagate-st32140a") &&
+        strcmp(value, "ibm-dtta-351010")) {
+        error_setg(errp, "Unknown PC IDE hard disk model '%s'", value);
+        return;
+    }
+    g_free(pcms->ide_hd_model);
+    pcms->ide_hd_model = g_strdup(value);
+}
+
+static char *pc_get_ide_cd_model(Object *obj, Error **errp)
+{
+    return g_strdup(PC_MACHINE(obj)->ide_cd_model ?: "ide-cd");
+}
+
+static void pc_set_ide_cd_model(Object *obj, const char *value, Error **errp)
+{
+    PCMachineState *pcms = PC_MACHINE(obj);
+
+    if (strcmp(value, "ide-cd") && strcmp(value, "oti-910") &&
+        strcmp(value, "oti-011")) {
+        error_setg(errp, "Unknown PC IDE optical drive model '%s'", value);
+        return;
+    }
+    g_free(pcms->ide_cd_model);
+    pcms->ide_cd_model = g_strdup(value);
+}
+
 static void pc_hardware_machine_options(MachineClass *m)
 {
     pc_hardware_common_options(m);
+    ObjectClass *oc = OBJECT_CLASS(m);
+
+    m->default_machine_opts =
+        "firmware=bios-256k.bin,vmport=off,ide-hd-model=auto";
+    object_class_property_add_str(oc, "ide-hd-model", pc_get_ide_hd_model,
+                                  pc_set_ide_hd_model);
+    object_class_property_set_description(oc, "ide-hd-model",
+        "Legacy IDE hard disk profile (auto, ide-hd, seagate-st31640a, "
+        "seagate-st32140a, ibm-dtta-351010)");
+    object_class_property_add_str(oc, "ide-cd-model", pc_get_ide_cd_model,
+                                  pc_set_ide_cd_model);
+    object_class_property_set_description(oc, "ide-cd-model",
+        "Legacy IDE optical profile (ide-cd, oti-910, oti-011)");
     m->desc = "PC (i440FX + PIIX, named hardware defaults)";
     m->alias = "pc";
     m->is_default = true;
