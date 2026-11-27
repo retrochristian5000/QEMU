@@ -35,6 +35,7 @@
 #include "qapi/error.h"
 #include "qom/object.h"
 #include "trace.h"
+#include "pcspk-signal.h"
 
 #define PCSPK_BUF_LEN 1792
 #define PCSPK_SAMPLE_RATE 32000
@@ -53,63 +54,56 @@ struct PCSpkState {
     SWVoiceOut *voice;
     PITCommonState *pit;
     unsigned int pit_count;
-    unsigned int samples;
-    unsigned int play_pos;
+    uint32_t phase;
     uint8_t data_on;
     uint8_t dummy_refresh_clock;
 };
 
 static const char *s_spk = "pcspk";
 
-static inline void generate_samples(PCSpkState *s)
-{
-    unsigned int i;
-
-    if (s->pit_count) {
-        const uint32_t m = PCSPK_SAMPLE_RATE * s->pit_count;
-        const uint32_t n = ((uint64_t)PIT_FREQ << 32) / m;
-
-        /* multiple of wavelength for gapless looping */
-        s->samples = (QEMU_ALIGN_DOWN(PCSPK_BUF_LEN * PIT_FREQ, m) / (PIT_FREQ >> 1) + 1) >> 1;
-        for (i = 0; i < s->samples; ++i)
-            s->sample_buf[i] = (64 & (n * i >> 25)) - 32;
-    } else {
-        s->samples = PCSPK_BUF_LEN;
-        for (i = 0; i < PCSPK_BUF_LEN; ++i)
-            s->sample_buf[i] = 128; /* silence */
-    }
-}
-
 static void pcspk_callback(void *opaque, int free)
 {
     PCSpkState *s = opaque;
     PITChannelInfo ch;
-    unsigned int n;
+    uint32_t count, period;
 
     pit_get_channel_info(s->pit, 2, &ch);
-
-    if (ch.mode != 3) {
-        return;
+    count = ch.mode == 3 && ch.gate && s->data_on &&
+            ch.initial_count >= PCSPK_MIN_COUNT &&
+            ch.initial_count <= 0x10000 ? ch.initial_count : 0;
+    if (s->pit_count != count) {
+        s->pit_count = count;
+        s->phase = 0;
     }
-
-    n = ch.initial_count;
-    /* avoid frequencies that are not reproducible with sample rate */
-    if (n < PCSPK_MIN_COUNT)
-        n = 0;
-
-    if (s->pit_count != n) {
-        s->pit_count = n;
-        s->play_pos = 0;
-        generate_samples(s);
-    }
+    period = count * PCSPK_SAMPLE_RATE;
 
     while (free > 0) {
-        n = MIN(s->samples - s->play_pos, (unsigned int)free);
-        n = audio_be_write(s->audio_be, s->voice, &s->sample_buf[s->play_pos], n);
-        if (!n)
+        unsigned int n = MIN((unsigned int)free, sizeof(s->sample_buf));
+        unsigned int written;
+
+        if (period) {
+            uint32_t phase = s->phase;
+
+            for (unsigned int i = 0; i < n; i++) {
+                s->sample_buf[i] =
+                    pcspk_square_sample(phase, count, PCSPK_SAMPLE_RATE);
+                phase += PIT_FREQ;
+                if (phase >= period) {
+                    phase -= period;
+                }
+            }
+        } else {
+            memset(s->sample_buf, 128, n);
+        }
+        written = audio_be_write(s->audio_be, s->voice, s->sample_buf, n);
+        if (!written) {
             break;
-        s->play_pos = (s->play_pos + n) % s->samples;
-        free -= n;
+        }
+        if (period) {
+            s->phase = pcspk_advance_phase(s->phase, period, PIT_FREQ,
+                                           written);
+        }
+        free -= written;
     }
 }
 
@@ -140,9 +134,8 @@ static uint64_t pcspk_io_read(void *opaque, hwaddr addr,
 
     pit_get_channel_info(s->pit, 2, &ch);
 
-    s->dummy_refresh_clock ^= (1 << 4);
-
-    val = ch.gate | (s->data_on << 1) | s->dummy_refresh_clock |
+    val = ch.gate | (s->data_on << 1) |
+       pcspk_refresh_bit(qemu_clock_get_ns(QEMU_CLOCK_VIRTUAL)) |
        (ch.out << 5);
 
     trace_pcspk_io_read(s->iobase, val);
@@ -155,14 +148,17 @@ static void pcspk_io_write(void *opaque, hwaddr addr, uint64_t val,
 {
     PCSpkState *s = opaque;
     const int gate = val & 1;
+    PITChannelInfo ch;
 
+    pit_get_channel_info(s->pit, 2, &ch);
     trace_pcspk_io_write(s->iobase, val);
 
     s->data_on = (val >> 1) & 1;
     pit_set_gate(s->pit, 2, gate);
+    if (gate && !ch.gate) {
+        s->phase = 0;
+    }
     if (s->voice) {
-        if (gate) /* restart */
-            s->play_pos = 0;
         audio_be_set_active_out(s->audio_be, s->voice, gate & s->data_on);
     }
 }
@@ -201,10 +197,40 @@ static void pcspk_realizefn(DeviceState *dev, Error **errp)
     }
 }
 
+static void pcspk_reset(DeviceState *dev)
+{
+    PCSpkState *s = PC_SPEAKER(dev);
+
+    s->data_on = 0;
+    s->dummy_refresh_clock = 0;
+    s->pit_count = 0;
+    s->phase = 0;
+    if (s->voice) {
+        audio_be_set_active_out(s->audio_be, s->voice, false);
+    }
+}
+
+static int pcspk_post_load(void *opaque, int version_id)
+{
+    PCSpkState *s = opaque;
+    PITChannelInfo ch;
+
+    s->data_on &= 1;
+    s->pit_count = 0;
+    s->phase = 0;
+    if (s->voice) {
+        pit_get_channel_info(s->pit, 2, &ch);
+        audio_be_set_active_out(s->audio_be, s->voice,
+                                ch.gate && s->data_on);
+    }
+    return 0;
+}
+
 static const VMStateDescription vmstate_spk = {
     .name = "pcspk",
     .version_id = 1,
     .minimum_version_id = 1,
+    .post_load = pcspk_post_load,
     .fields = (const VMStateField[]) {
         VMSTATE_UINT8(data_on, PCSpkState),
         VMSTATE_UINT8(dummy_refresh_clock, PCSpkState),
@@ -226,6 +252,7 @@ static void pcspk_class_initfn(ObjectClass *klass, const void *data)
     dc->desc = "PC speaker (PIT-driven motherboard audio)";
     set_bit(DEVICE_CATEGORY_SOUND, dc->categories);
     dc->vmsd = &vmstate_spk;
+    device_class_set_legacy_reset(dc, pcspk_reset);
     device_class_set_props(dc, pcspk_properties);
     /* Reason: pit object link */
     dc->user_creatable = false;
