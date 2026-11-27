@@ -47,6 +47,7 @@ SEABIOS_SOURCE_DIR ?= $(abspath seabios)
 SEABIOS_HOSTCC ?= cc
 SEABIOS_OUTPUT_DIR ?= ../pc-bios
 SEABIOS_BUILD_ROOT ?= $(abspath ../build/firmware/seabios)
+SEABIOS_CPU_PROFILE = i386
 GIT ?= git
 
 # tag our firmware builds
@@ -66,6 +67,8 @@ default help:
 	@echo "nothing is build by default"
 	@echo "available build targets:"
 	@echo "  bios               -- update bios.bin (seabios)"
+	@echo "  seabios-pentium    -- build optional P54C-tuned 256 KiB BIOS"
+	@echo "  seabios-pentium-mmx -- build optional P55C-tuned 256 KiB BIOS"
 	@echo "  seabios-grub       -- build GRUB Multiboot SeaBIOS payload"
 	@echo "  seabios-external-ide -- build experimental 128 KiB core without ATA"
 	@echo "  ide-option-rom     -- build experimental read-only ISA IDE expansion ROM"
@@ -95,6 +98,21 @@ bios: ide-option-rom build-seabios-config-seabios-128k \
 	cp $(SEABIOS_BUILD_ROOT)/seabios-128k/bios.bin $(SEABIOS_OUTPUT_DIR)/bios.bin
 	cp $(SEABIOS_BUILD_ROOT)/seabios-256k/bios.bin $(SEABIOS_OUTPUT_DIR)/bios-256k.bin
 	cp $(SEABIOS_BUILD_ROOT)/seabios-microvm/bios.bin $(SEABIOS_OUTPUT_DIR)/bios-microvm.bin
+
+# CPU variants use separate object directories and never replace stock ROMs.
+.PHONY: seabios-pentium seabios-pentium-mmx
+seabios-pentium: build-seabios-config-seabios-256k-pentium
+	mkdir -p "$(SEABIOS_OUTPUT_DIR)"
+	cp "$(SEABIOS_BUILD_ROOT)/seabios-256k-pentium/bios.bin" \
+	   "$(SEABIOS_OUTPUT_DIR)/bios-pentium-256k.bin"
+
+seabios-pentium-mmx: build-seabios-config-seabios-256k-pentium-mmx
+	mkdir -p "$(SEABIOS_OUTPUT_DIR)"
+	cp "$(SEABIOS_BUILD_ROOT)/seabios-256k-pentium-mmx/bios.bin" \
+	   "$(SEABIOS_OUTPUT_DIR)/bios-pentium-mmx-256k.bin"
+
+build-seabios-config-seabios-256k-pentium: SEABIOS_CPU_PROFILE = pentium
+build-seabios-config-seabios-256k-pentium-mmx: SEABIOS_CPU_PROFILE = pentium-mmx
 
 # Build the expansion ROM with the same i386 tools, independently of the
 # motherboard BIOS. Publishing it does not activate it in any guest.
@@ -161,7 +179,7 @@ seabios_make = $(MAKE) -C "$(SEABIOS_SOURCE_DIR)" \
     OBJCOPY="$(SEABIOS_CROSS_PREFIX)objcopy" \
     OBJDUMP="$(SEABIOS_CROSS_PREFIX)objdump" STRIP="$(SEABIOS_CROSS_PREFIX)strip" \
     KCONFIG_CONFIG="$(SEABIOS_BUILD_ROOT)/$*/.config" \
-    OUT="$(SEABIOS_BUILD_ROOT)/$*/"
+    OUT="$(SEABIOS_BUILD_ROOT)/$*/" BIOS_CPU="$(SEABIOS_CPU_PROFILE)"
 
 build-seabios-config-%: config.%
 	@set -e; \
@@ -186,6 +204,7 @@ build-seabios-config-%: config.%
 			"clang_size_opt=$(SEABIOS_CLANG_SIZE_OPT)" \
 			"clang_elf_split=$(SEABIOS_CLANG_ELF_SPLIT)" \
 			"clang_inline_profile=$(SEABIOS_CLANG_INLINE_PROFILE)" \
+			"cpu_profile=$(SEABIOS_CPU_PROFILE)" \
 			"clang_padding_profile=$(SEABIOS_CLANG_PADDING_PROFILE)" | cmp -s - "$$stamp"; then \
 			exit 0; \
 		fi; \
@@ -207,6 +226,7 @@ build-seabios-config-%: config.%
 			"clang_size_opt=$(SEABIOS_CLANG_SIZE_OPT)" \
 			"clang_elf_split=$(SEABIOS_CLANG_ELF_SPLIT)" \
 			"clang_inline_profile=$(SEABIOS_CLANG_INLINE_PROFILE)" \
+			"cpu_profile=$(SEABIOS_CPU_PROFILE)" \
 			"clang_padding_profile=$(SEABIOS_CLANG_PADDING_PROFILE)" > "$$tmp"; \
 		mv "$$tmp" "$$stamp"
 	+@if test ! -f "$(SEABIOS_BUILD_ROOT)/$*/.config" || \
@@ -216,7 +236,7 @@ build-seabios-config-%: config.%
 		cp "$<" "$(SEABIOS_BUILD_ROOT)/$*/.config.source"; \
 	fi
 	+$(seabios_make) \
-		ROM_LAYOUT_VARIANT=$(if $(filter seabios-%,$*),$*,auto) \
+		ROM_LAYOUT_VARIANT=$(if $(filter seabios-256k-pentium seabios-256k-pentium-mmx,$*),seabios-256k,$(if $(filter seabios-%,$*),$*,auto)) \
 		ROM_LAYOUT_PACK=$(if $(filter seabios-128k seabios-microvm,$*),$(SEABIOS_LAYOUT_PACK),0) all
 
 
