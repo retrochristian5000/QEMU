@@ -48,6 +48,12 @@ SEABIOS_HOSTCC ?= cc
 SEABIOS_OUTPUT_DIR ?= ../pc-bios
 SEABIOS_BUILD_ROOT ?= $(abspath ../build/firmware/seabios)
 SEABIOS_CPU_PROFILE = i386
+# Reuse the companion installed by the i386 LLVM bootstrap. External
+# compilers can explicitly supply an i586 prefix; otherwise their named
+# -march/-mtune options remain the architecture contract.
+SEABIOS_I586_CANDIDATE := $(patsubst %i386-none-elf-,%i586-none-elf-,$(filter %i386-none-elf-,$(SEABIOS_CROSS_PREFIX)))
+SEABIOS_I586_CROSS_PREFIX ?= $(if $(SEABIOS_I586_CANDIDATE),$(if $(wildcard $(SEABIOS_I586_CANDIDATE)gcc),$(SEABIOS_I586_CANDIDATE)))
+SEABIOS_BUILD_CROSS_PREFIX = $(if $(filter pentium pentium-mmx,$(SEABIOS_CPU_PROFILE)),$(or $(SEABIOS_I586_CROSS_PREFIX),$(SEABIOS_CROSS_PREFIX)),$(SEABIOS_CROSS_PREFIX))
 GIT ?= git
 
 # tag our firmware builds
@@ -172,12 +178,12 @@ endif
 # OUT and KCONFIG_CONFIG remain variant-specific.
 seabios_make = $(MAKE) -C "$(SEABIOS_SOURCE_DIR)" \
     EXTRAVERSION="$(FIRMWARE_EXTRAVERSION)" \
-    CROSS_PREFIX="$(SEABIOS_CROSS_PREFIX)" \
-    CC="$(if $(SEABIOS_CROSS_PREFIX),$(SEABIOS_CROSS_PREFIX)gcc,cc)" HOSTCC="$(SEABIOS_HOSTCC)" \
-    "CPP=$(SEABIOS_CROSS_PREFIX)cpp" \
-    AS="$(SEABIOS_CROSS_PREFIX)as" LD="$(SEABIOS_CROSS_PREFIX)ld" \
-    OBJCOPY="$(SEABIOS_CROSS_PREFIX)objcopy" \
-    OBJDUMP="$(SEABIOS_CROSS_PREFIX)objdump" STRIP="$(SEABIOS_CROSS_PREFIX)strip" \
+    CROSS_PREFIX="$(SEABIOS_BUILD_CROSS_PREFIX)" \
+    CC="$(if $(SEABIOS_BUILD_CROSS_PREFIX),$(SEABIOS_BUILD_CROSS_PREFIX)gcc,cc)" HOSTCC="$(SEABIOS_HOSTCC)" \
+    "CPP=$(SEABIOS_BUILD_CROSS_PREFIX)cpp" \
+    AS="$(SEABIOS_BUILD_CROSS_PREFIX)as" LD="$(SEABIOS_BUILD_CROSS_PREFIX)ld" \
+    OBJCOPY="$(SEABIOS_BUILD_CROSS_PREFIX)objcopy" \
+    OBJDUMP="$(SEABIOS_BUILD_CROSS_PREFIX)objdump" STRIP="$(SEABIOS_BUILD_CROSS_PREFIX)strip" \
     KCONFIG_CONFIG="$(SEABIOS_BUILD_ROOT)/$*/.config" \
     OUT="$(SEABIOS_BUILD_ROOT)/$*/" BIOS_CPU="$(SEABIOS_CPU_PROFILE)"
 
@@ -192,12 +198,12 @@ build-seabios-config-%: config.%
 			revision=$$(unset GIT_COMMON_DIR; \
 				"$(GIT)" --git-dir="$$source_dir/.git" rev-parse --verify HEAD); \
 		fi; \
-		toolchain_id=$$(python3 ./seabios-toolchain-id.py "$(SEABIOS_CROSS_PREFIX)" "$(SEABIOS_HOSTCC)"); \
+		toolchain_id=$$(python3 ./seabios-toolchain-id.py "$(SEABIOS_BUILD_CROSS_PREFIX)" "$(SEABIOS_HOSTCC)"); \
 		stamp="$$out/.whp-seabios-source"; \
 		if printf '%s\n' \
 			"$$source_dir $$revision" \
-			"cross_prefix=$(SEABIOS_CROSS_PREFIX)" \
-			"build_cc=$(if $(SEABIOS_CROSS_PREFIX),$(SEABIOS_CROSS_PREFIX)gcc,cc)" \
+			"cross_prefix=$(SEABIOS_BUILD_CROSS_PREFIX)" \
+			"build_cc=$(if $(SEABIOS_BUILD_CROSS_PREFIX),$(SEABIOS_BUILD_CROSS_PREFIX)gcc,cc)" \
 			"host_cc=$(SEABIOS_HOSTCC)" \
 			"toolchain_id=$$toolchain_id" \
 			"extra_version=$(FIRMWARE_EXTRAVERSION)" \
@@ -218,8 +224,8 @@ build-seabios-config-%: config.%
 		tmp="$$stamp.new.$$$$"; \
 		printf '%s\n' \
 			"$$source_dir $$revision" \
-			"cross_prefix=$(SEABIOS_CROSS_PREFIX)" \
-			"build_cc=$(if $(SEABIOS_CROSS_PREFIX),$(SEABIOS_CROSS_PREFIX)gcc,cc)" \
+			"cross_prefix=$(SEABIOS_BUILD_CROSS_PREFIX)" \
+			"build_cc=$(if $(SEABIOS_BUILD_CROSS_PREFIX),$(SEABIOS_BUILD_CROSS_PREFIX)gcc,cc)" \
 			"host_cc=$(SEABIOS_HOSTCC)" \
 			"toolchain_id=$$toolchain_id" \
 			"extra_version=$(FIRMWARE_EXTRAVERSION)" \
