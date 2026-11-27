@@ -329,7 +329,21 @@ than a specific physical board. The chipset-specific device names are:
 * ``gd5426``: CL-GD5426 ISA.
 * ``gd5428``: CL-GD5428 ISA, sharing the generic ISA implementation.
 * ``gd5430-pci`` and ``gd5430-vlb``: explicit bus variants.
-* ``gd5446-pci``: CL-GD5446 PCI, sharing the generic PCI implementation.
+* ``gd5446-pci``: historical CL-GD5446 PCI compatibility profile.
+* ``gd5446a-pci``: CL-GD5446 Revision A, 16 MiB PCI aperture,
+  with optional VGA relocation and GPIO disabled (CF3=1).
+* ``gd5446b-pci``: CL-GD5446 Revision B, 32 MiB PCI aperture and
+  4 KiB VGA/BitBLT register BAR, with optional GPIO disabled.
+
+Both revisions share the DAC, display core and SeaVGABIOS. Their alternate
+host BitBLT source paths differ: Revision A uses BC000h-BFFFFh for color
+expansion; Revision B uses the second 16 MiB PCI aperture. The aperture
+sizes describe PCI address space, not installed VRAM. See the November
+1996 CL-GD5446 Technical Reference Manual, sections 5.10, 7.4-7.8
+and Appendix A2. Byte-swapping and YUV apertures, other strap
+configurations and silicon-specific PCI revision ID values are not yet
+modeled. Revision B retains QEMU's default subsystem IDs rather than
+claiming a specific physical board.
 
 The CL-GD5422 does not have a hardware BitBLT engine, as documented in
 Table 2-1 of the January 1994 CL-GD542X Technical Reference Manual.
