@@ -120,6 +120,18 @@ The 3740 accepts ``%B28800``; the 3711 rejects that rate. Both accept
 ``\N7`` and reject ``\N8``. The generic Hayes and Rockwell profiles do
 not acquire these Paradyne-specific commands.
 
+Both Express hardware tables document AT%H as an immediate command
+help display. It does not hang up (unlike ATH). AT%H and AT %H are
+equivalent because the command parser ignores whitespace; the percent
+prefix is required. The related DataPort PCX User's Guide (October
+1995, chapter 5) confirms optional spaces in command strings.
+The original Express help text is unavailable, so the response is
+explicitly labeled QEMU command help and lists emulated features.
+It does not claim actual line negotiation, and omits unimplemented
+commands. The non-DataPort profiles retain ERROR for this command.
+Regression coverage checks spacing, case, profile preservation and
+return to online data mode after a help query.
+
 AOL 4.0's reported initial commands (AT twice, ATH, AT, ATEQV1)
 are covered by regression tests, with its separately observed &K3
 probe. The basic commands follow ITU-T V.25ter (August 1995):

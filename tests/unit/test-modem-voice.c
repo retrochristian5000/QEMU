@@ -504,6 +504,40 @@ static void test_dataport_operating_mode(gconstpointer opaque)
     modem_frontend_cleanup(&fe, chr);
 }
 
+static void test_dataport_help(gconstpointer opaque)
+{
+    const char *model = opaque;
+    ModemOutput out = { 0 };
+    CharFrontend fe = { 0 };
+    Chardev *chr = modem_new("modem-dataport-help", model);
+    g_autofree char *help = NULL;
+    g_autofree char *profile = NULL;
+
+    modem_frontend_init(&fe, &out, chr);
+    g_assert_cmpstr(modem_command(&fe, &out, "ATEQV1\r"), ==, "\r\nOK\r\n");
+    g_assert_cmpstr(modem_command(&fe, &out, "ATH\r"), ==, "\r\nOK\r\n");
+    g_assert_cmpstr(modem_command(&fe, &out, "AT H\r"), ==, "\r\nOK\r\n");
+    g_assert_cmpstr(modem_command(&fe, &out, "ATH0\r"), ==, "\r\nOK\r\n");
+    profile = g_strdup(modem_command(&fe, &out, "AT&V\r"));
+    help = g_strdup(modem_command(&fe, &out, "AT%H\r"));
+    assert_response_contains(help, model);
+    assert_response_contains(help, "QEMU command help");
+    assert_response_contains(help, "\\A0-3");
+    assert_response_contains(help, "&K0/3/4");
+    g_assert_true(g_str_has_suffix(help, "\r\nOK\r\n"));
+    g_assert_cmpstr(modem_command(&fe, &out, "AT %H\r"), ==, help);
+    g_assert_cmpstr(modem_command(&fe, &out, "at %h\r"), ==, help);
+    g_assert_cmpstr(modem_command(&fe, &out, "AT%H0\r"), ==,
+                    "\r\nERROR\r\n");
+    g_assert_cmpstr(modem_command(&fe, &out, "AT&V\r"), ==, profile);
+    if (!strcmp(model, "att-paradyne-3740")) {
+        assert_response_contains(help, "%M/%BL");
+    } else {
+        g_assert_null(strstr(help, "%M/%BL"));
+    }
+    modem_frontend_cleanup(&fe, chr);
+}
+
 static void test_dataport_lapm_frame_config(gconstpointer opaque)
 {
     ModemOutput out = { 0 };
@@ -1258,6 +1292,9 @@ static void test_dataport_xon_xoff_transport(gconstpointer opaque)
         g_assert_null(strstr(out.buf, "held"));
         assert_response_contains(modem_command(&fe, &out, "AT\r"),
                                  "\r\nOK\r\n");
+        assert_response_contains(modem_command(&fe, &out, "AT %H\r"),
+                                 "QEMU command help");
+        g_assert_null(strstr(out.buf, "held"));
         assert_response_contains(modem_command(&fe, &out, "ATO\r"),
                                  "CONNECT");
         g_assert_null(strstr(out.buf, "held"));
@@ -1450,6 +1487,8 @@ static void test_generic_modem_rejects_paradyne_controls(void)
     assert_response_contains(response, "\r\nERROR\r\n");
     response = modem_command(&fe, &out, "AT\\A3\r");
     assert_response_contains(response, "\r\nERROR\r\n");
+    response = modem_command(&fe, &out, "AT%H\r");
+    assert_response_contains(response, "\r\nERROR\r\n");
     response = modem_command(&fe, &out, "AT\\K5\r");
     assert_response_contains(response, "\r\nERROR\r\n");
     response = modem_command(&fe, &out, "AT\\C1\r");
@@ -1522,6 +1561,10 @@ int main(int argc, char **argv)
                          test_dataport_operating_mode);
     g_test_add_data_func("/modem/paradyne/operating-mode-3740",
                          "att-paradyne-3740", test_dataport_operating_mode);
+    g_test_add_data_func("/modem/paradyne/help-3711",
+                         "att-paradyne-dataport-3711", test_dataport_help);
+    g_test_add_data_func("/modem/paradyne/help-3740",
+                         "att-paradyne-3740", test_dataport_help);
     g_test_add_data_func("/modem/paradyne/lapm-frame-3711",
                          "att-paradyne-dataport-3711",
                          test_dataport_lapm_frame_config);

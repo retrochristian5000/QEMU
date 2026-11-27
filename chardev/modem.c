@@ -713,6 +713,47 @@ static bool modem_set_operating_mode(ModemChardev *modem, int mode)
     return true;
 }
 
+/*
+ * The Express tables document %H, but the original help text is not
+ * recovered. List emulated commands and distinguish requested settings
+ * from line-side behavior rather than advertising a complete firmware.
+ */
+static void modem_report_dataport_help(ModemChardev *modem)
+{
+    static const char *const lines[] = {
+        "AT - Attention; H - Hang up; D/A/O - Dial/answer/return online",
+        "E/Q/V/X/W - Echo and result-code controls",
+        "I - Identification; %V - Emulated version",
+        "&F/Z - Restore factory/user settings; &V - Active profile",
+        "&W/&Y - Store/select user profile",
+        "S - Register access; B/%B - Requested modulation/rate",
+        "\\N - Requested reliability; %C - Requested compression",
+        "\\A0-3 - LAPM maximum information size (64-256)",
+        "\\C/%A - Requested auto-reliable buffering/fallback",
+        "\\K0-5 - Requested BREAK policy",
+        "\\D - CTS policy; \\Q - Flow control; \\X - XON/XOFF handling",
+        "&K0/3/4 - Disabled/hardware/software flow control",
+        "&C/&D - Carrier/DTR policy",
+        "&M0/&Q0/5/6 - Requested asynchronous operation",
+        "+FCLASS - Service class",
+        "%H - Command help",
+    };
+    g_autofree char *heading =
+        g_strdup_printf("%s - QEMU command help", modem->model->name);
+
+    modem_queue_line(modem, heading);
+    for (size_t i = 0; i < ARRAY_SIZE(lines); i++) {
+        modem_queue_line(modem, lines[i]);
+    }
+    if (modem->model->dataport_3740_line) {
+        modem_queue_line(modem,
+                         "&M1-3/&Q1-3 - Synchronous configuration only");
+        modem_queue_line(modem,
+                         "%M/%BL - Requested V.34/V.FC/legacy rate");
+    }
+    modem_queue_line(modem, "Line modulation and reliability not negotiated");
+}
+
 static void modem_report_profile(ModemChardev *modem)
 {
     g_autofree char *line = NULL;
@@ -1623,6 +1664,14 @@ static void modem_execute_command(ModemChardev *modem, const char *input)
                     return;
                 }
                 modem->compression = value != 0;
+                break;
+            case 'H':
+                if (!modem->model->paradyne_commands ||
+                    g_ascii_isdigit(*p)) {
+                    modem_result(modem, MODEM_RESULT_ERROR);
+                    return;
+                }
+                modem_report_dataport_help(modem);
                 break;
             case 'M':
                 value = modem_parse_number(&p, -1);
