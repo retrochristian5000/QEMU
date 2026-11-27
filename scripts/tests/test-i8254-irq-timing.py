@@ -126,6 +126,33 @@ int main(void)
         assert(pit_get_next_transition_time(&s, ns_for_ticks(6)) == -1);
     }
 
+    /* A one-clock period cannot have a distinct low half-cycle. */
+    for (unsigned mode = 2; mode <= 3; mode++) {
+        s.mode = mode;
+        s.count = 1;
+        assert(pit_get_out(&s, ns_for_ticks(0)) == 1);
+        assert(pit_get_out(&s, ns_for_ticks(100)) == 1);
+        assert(pit_get_next_transition_time(&s, ns_for_ticks(100)) == -1);
+    }
+
+    /* Compare common count and edge calculations against known sequences. */
+    const int expected_8253[] = { 5, 4, 2, 5, 2, 5 };
+    const int expected_8254[] = { 4, 2, 0, 4, 2, 4 };
+    s.mode = 3;
+    s.count = 5;
+    for (unsigned i = 0; i < 6; i++) {
+        assert(pit_get_count_at(&s, ns_for_ticks(i), true) == expected_8253[i]);
+        assert(pit_get_count_at(&s, ns_for_ticks(i), false) == expected_8254[i]);
+    }
+
+    /* Zero reload and a future epoch must not produce a modulo-by-zero
+     * or a spurious interrupt edge. */
+    s.count = 0;
+    s.count_load_time = 1000;
+    assert(pit_get_count_at(&s, 0, false) == 65536);
+    assert(pit_get_out(&s, 0) == 1);
+    assert(pit_get_next_transition_time(&s, 0) ==
+           1000 + ns_for_ticks(32768));
     return 0;
 }
 """
@@ -145,10 +172,8 @@ class PITTimingTests(unittest.TestCase):
             executable = Path(tmp) / "test"
             c_path.write_text(STUBS + "\n" + implementation + "\n" + CASES,
                               encoding="utf-8")
-            # Existing PIT code mixes unsigned ticks with signed counts.
-            # Keep its original arithmetic untouched during this hot-path test.
             subprocess.run([cc, "-std=gnu11", "-Wall", "-Wextra",
-                            "-Werror", "-Wno-sign-compare",
+                            "-Werror", "-fsanitize=undefined",
                             str(c_path), "-o", str(executable)],
                            check=True, capture_output=True, text=True)
             subprocess.run([str(executable)], check=True)
