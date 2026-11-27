@@ -229,9 +229,88 @@ use it in an existing guest configuration yet.
 Hardware identity
 -----------------
 
-Linux's SB16 ISA driver lists card IDs CTL0024 through CTL002C with audio
-logical device ID CTL0031. These are family references, not a selection of
-a verified board revision. ViBRA and AWE devices remain separate.
+ISA PnP uses separate card identifiers (from serial isolation) and logical
+device identifiers (from the resource data). Neither is a Creative PCB
+model number. The following driver-matching evidence is not a complete
+card resource-data dump.
+
+.. list-table::
+   :header-rows: 1
+   :widths: 32 24 22 22
+
+   * - Family
+     - Card ID
+     - Audio logical ID
+     - Wavetable logical ID (driver match)
+   * - SB16 PnP
+     - CTL0024–CTL002C
+     - CTL0031
+     - Not listed
+   * - ViBRA16S
+     - CTL0051
+     - CTL0001
+     - Not listed
+   * - ViBRA16C
+     - CTL0070
+     - CTL0001
+     - Not listed
+   * - ViBRA16CL
+     - CTL0080
+     - CTL0041
+     - Not listed
+   * - SB16 Value PnP (CT4130 PCB, CT4131 sticker)
+     - CTL0086
+     - CTL0041
+     - Not listed
+   * - ViBRA16X
+     - CTL00F0
+     - CTL0043
+     - Not listed
+   * - AWE32 PnP (selected examples)
+     - CTL0035, CTL0039, CTL0042–CTL0048
+     - CTL0031
+     - CTL0021
+   * - SB32 PnP
+     - CTL009F
+     - CTL0041
+     - CTL0021
+   * - AWE64 PnP (example)
+     - CTL009D
+     - CTL0042
+     - CTL0022
+   * - AWE64 Gold (example)
+     - CTL009E
+     - CTL0044
+     - CTL0023
+
+The table is derived from the Linux driver matching table cited below.
+The CT4130/CT4131 attribution is a specimen report in that table, not
+a verified mapping for every revision. Absence from the wavetable column
+does not prove absence of other logical devices.
+
+Creative's SB16AWE.INF (May 1997) uses PNPB003 as a legacy SB16 compatible
+ID, CTL0051 for a stereo enhancement logical device, and CTL7002/CTL7005
+for programmable gameports. It also uses CTL0024 as an AWE-compatible
+wavetable logical ID; the same string is an SB16 card ID in a different
+namespace. Likewise CTL0051 is a ViBRA16S card ID as well as a logical
+device ID. Never classify a card from an unqualified identifier alone.
+
+The original jumper-configured CT1730/CT1740, CT1750, CT1770 and CT1790
+do not acquire ISA PnP serial identities from these tables. PNPB003 is a
+driver compatibility identifier, not evidence of an ISA PnP serial ROM.
+
+For a future PnP board implementation, require a board-specific resource
+capture identifying the card, logical device numbers, compatible IDs,
+dependent resource alternatives and activation behavior. Do not infer
+logical device numbers from the ordering of a driver's match table.
+Keep the card identity distinct from the DSP model and synth capability.
+SeaBIOS system-node reporting is not a replacement for ISA PnP isolation.
+The reserved QOM profiles must remain unavailable until their hardware
+and activation paths exist.
+
+Windows driver reference:
+https://manuals.plus/m/c47ef6b87aca5ea4bf501cd851efd7e277796fc02c7046c17462f002bdd0a448
+(SB16AWE.INF, revision 1.11.000).
 
 Windows 95/98 may display a combined Sound Blaster 16 or AWE32 driver
 description for the shared PCM interface. This is not an AWE32 hardware
