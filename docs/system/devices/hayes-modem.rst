@@ -75,6 +75,9 @@ profile-scoped Paradyne configuration commands:
   connection/reliability mode. On the 3740, ``\N7`` is accepted for
   compatibility with the archived DataPort Express V.34 driver.
 * ``\Q0`` through ``\Q4``: record the configured flow-control mode
+* ``\K0`` through ``\K5``: record the requested DTE BREAK policy
+  (factory default 5, bare command selects 0); reported by AT&V and
+  included in stored profiles
 * ``%B<rate>``: select an attested discrete line-speed setting no higher than
   the selected model's maximum; invalid values return ``ERROR``
 * ``AT&V``: inspect the current ``\N``, ``\Q``, and DCE speed settings
@@ -102,6 +105,14 @@ Then send the following from the guest serial terminal::
 The 3740 accepts ``%B28800``; the 3711 rejects that rate. Both accept
 ``\N7`` and reject ``\N8``. The generic Hayes and Rockwell profiles do
 not acquire these Paradyne-specific commands.
+
+The BREAK policy is documented for both the 3711 and 3740 hardware
+tables. The six values describe discard, priority or ordered BREAK
+handling and whether to enter command mode. Only the configuration
+is implemented; serial BREAK delivery, buffer-discard effects and
+BREAK-triggered command-mode transitions are not yet emulated.
+No synthetic bytes are sent to the TCP peer. The separate &K command
+retains its existing behavior; \B (transmit BREAK) remains unsupported.
 
 Both user profiles initially contain factory defaults. Stored settings
 include the emulated writable S-registers, data reliability, compression,

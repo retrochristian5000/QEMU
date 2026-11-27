@@ -90,6 +90,7 @@ typedef struct ModemStoredProfile {
     int flow_control_mode;
     bool xon_xoff_passthrough;
     int lapm_frame_size;
+    int break_mode;
     DataPortHighSpeedMode v34_modulation;
     bool dataport_legacy_rate;
 } ModemStoredProfile;
@@ -140,6 +141,7 @@ struct ModemChardev {
     bool xon_xoff_passthrough;
     bool dte_rx_paused;
     int lapm_frame_size;
+    int break_mode;
     DataPortHighSpeedMode v34_modulation;
     bool dataport_legacy_rate;
 
@@ -474,6 +476,7 @@ static void modem_model_defaults(ModemChardev *modem)
     modem->xon_xoff_passthrough = false;
     modem->dte_rx_paused = false;
     modem->lapm_frame_size = 256;
+    modem->break_mode = 5;
     modem->v34_modulation = DATAPORT_V34_AND_VFC;
     modem->dataport_legacy_rate = false;
     modem->connect_speed = modem->model->connect_speed;
@@ -523,6 +526,7 @@ static void modem_store_profile(ModemChardev *modem, unsigned index)
     profile->flow_control_mode = modem->flow_control_mode;
     profile->xon_xoff_passthrough = modem->xon_xoff_passthrough;
     profile->lapm_frame_size = modem->lapm_frame_size;
+    profile->break_mode = modem->break_mode;
     profile->v34_modulation = modem->v34_modulation;
     profile->dataport_legacy_rate = modem->dataport_legacy_rate;
 }
@@ -546,6 +550,7 @@ static void modem_restore_profile(ModemChardev *modem, unsigned index)
     modem->flow_control_mode = profile->flow_control_mode;
     modem->xon_xoff_passthrough = profile->xon_xoff_passthrough;
     modem->lapm_frame_size = profile->lapm_frame_size;
+    modem->break_mode = profile->break_mode;
     modem->v34_modulation = profile->v34_modulation;
     modem->dataport_legacy_rate = profile->dataport_legacy_rate;
     modem_update_carrier(modem);
@@ -660,10 +665,11 @@ static void modem_report_profile(ModemChardev *modem)
                                modem->connect_speed);
         modem_queue_line(modem, line);
         g_clear_pointer(&line, g_free);
-        line = g_strdup_printf("\\D%d \\A%d \\X%d",
+        line = g_strdup_printf("\\D%d \\A%d \\X%d \\K%d",
                                modem->cts_follows_dtr,
                                modem->lapm_frame_size / 64 - 1,
-                               modem->xon_xoff_passthrough);
+                               modem->xon_xoff_passthrough,
+                               modem->break_mode);
         modem_queue_line(modem, line);
         if (modem->model->dataport_3740_line) {
             g_clear_pointer(&line, g_free);
@@ -1496,6 +1502,15 @@ static void modem_execute_command(ModemChardev *modem, const char *input)
                 }
                 modem->cts_follows_dtr = value == 1;
                 modem_update_carrier(modem);
+                break;
+            case 'K':
+                value = modem_parse_number(&p, 0);
+                if (!modem->model->paradyne_commands || value > 5) {
+                    modem_result(modem, MODEM_RESULT_ERROR);
+                    return;
+                }
+                /* Configuration only: TCP has no serial BREAK channel. */
+                modem->break_mode = value;
                 break;
             case 'N':
                 value = modem_parse_number(&p, -1);
