@@ -702,7 +702,10 @@ static void pcnet_s_reset(PCNetState *s)
     s->csr[88]  = 0x1003;
     s->csr[89]  = 0x0262;
     s->csr[94]  = 0x0000;
-    s->csr[100] = 0x0200;
+    s->csr[100] = s->am79c970a ? 0x0600 : 0x0200;
+    if (s->am79c970a) {
+        s->timer = 0;
+    }
     s->csr[103] = 0x0105;
     s->csr[112] = 0x0000;
     s->csr[114] = 0x0000;
@@ -1316,6 +1319,29 @@ static void pcnet_poll_timer(void *opaque)
     pcnet_update_irq(s);
 
     if (!CSR_STOP(s) && !CSR_SPND(s) && !CSR_DPOLL(s)) {
+        if (s->am79c970a) {
+            /*
+             * AMD 19436 Rev E, CSR46/47: approximately 30 ns per tick.
+             * The timestamp is encoded as tick + 1, reserving zero for
+             * an inactive counter. Rebase on each update.
+             */
+            uint64_t now = qemu_clock_get_ns(QEMU_CLOCK_VIRTUAL) / 30 + 1;
+            uint64_t elapsed = s->timer && now >= s->timer ?
+                               now - s->timer : 0;
+            s->timer = now;
+            if (elapsed >= 65536U - CSR_POLL(s)) {
+                pcnet_poll(s);
+                CSR_POLL(s) = CSR_PINT(s) & 0xfff0;
+            } else {
+                CSR_POLL(s) += elapsed;
+            }
+            if (!CSR_STOP(s) && !CSR_SPND(s) && !CSR_DPOLL(s)) {
+                timer_mod(s->poll_timer,
+                          pcnet_get_next_poll_time(s,
+                              qemu_clock_get_ns(QEMU_CLOCK_VIRTUAL)));
+            }
+            return;
+        }
         uint64_t now = qemu_clock_get_ns(QEMU_CLOCK_VIRTUAL) * 33;
         if (!s->timer || !now) {
             s->timer = now;
@@ -1330,6 +1356,8 @@ static void pcnet_poll_timer(void *opaque)
         }
         timer_mod(s->poll_timer,
             pcnet_get_next_poll_time(s,qemu_clock_get_ns(QEMU_CLOCK_VIRTUAL)));
+    } else if (s->am79c970a) {
+        s->timer = 0;
     }
 }
 
@@ -1403,14 +1431,29 @@ static void pcnet_csr_writew(PCNetState *s, uint32_t rap, uint32_t new_value)
     case 43:
     case 44:
     case 45:
+        break;
     case 46: /* POLL */
     case 47: /* POLLINT */
+        if (s->am79c970a) {
+            if (!(CSR_STOP(s) || CSR_SPND(s))) {
+                return;
+            }
+            if (rap == 47) {
+                val &= 0xfff0;
+            }
+        }
+        break;
     case 72:
     case 74:
         break;
     case 76: /* RCVRL */
     case 78: /* XMTRL */
         val = (val > 0) ? val : 512;
+        break;
+    case 100:
+        if (!s->am79c970a || !(CSR_STOP(s) || CSR_SPND(s))) {
+            return;
+        }
         break;
     case 112:
         if (CSR_STOP(s) || CSR_SPND(s)) {
@@ -1512,6 +1555,10 @@ static void pcnet_bcr_writew(PCNetState *s, uint32_t rap, uint32_t val)
     case BCR_BSBC:
     case BCR_EECAS:
     case BCR_PLAT:
+        if (s->am79c970a && rap == BCR_PLAT &&
+            !(CSR_STOP(s) || CSR_SPND(s))) {
+            return;
+        }
         s->bcr[rap] = val;
         break;
     default:
