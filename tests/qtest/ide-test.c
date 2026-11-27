@@ -1667,6 +1667,27 @@ static void test_pc_legacy_cd_model(const void *opaque)
     qtest_quit(qts);
 }
 
+static void xm6202b_read_packet(QTestState *qts, const uint8_t *packet,
+                                 uint8_t *reply, unsigned len)
+{
+    qtest_outb(qts, 0x1f1, 0);
+    qtest_outb(qts, 0x1f4, len);
+    qtest_outb(qts, 0x1f5, 0);
+    qtest_outb(qts, 0x1f7, CMD_PACKET);
+    assert_bit_set(qtest_inb(qts, 0x1f7), DRQ);
+    for (unsigned i = 0; i < 12; i += 2) {
+        qtest_outw(qts, 0x1f0, packet[i] | (packet[i + 1] << 8));
+    }
+    assert_bit_set(qtest_inb(qts, 0x1f7), DRQ);
+    g_assert_cmpuint(qtest_inb(qts, 0x1f4), ==, len);
+    for (unsigned i = 0; i < len; i += 2) {
+        uint16_t word = qtest_inw(qts, 0x1f0);
+        reply[i] = word;
+        reply[i + 1] = word >> 8;
+    }
+    assert_bit_clear(qtest_inb(qts, 0x1f7), BSY | DRQ | ERR);
+}
+
 static void test_xm6202b_capabilities(void)
 {
     QTestState *qts = qtest_init(
@@ -1674,6 +1695,8 @@ static void test_xm6202b_capabilities(void)
     uint16_t id[256];
     const uint8_t packet[12] = { 0x5a, 0, 0x2a, 0, 0, 0, 0, 0, 30 };
     uint8_t reply[30];
+    const uint8_t inquiry[12] = { 0x12, 0, 0, 0, 36 };
+    uint8_t ident[36];
 
     qtest_outb(qts, 0x1f6, 0xa0);
     qtest_outb(qts, 0x1f7, CMD_PACKET_IDENTIFY);
@@ -1699,21 +1722,11 @@ static void test_xm6202b_capabilities(void)
     qtest_outb(qts, 0x1f7, CMD_PACKET);
     assert_bit_set(qtest_inb(qts, 0x1f7), ERR);
 
-    qtest_outb(qts, 0x1f1, 0);
-    qtest_outb(qts, 0x1f4, sizeof(reply));
-    qtest_outb(qts, 0x1f5, 0);
-    qtest_outb(qts, 0x1f7, CMD_PACKET);
-    assert_bit_set(qtest_inb(qts, 0x1f7), DRQ);
-    for (unsigned i = 0; i < sizeof(packet); i += 2) {
-        qtest_outw(qts, 0x1f0, packet[i] | (packet[i + 1] << 8));
-    }
-    assert_bit_set(qtest_inb(qts, 0x1f7), DRQ);
-    for (unsigned i = 0; i < sizeof(reply); i += 2) {
-        uint16_t word = qtest_inw(qts, 0x1f0);
-        reply[i] = word;
-        reply[i + 1] = word >> 8;
-    }
-    assert_bit_clear(qtest_inb(qts, 0x1f7), BSY | DRQ | ERR);
+    xm6202b_read_packet(qts, inquiry, ident, sizeof(ident));
+    g_assert_cmpmem(ident + 8, 8, "TOSHIBA ", 8);
+    g_assert_cmpmem(ident + 16, 16, "CD-ROM XM-6202B  ", 16);
+
+    xm6202b_read_packet(qts, packet, reply, sizeof(reply));
     g_assert_cmphex(reply[10], ==, 0); /* No DVD media support. */
     g_assert_cmpuint((reply[16] << 8) | reply[17], ==, 4800);
     g_assert_cmpuint((reply[20] << 8) | reply[21], ==, 256);
