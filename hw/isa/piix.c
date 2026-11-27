@@ -44,6 +44,37 @@ static void piix_request_i8259_irq(void *opaque, int irq, int level)
     qemu_set_irq(s->cpu_intr, level);
 }
 
+/* Intel 82371SB datasheet sections 2.2.3-2.2.7 and Table 2. */
+#define PIIX3_COMMAND_FIXED (PCI_COMMAND_IO | PCI_COMMAND_MEMORY | \
+                             PCI_COMMAND_MASTER)
+#define PIIX3_COMMAND_WRITABLE (PCI_COMMAND_SPECIAL | PCI_COMMAND_SERR)
+#define PIIX3_STATUS_W1C (PCI_STATUS_SIG_TARGET_ABORT | \
+                          PCI_STATUS_REC_TARGET_ABORT | \
+                          PCI_STATUS_REC_MASTER_ABORT | PCI_STATUS_SIG_SYSTEM_ERROR)
+
+static void piix3_normalize_header(PCIDevice *dev)
+{
+    uint16_t cmd = pci_get_word(dev->config + PCI_COMMAND);
+    uint16_t status = pci_get_word(dev->config + PCI_STATUS);
+
+    pci_set_word(dev->config + PCI_COMMAND,
+                 (cmd & PIIX3_COMMAND_WRITABLE) | PIIX3_COMMAND_FIXED);
+    pci_set_word(dev->config + PCI_STATUS,
+                 (status & PIIX3_STATUS_W1C) | PCI_STATUS_DEVSEL_MEDIUM);
+    /* Function 0 has no BARs, subsystem IDs, ROM or interrupt line. */
+    memset(dev->config + PCI_CACHE_LINE_SIZE, 0, 2);
+    memset(dev->config + PCI_BIST, 0, 0x4c - PCI_BIST);
+}
+
+static void piix3_init_header(PCIDevice *dev)
+{
+    pci_set_word(dev->wmask + PCI_COMMAND, PIIX3_COMMAND_WRITABLE);
+    pci_set_word(dev->w1cmask + PCI_STATUS, PIIX3_STATUS_W1C);
+    memset(dev->wmask + PCI_CACHE_LINE_SIZE, 0, 2);
+    memset(dev->wmask + PCI_BIST, 0, 0x4c - PCI_BIST);
+    piix3_normalize_header(dev);
+}
+
 static void piix_reset(DeviceState *dev)
 {
     PIIXState *d = PIIX_PCI_DEVICE(dev);
@@ -81,6 +112,10 @@ static void piix_reset(DeviceState *dev)
     pci_conf[0xac] = 0x00;
     pci_conf[0xae] = 0x00;
 
+    if (object_dynamic_cast(OBJECT(dev), TYPE_PIIX3_DEVICE)) {
+        piix3_normalize_header(&d->dev);
+    }
+
     d->pic_levels = 0;
     d->rcr = 0;
 }
@@ -88,6 +123,13 @@ static void piix_reset(DeviceState *dev)
 static int piix_post_load(void *opaque, int version_id)
 {
     PIIXState *s = opaque;
+
+    if (object_dynamic_cast(OBJECT(s), TYPE_PIIX3_DEVICE)) {
+        /* Older streams may have writable generic PCI header values. */
+        piix3_normalize_header(&s->dev);
+        pci_default_write_config(&s->dev, PCI_COMMAND,
+                                 pci_get_word(s->dev.config + PCI_COMMAND), 2);
+    }
 
     /*
      * Older streams could contain writes to reserved PIRQRC bits.
@@ -424,6 +466,7 @@ static const TypeInfo piix_pci_type_info = {
 
 static void piix3_realize(PCIDevice *dev, Error **errp)
 {
+    piix3_init_header(dev);
     pci_piix_realize(dev, TYPE_PIIX3_USB_UHCI, errp);
 }
 
