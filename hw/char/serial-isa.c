@@ -45,6 +45,7 @@ struct ISASerialState {
     uint32_t iobase;
     uint32_t isairq;
     bool acpi_legacy_irq;
+    bool acpi_legacy_cid;
     SerialState state;
     Chardev *owned_modem;
 };
@@ -167,6 +168,14 @@ static void serial_isa_build_aml(AcpiDevAmlIf *adev, Aml *scope)
     aml_append(dev, aml_name_decl("_HID",
                                   aml_eisaid(isa->state.no_fifo ?
                                              "PNP0500" : "PNP0501")));
+    /*
+     * The FIFO-capable UART also supports the standard PC COM register
+     * interface. Keep the more specific HID and expose only a fallback.
+     * Non-FIFO UARTs already use PNP0500 as their primary identity.
+     */
+    if (isa->acpi_legacy_cid && !isa->state.no_fifo) {
+        aml_append(dev, aml_name_decl("_CID", aml_eisaid("PNP0500")));
+    }
     aml_append(dev, aml_name_decl("_UID", aml_int(isa->index + 1)));
     aml_append(dev, aml_name_decl("_STA", aml_int(0xf)));
     aml_append(dev, aml_name_decl("_CRS", crs));
@@ -189,6 +198,7 @@ static const Property serial_isa_properties[] = {
     DEFINE_PROP_UINT32("iobase",  ISASerialState, iobase,  -1),
     DEFINE_PROP_UINT32("irq",    ISASerialState, isairq,  -1),
     DEFINE_PROP_BOOL("acpi-legacy-irq", ISASerialState, acpi_legacy_irq, false),
+    DEFINE_PROP_BOOL("acpi-legacy-cid", ISASerialState, acpi_legacy_cid, true),
 };
 
 static void serial_isa_class_initfn(ObjectClass *klass, const void *data)

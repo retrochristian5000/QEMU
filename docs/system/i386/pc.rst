@@ -812,3 +812,28 @@ are unchanged. This does not alter the identities of ISA devices.
 
 See ACPI Specification 6.4, section 6.1.12 (_UID):
 https://uefi.org/htmlspecs/ACPI_Spec_6_4_html/06_Device_Configuration/Device_Configuration.html
+
+Legacy serial compatible identifiers
+------------------------------------
+
+On current PC machine types, a FIFO-capable ISA UART publishes
+``_HID = EisaId("PNP0501")`` and ``_CID = EisaId("PNP0500")`` on the
+same ACPI device. The fallback identifies the standard COM programming
+interface; it does not create a second serial port. Non-FIFO UARTs
+already use PNP0500 as their HID and do not repeat it as a CID. The
+existing COM index UID, resources, and migration state are unchanged.
+PC compatibility machine types 11.0 and earlier retain the previous AML
+by default. The device property ``acpi-legacy-cid`` allows an explicit
+override (for example, ``-global isa-serial.acpi-legacy-cid=on``).
+
+ACPI 1.0 section 6.1.2 defines compressed EISA compatible identifiers;
+the PC 98 System Design Guide recommends PNP0500 for standard COM ports
+and PNPB003 for SB16-compatible sound devices. Do not advertise the
+latter on an invented ACPI audio node for an independently enumerated
+ISA PnP card. Preserve PCI and PCIe root bridge compatible IDs and do not
+introduce aliases that claim unsupported hardware functionality.
+
+References:
+
+* https://uefi.org/sites/default/files/resources/ACPI_1.pdf
+* https://techshelps.github.io/MSDN/PC98/HTML/03bas98_3.htm

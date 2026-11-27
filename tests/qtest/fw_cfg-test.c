@@ -453,11 +453,91 @@ static void test_acpi_root_uid_distinct(void)
     qtest_quit(s);
 }
 
+typedef struct SerialCidCase {
+    const char *machine;
+    const char *device;
+    const char *extra;
+    bool fifo;
+    bool cid;
+} SerialCidCase;
+
+static const SerialCidCase serial_cid_cases[] = {
+    { "pc", "isa-serial", "", true, true },
+    { "pc", "ns16450", "", false, false },
+    { "pc", "isa-serial", ",acpi-legacy-cid=off", true, false },
+    { "pc-i440fx-11.0", "isa-serial", "", true, false },
+    { "pc-i440fx-11.0", "isa-serial", ",acpi-legacy-cid=on", true, true },
+};
+
+static void test_serial_cid(gconstpointer opaque)
+{
+    const SerialCidCase *test = opaque;
+    QTestState *s = qtest_initf("-M %s,acpi=on -nodefaults "
+                               "-chardev null,id=uart "
+                               "-device %s,index=0,chardev=uart%s",
+                               test->machine, test->device, test->extra);
+    QFWCFG *fw_cfg = pc_fw_cfg_init(s);
+    uint8_t first;
+    size_t len = qfw_cfg_get_file(fw_cfg, "etc/acpi/tables", &first, 1);
+    g_autofree uint8_t *tables = NULL;
+    size_t end;
+    unsigned int matches = 0;
+    /* COM1 followed by the HID NameOp and compressed EISA ID. */
+    uint8_t identity[] = {
+        'C', 'O', 'M', '1', 0x08, '_', 'H', 'I', 'D', 0x0c,
+        0x41, 0xd0, 0x05, test->fifo ? 0x01 : 0x00,
+    };
+    static const uint8_t cid[] = {
+        0x08, '_', 'C', 'I', 'D', 0x0c, 0x41, 0xd0, 0x05, 0x00,
+    };
+    static const uint8_t uid[] = { 0x08, '_', 'U', 'I', 'D', 0x01 };
+
+    g_assert_cmpuint(len, >=, 64 + 36);
+    g_assert_cmpuint(len, <=, 16 * MiB);
+    tables = g_malloc(len);
+    g_assert_cmpuint(qfw_cfg_get_file(fw_cfg, "etc/acpi/tables",
+                                      tables, len), ==, len);
+    g_assert_cmpmem(tables + 64, 4, "DSDT", 4);
+    end = 64 + (size_t)ldl_le_p(tables + 68);
+    g_assert_cmpuint(end, >=, 64 + 36);
+    g_assert_cmpuint(end, <=, len);
+    for (size_t i = 64 + 36; i + sizeof(identity) <= end; i++) {
+        size_t next;
+
+        if (memcmp(tables + i, identity, sizeof(identity))) {
+            continue;
+        }
+        matches++;
+        next = i + sizeof(identity);
+        if (test->cid) {
+            g_assert_cmpuint(end - next, >=, sizeof(cid));
+            g_assert_cmpmem(tables + next, sizeof(cid), cid, sizeof(cid));
+            next += sizeof(cid);
+        }
+        /* CID, when present, must be on the same node; UID stays COM1. */
+        g_assert_cmpuint(end - next, >=, sizeof(uid));
+        g_assert_cmpmem(tables + next, sizeof(uid), uid, sizeof(uid));
+    }
+    g_assert_cmpuint(matches, ==, 1);
+    pc_fw_cfg_uninit(fw_cfg);
+    qtest_quit(s);
+}
+
 int main(int argc, char **argv)
 {
     g_test_init(&argc, &argv, NULL);
 
     qtest_add_func("fw_cfg/signature", test_fw_cfg_signature);
+    for (size_t i = 0; i < G_N_ELEMENTS(serial_cid_cases); i++) {
+        const SerialCidCase *test = &serial_cid_cases[i];
+
+        if (qtest_has_machine(test->machine) &&
+            qtest_has_device(test->device)) {
+            g_autofree char *name =
+                g_strdup_printf("fw_cfg/serial-cid/case-%zu", i);
+            qtest_add_data_func(name, test, test_serial_cid);
+        }
+    }
     if (qtest_has_machine("pc-i440fx-5.1") && qtest_has_device("pxb")) {
         qtest_add_func("fw_cfg/acpi-root-uid/collision",
                        test_acpi_root_uid_collision);
