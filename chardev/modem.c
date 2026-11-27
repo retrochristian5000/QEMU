@@ -73,6 +73,16 @@ typedef enum DataPortHighSpeedMode {
     DATAPORT_VFC_ONLY,
 } DataPortHighSpeedMode;
 
+/* Requested DTE operating mode, numbered as the &Q command. */
+typedef enum ModemOperatingMode {
+    MODEM_MODE_DIRECT = 0,
+    MODEM_MODE_SYNC = 1,
+    MODEM_MODE_SYNC_DTR_DIAL = 2,
+    MODEM_MODE_SYNC_TALK_DATA = 3,
+    MODEM_MODE_ASYNC_RELIABLE = 5,
+    MODEM_MODE_ASYNC_BUFFERED = 6,
+} ModemOperatingMode;
+
 /* Only configuration, never connection state or host transport resources. */
 typedef struct ModemStoredProfile {
     int sreg[MODEM_SREG_COUNT];
@@ -87,6 +97,7 @@ typedef struct ModemStoredProfile {
     int x_mode;
     int w_mode;
     int reliable_mode;
+    ModemOperatingMode operating_mode;
     bool bell_modulation;
     int auto_reliable_buffer;
     int auto_reliable_fallback;
@@ -140,6 +151,7 @@ struct ModemChardev {
     int x_mode;
     int w_mode;
     int reliable_mode;
+    ModemOperatingMode operating_mode;
     bool bell_modulation;
     int auto_reliable_buffer;
     int auto_reliable_fallback;
@@ -478,6 +490,8 @@ static void modem_model_defaults(ModemChardev *modem)
     modem->w_mode = 1;
     /* These are requested settings; no analogue negotiation is simulated. */
     modem->reliable_mode = modem->model->paradyne_commands ? 6 : 0;
+    modem->operating_mode = modem->model->paradyne_commands ?
+        MODEM_MODE_ASYNC_RELIABLE : MODEM_MODE_ASYNC_BUFFERED;
     modem->bell_modulation = true; /* US Rockwell reference default. */
     modem->auto_reliable_buffer = 0;
     modem->auto_reliable_fallback = 19;
@@ -532,6 +546,7 @@ static void modem_store_profile(ModemChardev *modem, unsigned index)
     profile->x_mode = modem->x_mode;
     profile->w_mode = modem->w_mode;
     profile->reliable_mode = modem->reliable_mode;
+    profile->operating_mode = modem->operating_mode;
     profile->bell_modulation = modem->bell_modulation;
     profile->auto_reliable_buffer = modem->auto_reliable_buffer;
     profile->auto_reliable_fallback = modem->auto_reliable_fallback;
@@ -559,6 +574,7 @@ static void modem_restore_profile(ModemChardev *modem, unsigned index)
     modem->x_mode = profile->x_mode;
     modem->w_mode = profile->w_mode;
     modem->reliable_mode = profile->reliable_mode;
+    modem->operating_mode = profile->operating_mode;
     modem->bell_modulation = profile->bell_modulation;
     modem->auto_reliable_buffer = profile->auto_reliable_buffer;
     modem->auto_reliable_fallback = profile->auto_reliable_fallback;
@@ -654,6 +670,49 @@ static bool modem_dataport_vfc_rate(int speed)
     return speed >= 14400 && speed <= 28800 && speed % 2400 == 0;
 }
 
+static bool modem_mode_is_sync(ModemOperatingMode mode)
+{
+    return mode >= MODEM_MODE_SYNC && mode <= MODEM_MODE_SYNC_TALK_DATA;
+}
+
+static bool modem_set_operating_mode(ModemChardev *modem, int mode)
+{
+    switch (mode) {
+    case MODEM_MODE_DIRECT:
+        modem->reliable_mode = 1;
+        break;
+    case MODEM_MODE_ASYNC_BUFFERED:
+        modem->reliable_mode = 0;
+        break;
+    case MODEM_MODE_ASYNC_RELIABLE:
+        /*
+         * Retain an explicit reliable policy, or restore the existing
+         * default when coming from a non-reliable mode.
+         */
+        if (modem->reliable_mode < 2) {
+            modem->reliable_mode = 6;
+        }
+        break;
+    case MODEM_MODE_SYNC:
+    case MODEM_MODE_SYNC_DTR_DIAL:
+    case MODEM_MODE_SYNC_TALK_DATA:
+        /*
+         * External DataPort reference semantics. The emulated ISA
+         * 3711 has no synchronous interface. Do not switch an active
+         * byte connection to a synchronous mode.
+         */
+        if (!modem->model->dataport_3740_line ||
+            modem->connected || modem->dialing) {
+            return false;
+        }
+        break;
+    default:
+        return false;
+    }
+    modem->operating_mode = mode;
+    return true;
+}
+
 static void modem_report_profile(ModemChardev *modem)
 {
     g_autofree char *line = NULL;
@@ -694,8 +753,18 @@ static void modem_report_profile(ModemChardev *modem)
         g_clear_pointer(&line, g_free);
         line = g_strdup_printf("B%d", modem->bell_modulation);
         modem_queue_line(modem, line);
+        g_clear_pointer(&line, g_free);
+        line = g_strdup_printf("&Q%d", modem->operating_mode);
+        modem_queue_line(modem, line);
+        modem_queue_line(modem, modem_mode_is_sync(modem->operating_mode) ?
+                         "REQUESTED DTE MODE: SYNCHRONOUS" :
+                         "REQUESTED DTE MODE: ASYNCHRONOUS");
+        if (modem_mode_is_sync(modem->operating_mode)) {
+            modem_queue_line(modem, "ASYNC RELIABILITY POLICY INACTIVE");
+        }
         /* Report requested policy, never an inferred negotiated link. */
-        if (modem->reliable_mode == 2 || modem->reliable_mode == 3) {
+        if (modem->operating_mode == MODEM_MODE_ASYNC_RELIABLE &&
+            (modem->reliable_mode == 2 || modem->reliable_mode == 3)) {
             modem_queue_line(modem, modem->reliable_mode == 2 ?
                              "REQUESTED LINK: MNP ONLY" :
                              "REQUESTED LINK: MNP WITH NORMAL FALLBACK");
@@ -930,6 +999,13 @@ static void modem_dial(ModemChardev *modem)
         .type = SOCKET_ADDRESS_TYPE_INET,
     };
 
+    if (modem->service_class == 0 &&
+        modem_mode_is_sync(modem->operating_mode)) {
+        /* The byte transport cannot carry synchronous DTE clocking. */
+        modem_hangup(modem, false);
+        modem_result(modem, MODEM_RESULT_NO_CARRIER);
+        return;
+    }
     if (modem->offline_line ||
         (modem->model->dataport_3740_line && !modem->tcp_host)) {
         /* Blind dialing cannot detect a missing dial tone. It still
@@ -1441,8 +1517,25 @@ static void modem_execute_command(ModemChardev *modem, const char *input)
                 modem_parse_number(&p, 0);
                 modem_model_defaults(modem);
                 break;
+            case 'M':
+            case 'Q': {
+                char operation = p[-1];
+
+                value = modem_parse_number(&p, 0);
+                if (!modem->model->paradyne_commands) {
+                    /* Preserve the pre-existing generic &Q compatibility. */
+                    if (operation == 'M') {
+                        modem_result(modem, MODEM_RESULT_ERROR);
+                        return;
+                    }
+                } else if ((operation == 'M' && value > 3) ||
+                           !modem_set_operating_mode(modem, value)) {
+                    modem_result(modem, MODEM_RESULT_ERROR);
+                    return;
+                }
+                break;
+            }
             case 'K':
-            case 'Q':
             case 'T':
                 modem_parse_number(&p, 0);
                 break;
@@ -1577,14 +1670,16 @@ static void modem_execute_command(ModemChardev *modem, const char *input)
                 modem->break_mode = value;
                 break;
             case 'N':
-                value = modem_parse_number(&p, -1);
+                value = modem_parse_number(&p, 0);
                 if (modem->model->paradyne_commands) {
-                    if (value < 0 ||
-                        value > modem->model->max_reliable_mode) {
+                    if (value > modem->model->max_reliable_mode) {
                         modem_result(modem, MODEM_RESULT_ERROR);
                         return;
                     }
                     modem->reliable_mode = value;
+                    modem->operating_mode = value == 0 ?
+                        MODEM_MODE_ASYNC_BUFFERED : value == 1 ?
+                        MODEM_MODE_DIRECT : MODEM_MODE_ASYNC_RELIABLE;
                 }
                 break;
             case 'Q':

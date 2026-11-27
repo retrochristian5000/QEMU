@@ -420,6 +420,90 @@ static void test_dataport_family_controls(gconstpointer opaque)
     modem_frontend_cleanup(&fe, chr);
 }
 
+static void test_dataport_operating_mode(gconstpointer opaque)
+{
+    const char *model = opaque;
+    bool external = !strcmp(model, "att-paradyne-3740");
+    ModemOutput out = { 0 };
+    CharFrontend fe = { 0 };
+    Chardev *chr = modem_new("modem-operating-mode", model);
+    const char *reply;
+
+    modem_frontend_init(&fe, &out, chr);
+    assert_response_contains(modem_command(&fe, &out, "ATEQV1\r"),
+                             "\r\nOK\r\n");
+    assert_response_contains(modem_command(&fe, &out, "AT&V\r"), "&Q5\r\n");
+
+    assert_response_contains(modem_command(&fe, &out, "AT&M0\r"),
+                             "\r\nOK\r\n");
+    reply = modem_command(&fe, &out, "AT&V\r");
+    assert_response_contains(reply, "&Q0\r\n");
+    assert_response_contains(reply, "\\N1 ");
+    assert_response_contains(modem_command(&fe, &out, "AT\\N\r"),
+                             "\r\nOK\r\n");
+    reply = modem_command(&fe, &out, "AT&V\r");
+    assert_response_contains(reply, "&Q6\r\n");
+    assert_response_contains(reply, "\\N0 ");
+    assert_response_contains(modem_command(&fe, &out, "AT&Q5\\N2\r"),
+                             "\r\nOK\r\n");
+    reply = modem_command(&fe, &out, "AT&V\r");
+    assert_response_contains(reply, "&Q5\r\n");
+    assert_response_contains(reply, "\\N2 ");
+    assert_response_contains(modem_command(&fe, &out, "AT&Q5\r"),
+                             "\r\nOK\r\n");
+    assert_response_contains(modem_command(&fe, &out, "AT&V\r"), "\\N2 ");
+
+    for (unsigned i = 1; i <= 3; i++) {
+        g_autofree char *m = g_strdup_printf("AT&M%u\r", i);
+        g_autofree char *q = g_strdup_printf("AT&Q%u\r", i);
+        g_autofree char *setting = g_strdup_printf("&Q%u\r\n", i);
+
+        g_assert_cmpstr(modem_command(&fe, &out, m), ==,
+                        external ? "\r\nOK\r\n" : "\r\nERROR\r\n");
+        g_assert_cmpstr(modem_command(&fe, &out, q), ==,
+                        external ? "\r\nOK\r\n" : "\r\nERROR\r\n");
+        reply = modem_command(&fe, &out, "AT&V\r");
+        if (external) {
+            assert_response_contains(reply, setting);
+            assert_response_contains(reply, "REQUESTED DTE MODE: SYNCHRONOUS");
+            g_assert_null(strstr(reply, "MNP5 ELIGIBLE"));
+            g_assert_cmpstr(modem_command(&fe, &out, "ATD0\r"), ==,
+                            "\r\nNO CARRIER\r\n");
+        } else {
+            assert_response_contains(reply, "&Q5\r\n");
+        }
+    }
+    assert_response_contains(modem_command(&fe, &out, "AT&Q4\r"),
+                             "\r\nERROR\r\n");
+    assert_response_contains(modem_command(&fe, &out, "AT&M5\r"),
+                             "\r\nERROR\r\n");
+    assert_response_contains(modem_command(&fe, &out, "AT&Q7\r"),
+                             "\r\nERROR\r\n");
+    assert_response_contains(modem_command(&fe, &out, "AT\\N8\r"),
+                             "\r\nERROR\r\n");
+    assert_response_contains(modem_command(&fe, &out, "AT&V\r"),
+                             external ? "&Q3\r\n" : "&Q5\r\n");
+
+    assert_response_contains(modem_command(&fe, &out, "AT&Q0&W0\r"),
+                             "\r\nOK\r\n");
+    assert_response_contains(modem_command(&fe, &out, "AT&Q6&W1&Y1\r"),
+                             "\r\nOK\r\n");
+    assert_response_contains(modem_command(&fe, &out, "AT&F\r"),
+                             "\r\nOK\r\n");
+    assert_response_contains(modem_command(&fe, &out, "AT&V\r"), "&Q5\r\n");
+    assert_response_contains(modem_command(&fe, &out, "ATZ\r"),
+                             "\r\nOK\r\n");
+    assert_response_contains(modem_command(&fe, &out, "AT&V\r"), "&Q0\r\n");
+    qemu_modem_hardware_reset(chr);
+    assert_response_contains(modem_command(&fe, &out, "AT&V\r"), "&Q6\r\n");
+    assert_response_contains(modem_command(&fe, &out, "AT\\N7\\Q3\r"),
+                             "\r\nOK\r\n");
+    reply = modem_command(&fe, &out, "AT&V\r");
+    assert_response_contains(reply, "&Q5\r\n");
+    assert_response_contains(reply, "\\N7 \\Q3");
+    modem_frontend_cleanup(&fe, chr);
+}
+
 static void test_dataport_reliability_config(gconstpointer opaque)
 {
     const char *model = opaque;
@@ -1330,6 +1414,11 @@ int main(int argc, char **argv)
                          "att-paradyne-dataport-3711", test_dataport_macppp_init);
     g_test_add_data_func("/modem/paradyne/macppp-3740",
                          "att-paradyne-3740", test_dataport_macppp_init);
+    g_test_add_data_func("/modem/paradyne/operating-mode-3711",
+                         "att-paradyne-dataport-3711",
+                         test_dataport_operating_mode);
+    g_test_add_data_func("/modem/paradyne/operating-mode-3740",
+                         "att-paradyne-3740", test_dataport_operating_mode);
     g_test_add_data_func("/modem/paradyne/reliability-config-3711",
                          "att-paradyne-dataport-3711",
                          test_dataport_reliability_config);

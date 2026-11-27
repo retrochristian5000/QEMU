@@ -71,9 +71,14 @@ They provide separate maximum *emulated* DCE speeds (14,400 and 28,800 bit/s),
 model-specific identification strings clearly marked as QEMU emulation, and
 profile-scoped Paradyne configuration commands:
 
-* ``\N0`` through ``\N7`` on both models: record the requested
-  connection/reliability mode. On the 3740, ``\N7`` is accepted for
-  compatibility with the archived DataPort Express V.34 driver.
+* ``\N0`` through ``\N7`` on both models: select the requested
+  asynchronous connection/reliability policy; bare ``\N`` selects 0.
+  On the 3740, ``\N7`` is accepted for compatibility with the archived
+  DataPort Express V.34 driver.
+* ``&M0`` and ``&Q0`` select direct asynchronous mode; ``&Q5`` selects
+  asynchronous error-control mode and ``&Q6`` selects buffered asynchronous
+  mode. The external 3740 also accepts ``&M1`` through ``&M3`` and the
+  equivalent ``&Q1`` through ``&Q3`` as synchronous configuration.
 * ``\C0`` through ``\C2``: record the auto-reliable buffering
   policy (default 0); mode 2 requests a switch to buffering upon receipt
   of the configured fallback character
@@ -110,6 +115,29 @@ Then send the following from the guest serial terminal::
 The 3740 accepts ``%B28800``; the 3711 rejects that rate. Both accept
 ``\N7`` and reject ``\N8``. The generic Hayes and Rockwell profiles do
 not acquire these Paradyne-specific commands.
+
+The operating-mode mappings follow the related DataPort PCX User's
+Guide (October 1995, B-16/B-17) and Rockwell RC288ACx reference
+manual 1048 (3.2.2). The original 3740 firmware mappings are unverified.
+The Express hardware table identifies ``\N0`` as normal, ``\N1`` as direct,
+and 2 through 6 as error-control policies; 7 remains accepted.
+For consistent state, ``\N0`` selects &Q6, ``\N1`` selects &Q0, and
+``\N2`` through ``\N7`` select &Q5. &Q5 retains an existing reliable
+policy or restores the current emulation default (6). Synchronous
+selection retains the last asynchronous policy as inactive. The
+most recent valid operating-mode command wins; bare &M and &Q mean
+0. Backslash-Q is independent DTE flow control. &Q4 (Rockwell AutoSync)
+is not supported by the related PCX table and is rejected. The 3711
+does not expose synchronous DTE clocking in this emulation.
+
+AT&V reports the requested operating mode; profile save and reset
+include it. Synchronous DTE clocking, DTR dialing, talk/data switching,
+S27 bit mapping and physical direct-mode timing are not implemented.
+A data dial in a requested synchronous mode returns NO CARRIER rather
+than establishing a misleading TCP byte connection. A synchronous
+mode cannot be selected during an active or pending connection.
+The existing asynchronous TCP substitute and non-DataPort profiles
+are unchanged.
 
 At 300 bit/s, ATB0%B300 requests V.21 and ATB1%B300 requests Bell
 103. B0/B1 follow the related Rockwell RC288ACx reference manual 1048
