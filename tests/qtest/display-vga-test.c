@@ -324,6 +324,28 @@ static void test_gd5446_dac_sequence(void)
     cirrus_dac_unlock(qts, 0xff);
     g_assert_cmphex(qtest_inb(qts, VGA_PEL_MSK), ==, 0xc1);
 
+    /* The separate cursor DAC palette must not overwrite the normal LUT. */
+    vga_seq_write(qts, 0x06, 0x12);
+    vga_seq_write(qts, 0x12, 0);
+    qtest_outb(qts, VGA_PEL_IW, 0x0f);
+    qtest_outb(qts, VGA_PEL_D, 0x11);
+    qtest_outb(qts, VGA_PEL_D, 0x22);
+    qtest_outb(qts, VGA_PEL_D, 0x33);
+    vga_seq_write(qts, 0x12, 2);
+    qtest_outb(qts, VGA_PEL_IW, 0xff);
+    qtest_outb(qts, VGA_PEL_D, 0x3f);
+    qtest_outb(qts, VGA_PEL_D, 0);
+    qtest_outb(qts, VGA_PEL_D, 0x15);
+    qtest_outb(qts, VGA_PEL_IR, 0x0f);
+    g_assert_cmphex(qtest_inb(qts, VGA_PEL_D), ==, 0x3f);
+    g_assert_cmphex(qtest_inb(qts, VGA_PEL_D), ==, 0);
+    g_assert_cmphex(qtest_inb(qts, VGA_PEL_D), ==, 0x15);
+    vga_seq_write(qts, 0x12, 0);
+    qtest_outb(qts, VGA_PEL_IR, 0x0f);
+    g_assert_cmphex(qtest_inb(qts, VGA_PEL_D), ==, 0x11);
+    g_assert_cmphex(qtest_inb(qts, VGA_PEL_D), ==, 0x22);
+    g_assert_cmphex(qtest_inb(qts, VGA_PEL_D), ==, 0x33);
+
     qtest_system_reset(qts);
     cirrus_dac_unlock(qts, 0xff);
     g_assert_cmphex(qtest_inb(qts, VGA_PEL_MSK), ==, 0);
@@ -748,6 +770,28 @@ static void test_cirrus_pci_timing(void)
     qtest_clock_set(qts, 2300000);
     /* Character 8232: vertical sync and blanking are active. */
     g_assert_cmphex(qtest_inb(qts, VGA_IS1_RC) & 9, ==, 9);
+    g_assert_cmphex(qtest_inb(qts, VGA_IS1_RC) & 9, ==, 9);
+
+    /*
+     * HDR 0x4a and SR7[3:0] = 7 select two indexed pixels per CRTC
+     * clock. At this virtual time the divided clock is not blanking.
+     * Verify that either register can be the last one programmed.
+     */
+    qtest_inb(qts, VGA_PEL_IW);
+    cirrus_dac_unlock(qts, 0xff);
+    qtest_outb(qts, VGA_PEL_MSK, 0x4a);
+    g_assert_cmphex(qtest_inb(qts, VGA_IS1_RC) & 9, ==, 9);
+    vga_seq_write(qts, 0x07, 7);
+    g_assert_cmphex(qtest_inb(qts, VGA_IS1_RC) & 9, ==, 0);
+    cirrus_dac_unlock(qts, 0xff);
+    qtest_outb(qts, VGA_PEL_MSK, 0xc1);
+    g_assert_cmphex(qtest_inb(qts, VGA_IS1_RC) & 9, ==, 9);
+    cirrus_dac_unlock(qts, 0xff);
+    qtest_outb(qts, VGA_PEL_MSK, 0x4a);
+    g_assert_cmphex(qtest_inb(qts, VGA_IS1_RC) & 9, ==, 0);
+    vga_seq_write(qts, 0x07, 0);
+    cirrus_dac_unlock(qts, 0xff);
+    qtest_outb(qts, VGA_PEL_MSK, 0);
     g_assert_cmphex(qtest_inb(qts, VGA_IS1_RC) & 9, ==, 9);
 
     /* Doubling the numerator changes the derived phase without a delay. */
