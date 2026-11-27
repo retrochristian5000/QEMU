@@ -247,30 +247,14 @@ static void test_i440fx_pam(gconstpointer opaque)
         }
         g_assert(verify_area(pam_area[i].start, pam_area[i].end, 0x42));
 
-#ifndef BROKEN
-        /* QEMU only supports a limited form of PAM */
-
-        /* Switch to !RE for the area */
+        /* With RE clear, reads must still come from PCI, not shadow RAM. */
         pam_set(dev, i, PAM_WE);
-        /* Verify the area is not our mask */
         g_assert(!verify_area(pam_area[i].start, pam_area[i].end, 0x42));
-#endif
 
-        /* Verify the area is our new mask */
-        g_assert(verify_area(pam_area[i].start, pam_area[i].end, 0x42));
-
-        /* Write out a new mask */
+        /* Writes reach shadow RAM while PCI reads remain visible. */
         write_area(pam_area[i].start, pam_area[i].end, 0x82);
-
-#ifndef BROKEN
-        /* QEMU only supports a limited form of PAM */
-
-        /* Verify the area is not our mask */
         g_assert(!verify_area(pam_area[i].start, pam_area[i].end, 0x82));
-
-        /* Switch to RE for the area */
         pam_set(dev, i, PAM_RE | PAM_WE);
-#endif
         /* Verify the area is our new mask */
         g_assert(verify_area(pam_area[i].start, pam_area[i].end, 0x82));
 
@@ -934,6 +918,42 @@ static void test_i440fx_hpet_intcap(void)
     qtest_quit(qts);
 }
 
+static void test_pc_confadd(void)
+{
+    QTestState *qts = qtest_init("-M pc -nodefaults -vga none");
+
+    /* Reserved bits cannot select a byte or affect address readback. */
+    qtest_outl(qts, 0xcf8, 0xff000003U);
+    g_assert_cmphex(qtest_inl(qts, 0xcf8), ==, 0x80000000U);
+    g_assert_cmphex(qtest_inl(qts, 0xcfc), ==, 0x12378086U);
+    g_assert_cmphex(qtest_inw(qts, 0xcfc), ==, 0x8086);
+    g_assert_cmphex(qtest_inw(qts, 0xcfe), ==, 0x1237);
+    g_assert_cmphex(qtest_inb(qts, 0xcfd), ==, 0x80);
+
+    /* A byte write must use the CONFDATA lane, not reserved CONFADD bits. */
+    qtest_outl(qts, 0xcf8, 0x8000005bU);
+    qtest_outb(qts, 0xcfd, 0x30);
+    g_assert_cmphex(qtest_inb(qts, 0xcfd), ==, 0x30);
+    g_assert_cmphex(qtest_inb(qts, 0xcff), ==, 0);
+
+    /* Disabled configuration cycles cannot modify the selected device. */
+    qtest_outl(qts, 0xcf8, 0x7f00005bU);
+    g_assert_cmphex(qtest_inl(qts, 0xcf8), ==, 0x58);
+    g_assert_cmphex(qtest_inl(qts, 0xcfc), ==, UINT32_MAX);
+    qtest_outb(qts, 0xcfd, 0);
+    qtest_outl(qts, 0xcf8, 0x80000058U);
+    g_assert_cmphex(qtest_inb(qts, 0xcfd), ==, 0x30);
+
+    /* A system reset clears the latch and restores the PAM registers. */
+    qtest_system_reset(qts);
+    g_assert_cmphex(qtest_inl(qts, 0xcf8), ==, 0);
+    g_assert_cmphex(qtest_inl(qts, 0xcfc), ==, UINT32_MAX);
+    qtest_outl(qts, 0xcf8, 0x80000058U);
+    g_assert_cmphex(qtest_inb(qts, 0xcfd), ==, 0);
+
+    qtest_quit(qts);
+}
+
 static void test_pc_pam_write_only(void)
 {
     QTestState *qts = qtest_init("-M pc -m 64M -nodefaults -vga none");
@@ -1591,6 +1611,7 @@ int main(int argc, char **argv)
     qtest_add_data_func("i440fx/pam", &data, test_i440fx_pam);
     qtest_add_func("i440fx/timing-config", test_i440fx_timing_config);
     qtest_add_func("i440fx/pc-shadow-reset", test_pc_shadow_reset);
+    qtest_add_func("i440fx/pc-confadd", test_pc_confadd);
     qtest_add_func("i440fx/pc-pam-write-only", test_pc_pam_write_only);
     for (size_t i = 0; i < ARRAY_SIZE(bridges); i++) {
         g_autofree char *path = g_strdup_printf("i440fx/bridge-profile/%zu", i);

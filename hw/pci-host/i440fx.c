@@ -56,6 +56,7 @@ struct I440FXState {
     uint64_t above_4g_mem_size;
     uint64_t pci_hole64_size;
     bool pci_hole64_fix;
+    bool strict_confadd;
     bool pam_spaces_initialized;
     AddressSpace pam_ram_as;
     AddressSpace pam_pci_as;
@@ -320,14 +321,106 @@ static void i440fx_pcihost_get_pci_hole64_end(Object *obj, Visitor *v,
     visit_type_uint64(v, name, &value, errp);
 }
 
+/*
+ * Intel 290549-001, sections 3.1.1 and 3.2.1: CONFADD selects a
+ * dword. The low two configuration-byte bits come only from CONFDATA.
+ */
+#define I440FX_CONFADD_MASK 0x80fffffcU
+
+static bool i440fx_strict_confadd(I440FXState *s)
+{
+    return s->strict_confadd &&
+           !g_strcmp0(s->pci_type, TYPE_I440FX_PCI_DEVICE);
+}
+
+static uint64_t i440fx_conf_read(void *opaque, hwaddr addr, unsigned len)
+{
+    PCIHostState *phb = opaque;
+    I440FXState *s = I440FX_PCI_HOST_BRIDGE(phb);
+
+    if (!i440fx_strict_confadd(s)) {
+        return pci_host_conf_le_ops.read(opaque, addr, len);
+    }
+    if (addr || len != 4) {
+        return UINT32_MAX;
+    }
+    return phb->config_reg & I440FX_CONFADD_MASK;
+}
+
+static void i440fx_conf_write(void *opaque, hwaddr addr, uint64_t val,
+                              unsigned len)
+{
+    PCIHostState *phb = opaque;
+    I440FXState *s = I440FX_PCI_HOST_BRIDGE(phb);
+
+    if (i440fx_strict_confadd(s)) {
+        val &= I440FX_CONFADD_MASK;
+    }
+    pci_host_conf_le_ops.write(opaque, addr, val, len);
+}
+
+static uint64_t i440fx_data_read(void *opaque, hwaddr addr, unsigned len)
+{
+    PCIHostState *phb = opaque;
+    I440FXState *s = I440FX_PCI_HOST_BRIDGE(phb);
+
+    if (!i440fx_strict_confadd(s)) {
+        return pci_host_data_le_ops.read(opaque, addr, len);
+    }
+    if (!(phb->config_reg & (1U << 31))) {
+        return UINT32_MAX;
+    }
+    return pci_data_read(phb->bus,
+                         (phb->config_reg & I440FX_CONFADD_MASK) | (addr & 3),
+                         len);
+}
+
+static void i440fx_data_write(void *opaque, hwaddr addr, uint64_t val,
+                              unsigned len)
+{
+    PCIHostState *phb = opaque;
+    I440FXState *s = I440FX_PCI_HOST_BRIDGE(phb);
+
+    if (!i440fx_strict_confadd(s)) {
+        pci_host_data_le_ops.write(opaque, addr, val, len);
+        return;
+    }
+    if (phb->config_reg & (1U << 31)) {
+        pci_data_write(phb->bus,
+                       (phb->config_reg & I440FX_CONFADD_MASK) | (addr & 3),
+                       val, len);
+    }
+}
+
+static const MemoryRegionOps i440fx_conf_ops = {
+    .read = i440fx_conf_read,
+    .write = i440fx_conf_write,
+    .endianness = DEVICE_LITTLE_ENDIAN,
+};
+
+static const MemoryRegionOps i440fx_data_ops = {
+    .read = i440fx_data_read,
+    .write = i440fx_data_write,
+    .endianness = DEVICE_LITTLE_ENDIAN,
+};
+
+static void i440fx_pcihost_reset(DeviceState *dev)
+{
+    I440FXState *s = I440FX_PCI_HOST_BRIDGE(dev);
+
+    if (i440fx_strict_confadd(s)) {
+        PCI_HOST_BRIDGE(dev)->config_reg = 0;
+    }
+}
+
 static void i440fx_pcihost_initfn(Object *obj)
 {
     I440FXState *s = I440FX_PCI_HOST_BRIDGE(obj);
     PCIHostState *phb = PCI_HOST_BRIDGE(obj);
 
-    memory_region_init_io(&phb->conf_mem, obj, &pci_host_conf_le_ops, phb,
+    memory_region_init_io(&phb->conf_mem, obj, &i440fx_conf_ops, phb,
                           "pci-conf-idx", 4);
-    memory_region_init_io(&phb->data_mem, obj, &pci_host_data_le_ops, phb,
+    memory_region_init_io(&phb->data_mem, obj, &i440fx_data_ops, phb,
                           "pci-conf-data", 4);
 
     object_property_add_link(obj, PCI_HOST_PROP_RAM_MEM, TYPE_MEMORY_REGION,
@@ -500,6 +593,7 @@ static const Property i440fx_props[] = {
     DEFINE_PROP_SIZE(PCI_HOST_ABOVE_4G_MEM_SIZE, I440FXState,
                      above_4g_mem_size, 0),
     DEFINE_PROP_BOOL("x-pci-hole64-fix", I440FXState, pci_hole64_fix, true),
+    DEFINE_PROP_BOOL("strict-confadd", I440FXState, strict_confadd, false),
     DEFINE_PROP_STRING(I440FX_HOST_PROP_PCI_TYPE, I440FXState, pci_type),
 };
 
@@ -510,6 +604,7 @@ static void i440fx_pcihost_class_init(ObjectClass *klass, const void *data)
 
     hc->root_bus_path = i440fx_pcihost_root_bus_path;
     dc->realize = i440fx_pcihost_realize;
+    device_class_set_legacy_reset(dc, i440fx_pcihost_reset);
     dc->fw_name = "pci";
     dc->desc = "Intel 440FX conventional PCI host controller";
     device_class_set_props(dc, i440fx_props);
