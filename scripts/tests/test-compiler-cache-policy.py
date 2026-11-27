@@ -436,6 +436,64 @@ class CompilerCachePolicyTests(unittest.TestCase):
                     env = ninja.bootstrap_environment('/usr/bin/clang++', '', '/opt/bin/ccache')
                     self.assertNotIn('SCCACHE_CACHE_ZSTD_LEVEL', env)
 
+    def test_cache_directory_alignment(self):
+        ninja = load_module(NINJA_BOOTSTRAP, 'whp_ninja_cache_directory_test')
+        with tempfile.TemporaryDirectory() as directory:
+            root = pathlib.Path(directory)
+            build = root / 'build'
+            for provider in ('ccache', 'sccache'):
+                with self.subTest(provider=provider), \
+                     mock.patch.object(ninja.platform, 'system', return_value='Darwin'), \
+                     mock.patch.object(ninja.platform, 'machine', return_value='arm64'):
+                    key = provider.upper() + '_DIR'
+                    with mock.patch.dict(os.environ, {}, clear=True):
+                        self.assertEqual(ninja.compiler_cache_directory(provider, build),
+                                         root / '.whp-compiler-cache' /
+                                         (provider + '-Darwin-arm64'))
+                    with mock.patch.dict(os.environ, {
+                            'WHP_COMPILER_CACHE_ROOT': str(root / 'shared')}, clear=True):
+                        self.assertEqual(ninja.compiler_cache_directory(provider, build),
+                                         root / 'shared' / (provider + '-Darwin-arm64'))
+                    with mock.patch.dict(os.environ, {
+                            key: str(root / 'explicit')}, clear=True):
+                        self.assertEqual(ninja.compiler_cache_directory(provider, build),
+                                         root / 'explicit')
+
+    def test_compiler_cache_budget_matches_shell(self):
+        ninja = load_module(NINJA_BOOTSTRAP, 'whp_ninja_cache_budget_test')
+        policy = ROOT / 'scripts' / 'whp-build' / 'compiler-cache-policy.sh'
+        shell = ('set -eu; . "$1"; whp_compiler_cache_budget "$2"; '
+                 'printf "%s|%s" "${CCACHE_MAXSIZE-unset}" '
+                 '"${SCCACHE_CACHE_SIZE-unset}"')
+        for provider in ('ccache', 'sccache'):
+            size_key = 'CCACHE_MAXSIZE' if provider == 'ccache' else 'SCCACHE_CACHE_SIZE'
+            conf_key = 'CCACHE_CONFIGPATH' if provider == 'ccache' else 'SCCACHE_CONF'
+            for settings, valid in (
+                ({}, True),
+                ({'WHP_COMPILER_CACHE_SIZE': '4G'}, True),
+                ({'WHP_COMPILER_CACHE_SIZE': '512M'}, True),
+                ({'WHP_COMPILER_CACHE_SIZE': '4G', size_key: '8G'}, True),
+                ({'WHP_COMPILER_CACHE_SIZE': '4G', conf_key: '/explicit.conf'}, True),
+                ({'WHP_COMPILER_CACHE_SIZE': '0G'}, False),
+                ({'WHP_COMPILER_CACHE_SIZE': '2.5G'}, False),
+                ({'WHP_COMPILER_CACHE_SIZE': '123456789G'}, False),
+            ):
+                with self.subTest(provider=provider, settings=settings):
+                    result = subprocess.run(
+                        ['/bin/sh', '-c', shell, 'sh', str(policy), provider],
+                        env=settings, text=True, capture_output=True, check=False,
+                    )
+                    self.assertEqual(result.returncode == 0, valid, result.stderr)
+                    env = settings.copy()
+                    if not valid:
+                        with self.assertRaisesRegex(RuntimeError, 'WHP_COMPILER_CACHE_SIZE'):
+                            ninja.apply_compiler_cache_budget(env, provider)
+                    else:
+                        ninja.apply_compiler_cache_budget(env, provider)
+                        self.assertEqual(result.stdout, '|'.join(
+                            env.get(k, 'unset') for k in
+                            ('CCACHE_MAXSIZE', 'SCCACHE_CACHE_SIZE')))
+
     def test_sccache_cache_roots_align_with_shell_wrappers(self):
         ninja = NINJA_BOOTSTRAP.read_text(encoding='utf-8')
         native = (ROOT / 'scripts' / 'bootstrap-native-clang.bash').read_text(
