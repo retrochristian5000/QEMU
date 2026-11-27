@@ -99,6 +99,7 @@ typedef struct CirrusVGAState {
     int cirrus_blt_height;
     int cirrus_blt_dstpitch;
     int cirrus_blt_srcpitch;
+    unsigned cirrus_blt_host_skip; /* Latched source DWORD byte offset. */
     uint32_t cirrus_blt_fgcol;
     uint32_t cirrus_blt_bgcol;
     uint32_t cirrus_blt_dstaddr;
