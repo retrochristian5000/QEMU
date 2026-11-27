@@ -34,6 +34,7 @@
 #include "qemu/module.h"
 #include "qemu/log.h"
 #include "trace.h"
+#include "isa-dma-transfer.h"
 
 
 /* #define DEBUG_DMA */
@@ -66,6 +67,8 @@ enum {
 };
 
 static void i8257_dma_run(void *opaque);
+static int i8257_phony_handler(void *opaque, int nchan, int dma_pos,
+                               int dma_len);
 
 /* A change to the high controller can unblock the low controller. */
 static void i8257_dma_run_pair(I8257State *d)
@@ -407,9 +410,18 @@ static void i8257_dma_run(void *opaque)
 
         mask = 1 << ichan;
 
-        if ((0 == (d->mask & mask)) && (0 != (d->status & (mask << 4)))) {
+        I8257Regs *r = &d->regs[ichan];
+
+        if (!(d->mask & mask) && (d->status & (mask << 4)) &&
+            r->transfer_handler != i8257_phony_handler &&
+            ((r->mode & 0x10) ||
+             r->now[COUNT] < ((r->base[COUNT] + 1) << d->dshift))) {
             i8257_channel_run(d, ichan);
-            rearm = 1;
+            if ((d->status & (mask << 4)) && !(d->mask & mask) &&
+                ((r->mode & 0x10) ||
+             r->now[COUNT] < ((r->base[COUNT] + 1) << d->dshift))) {
+                rearm = 1;
+            }
         }
     }
 
@@ -450,73 +462,77 @@ static bool i8257_is_verify_transfer(I8257Regs *r)
     return (r->mode & 0x0c) == 0;
 }
 
-static int i8257_dma_read_memory(IsaDma *obj, int nchan, void *buf, int pos,
-                                 int len)
+/*
+ * One data path for all ISA controller profiles. Keep ordinary increasing
+ * transfers contiguous and use a bounded scratch buffer only for reversed
+ * runs. Never write into the device's source buffer.
+ */
+static int i8257_dma_memory(IsaDma *obj, int nchan, void *buf, int pos,
+                           int len, bool write)
 {
     I8257State *d = I8257(obj);
     I8257Regs *r = &d->regs[nchan & 3];
-    hwaddr addr = ((r->pageh & 0x7f) << 24) | (r->page << 16) | r->now[ADDR];
+    unsigned shift = d->dshift;
+    bool linear = d->pageh_base >= 0;
+    bool decrement = r->mode & 0x20;
+    uint32_t page = ((uint32_t)(r->pageh & 0x7f) << 24) |
+                    ((uint32_t)r->page << 16);
+    uint32_t start = r->now[ADDR];
+    uint8_t scratch[4096];
+    uint8_t *data = buf;
+    int done = 0;
+    unsigned total = ((unsigned)r->base[COUNT] + 1) << shift;
 
+    if (pos < 0 || len <= 0 || (unsigned)pos >= total) {
+        return 0;
+    }
+    len = MIN((unsigned)len, total - pos);
     if (i8257_is_verify_transfer(r)) {
-        /*
-         * If the device is expecting this verify operation then
-         * it won't care about the nonexistent data. But if it
-         * is expecting a real read (i.e. the guest has misprogrammed
-         * the DMA controller and the device) it's going to try to do
-         * something with the buffer contents. Give it zeroes.
-         * (It's not clear whether this is exactly what happens if
-         * you do this on real hardware. In practice no device QEMU
-         * emulates has a use for verify on a memory-read transfer,
-         * so we don't care beyond avoiding the guest being able to
-         * trigger the caller reading uninitialized data.)
-         */
-        memset(buf, 0, len);
+        if (!write) {
+            memset(buf, 0, len);
+        }
         return len;
     }
 
-    if (r->mode & 0x20) {
-        int i;
-        uint8_t *p = buf;
-
-        physical_memory_read(addr - pos - len, buf, len);
-        /* What about 16bit transfers? */
-        for (i = 0; i < len >> 1; i++) {
-            uint8_t b = p[len - i - 1];
-            p[i] = b;
-        }
+    if (linear) {
+        start |= page;
     }
-    else
-        physical_memory_read(addr + pos, buf, len);
+    while (done < len) {
+        unsigned remaining = len - done;
+        ISADMASpan span = isa_dma_span(page, start, shift, linear,
+                                     decrement, pos + done,
+                                     decrement ? MIN(remaining,
+                                                     sizeof(scratch))
+                                               : remaining);
 
-    return len;
+        if (span.reverse) {
+            if (write) {
+                isa_dma_reverse_units(scratch, data + done, span.len, shift);
+                physical_memory_write(span.addr, scratch, span.len);
+            } else {
+                physical_memory_read(span.addr, scratch, span.len);
+                isa_dma_reverse_units(data + done, scratch, span.len, shift);
+            }
+        } else if (write) {
+            physical_memory_write(span.addr, data + done, span.len);
+        } else {
+            physical_memory_read(span.addr, data + done, span.len);
+        }
+        done += span.len;
+    }
+    return done;
+}
+
+static int i8257_dma_read_memory(IsaDma *obj, int nchan, void *buf, int pos,
+                                 int len)
+{
+    return i8257_dma_memory(obj, nchan, buf, pos, len, false);
 }
 
 static int i8257_dma_write_memory(IsaDma *obj, int nchan, void *buf, int pos,
-                                 int len)
+                                  int len)
 {
-    I8257State *s = I8257(obj);
-    I8257Regs *r = &s->regs[nchan & 3];
-    hwaddr addr = ((r->pageh & 0x7f) << 24) | (r->page << 16) | r->now[ADDR];
-
-    if (i8257_is_verify_transfer(r)) {
-        return len;
-    }
-
-    if (r->mode & 0x20) {
-        int i;
-        uint8_t *p = buf;
-
-        physical_memory_write(addr - pos - len, buf, len);
-        /* What about 16bit transfers? */
-        for (i = 0; i < len; i++) {
-            uint8_t b = p[len - i - 1];
-            p[i] = b;
-        }
-    }
-    else
-        physical_memory_write(addr + pos, buf, len);
-
-    return len;
+    return i8257_dma_memory(obj, nchan, buf, pos, len, true);
 }
 
 /* request the emulator to transfer a new DMA memory block ASAP (even
@@ -623,6 +639,11 @@ static void i8257_realize(DeviceState *dev, Error **errp)
     ISADevice *isa = ISA_DEVICE(dev);
     I8257State *d = I8257(dev);
     int i;
+
+    if (d->dshift != 0 && d->dshift != 1) {
+        error_setg(errp, "ISA DMA address shift must be 0 or 1");
+        return;
+    }
 
     memory_region_init_io(&d->channel_io, OBJECT(dev), &channel_io_ops, d,
                           "dma-chan", 8 << d->dshift);
