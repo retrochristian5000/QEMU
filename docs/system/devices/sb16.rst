@@ -508,3 +508,8 @@ unchanged. Firmware mode remains unmigratable with the named boards.
 References: Intel MCS-51 Microcontroller Family User's Manual,
 https://web.mit.edu/6.115/www/document/8051.pdf ; independent CT1741
 implementation https://sources.debian.org/src/mame/0.289%2Bdfsg1-1/src/devices/sound/ct1741.cpp .
+
+Set ``QTEST_CT1741_FIRMWARE`` to the independently built identification
+ROM to exercise reset, version and identification with the actual MCU
+program in the SB16 qtest. Without the fixture that case is skipped;
+the built-in instruction and latch tests require no external ROM.

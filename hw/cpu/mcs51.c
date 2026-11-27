@@ -201,7 +201,7 @@ bool mcs51_step(MCS51State *s)
     }
     op = s->rom[s->pc];
     size = instruction_size(op);
-    if (size > s->model->rom_size - s->pc || op == 0xa5 ||
+    if (size > (unsigned int)(s->model->rom_size - s->pc) || op == 0xa5 ||
         op == 0x32) {
         /* RETI requires an interrupt controller, not just a stack pop. */
         return false;

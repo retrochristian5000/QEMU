@@ -28,6 +28,7 @@ tests = {
   'test-cutils': [],
   'test-tlb-usage': [],
   'test-isa-dma-transfer': [],
+  'test-mcs51': [meson.project_source_root() / 'hw/cpu/mcs51.c'],
   'test-modem-v42bis': [meson.project_source_root() / 'chardev/modem-v42bis.c'],
   'test-div128': [],
   'test-shift128': [],

@@ -444,6 +444,37 @@ static void test_ct1740_firmware(gconstpointer data)
     unlink(filename);
 }
 
+static void test_ct1740_external_firmware(void)
+{
+    const char *filename = g_getenv("QTEST_CT1741_FIRMWARE");
+    QTestState *s;
+
+    if (!filename || !*filename) {
+        g_test_skip("QTEST_CT1741_FIRMWARE not set");
+        return;
+    }
+
+    s = qtest_initf("-M pc -nodefaults -audiodev none,id=snd "
+                    "-device sb16,audiodev=snd,dsp-firmware=%s", filename);
+    qtest_outb(s, 0x226, 1);
+    qtest_outb(s, 0x226, 0);
+    qtest_clock_step(s, 1000000);
+    g_assert_cmphex(qtest_inb(s, 0x22e), ==, 0x80);
+    g_assert_cmphex(qtest_inb(s, 0x22a), ==, 0xaa);
+    qtest_outb(s, 0x22c, 0xe1);
+    qtest_clock_step(s, 1000000);
+    g_assert_cmphex(qtest_inb(s, 0x22a), ==, 4);
+    qtest_clock_step(s, 1000000);
+    g_assert_cmphex(qtest_inb(s, 0x22a), ==, 5);
+    qtest_outb(s, 0x22c, 0xe0);
+    qtest_clock_step(s, 1000000);
+    g_assert_cmphex(qtest_inb(s, 0x22c), ==, 0);
+    qtest_outb(s, 0x22c, 0x55);
+    qtest_clock_step(s, 1000000);
+    g_assert_cmphex(qtest_inb(s, 0x22a), ==, 0xaa);
+    qtest_quit(s);
+}
+
 static void test_ct1740_alias(void)
 {
     static const char *const names[] = { "sb16", "sb16-ct1740" };
@@ -496,6 +527,8 @@ int main(int argc, char **argv)
                             test_ct1740_firmware);
         qtest_add_data_func("/ct1740/firmware/80c52", "intel-80c52",
                             test_ct1740_firmware);
+        qtest_add_func("/ct1740/firmware/external",
+                       test_ct1740_external_firmware);
         qtest_add_data_func("/ct1740/dma/8-bit-terminal-count",
                             GUINT_TO_POINTER(0), test_ct1740_dma_terminal_count);
         qtest_add_data_func("/ct1740/dma/16-bit-terminal-count",
