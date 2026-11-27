@@ -41,6 +41,7 @@
 #include "trace.h"
 #include "hw/pci/pci_device.h"
 #include "hw/core/qdev-properties.h"
+#include "hw/display/i2c-ddc.h"
 #include "migration/vmstate.h"
 #include "ui/pixel_ops.h"
 #include "vga_regs.h"
@@ -1445,9 +1446,15 @@ static int cirrus_vga_read_sr(CirrusVGAState * s)
     case 0xd1:
     case 0xf1:                  // Graphics Cursor Y
         return s->vga.sr[0x11];
+    case 0x08:                  // DDC2B / EEPROM Control
+        if (s->ddc.bus && (s->vga.sr[8] & 0x40)) {
+            return (s->vga.sr[8] & 0x43) |
+                   (s->ddc.last_clock ? 4 : 0) |
+                   ((s->ddc.last_data && s->ddc.device_out) ? 0x80 : 0);
+        }
+        return s->vga.sr[8];
     case 0x05:                  // ???
     case 0x07:                  // Extended Sequencer Mode
-    case 0x08:                  // EEPROM Control
     case 0x09:                  // Scratch Register 0
     case 0x0a:                  // Scratch Register 1
     case 0x0b:                  // VCLK 0
@@ -1478,6 +1485,39 @@ static int cirrus_vga_read_sr(CirrusVGAState * s)
                       "cirrus: inport sr_index 0x%02x\n", s->vga.sr_index);
         return 0xff;
     }
+}
+
+/* TRM 8.3: open-collector DDC lines, with independent pin readback. */
+static void cirrus_ddc_reset(CirrusVGAState *s)
+{
+    I2CBus *bus = s->ddc.bus;
+
+    if (bus) {
+        i2c_end_transfer(bus);
+        memset(&s->ddc, 0, sizeof(s->ddc));
+        bitbang_i2c_init(&s->ddc, bus);
+        s->ddc.current_addr = -1;
+    }
+}
+
+static void cirrus_ddc_write(CirrusVGAState *s, uint8_t val)
+{
+    if (!(val & 0x40)) {
+        cirrus_ddc_reset(s);
+        /* EEPROM mode has no attached configuration EEPROM. */
+        s->vga.sr[8] = val & 0x3f;
+        return;
+    }
+
+    /* Set SDA while SCL is low before raising SCL. */
+    if (!(val & 1)) {
+        bitbang_i2c_set(&s->ddc, BITBANG_I2C_SCL, 0);
+    }
+    bitbang_i2c_set(&s->ddc, BITBANG_I2C_SDA, !!(val & 2));
+    if (val & 1) {
+        bitbang_i2c_set(&s->ddc, BITBANG_I2C_SCL, 1);
+    }
+    s->vga.sr[8] = val & 0x43;
 }
 
 static void cirrus_vga_write_sr(CirrusVGAState * s, uint32_t val)
@@ -1522,8 +1562,14 @@ static void cirrus_vga_write_sr(CirrusVGAState * s, uint32_t val)
         s->vga.sr[0x11] = val;
         s->vga.hw_cursor_y = (val << 3) | (s->vga.sr_index >> 5);
         break;
+    case 0x08:                  // DDC2B / EEPROM Control
+        if (s->ddc.bus) {
+            cirrus_ddc_write(s, val);
+        } else {
+            s->vga.sr[8] = val;
+        }
+        break;
     case 0x07:                  // Extended Sequencer Mode
-    case 0x08:                  // EEPROM Control
     case 0x09:                  // Scratch Register 0
     case 0x0a:                  // Scratch Register 1
     case 0x0b:                  // VCLK 0
@@ -3253,6 +3299,7 @@ static int cirrus_pre_load(void *opaque)
     CirrusVGAState *s = opaque;
 
     s->vga.dac_pixel_mask = 0xff;
+    cirrus_ddc_reset(s);
     return 0;
 }
 
@@ -3270,6 +3317,54 @@ static const VMStateDescription vmstate_cirrus_pixel_mask = {
     .needed = cirrus_pixel_mask_needed,
     .fields = (const VMStateField[]) {
         VMSTATE_UINT8(vga.dac_pixel_mask, CirrusVGAState),
+        VMSTATE_END_OF_LIST()
+    }
+};
+
+static bool cirrus_ddc_needed(void *opaque)
+{
+    CirrusVGAState *s = opaque;
+
+    return s->ddc.bus != NULL;
+}
+
+static int cirrus_ddc_pre_save(void *opaque)
+{
+    CirrusVGAState *s = opaque;
+
+    s->ddc_saved_state = s->ddc.state;
+    return 0;
+}
+
+static int cirrus_ddc_post_load(void *opaque, int version_id)
+{
+    CirrusVGAState *s = opaque;
+
+    if (!s->ddc.bus || s->ddc_saved_state > SENT_NACK ||
+        (unsigned)s->ddc.last_data > 1 ||
+        (unsigned)s->ddc.last_clock > 1 ||
+        (unsigned)s->ddc.device_out > 1 ||
+        s->ddc.current_addr < -1 || s->ddc.current_addr > 255) {
+        return -EINVAL;
+    }
+    s->ddc.state = s->ddc_saved_state;
+    return 0;
+}
+
+static const VMStateDescription vmstate_cirrus_ddc = {
+    .name = "cirrus_vga/ddc",
+    .version_id = 1,
+    .minimum_version_id = 1,
+    .needed = cirrus_ddc_needed,
+    .pre_save = cirrus_ddc_pre_save,
+    .post_load = cirrus_ddc_post_load,
+    .fields = (const VMStateField[]) {
+        VMSTATE_UINT8(ddc_saved_state, CirrusVGAState),
+        VMSTATE_INT32(ddc.last_data, CirrusVGAState),
+        VMSTATE_INT32(ddc.last_clock, CirrusVGAState),
+        VMSTATE_INT32(ddc.device_out, CirrusVGAState),
+        VMSTATE_INT32(ddc.current_addr, CirrusVGAState),
+        VMSTATE_UINT8(ddc.buffer, CirrusVGAState),
         VMSTATE_END_OF_LIST()
     }
 };
@@ -3343,6 +3438,7 @@ const VMStateDescription vmstate_cirrus_vga = {
     },
     .subsections = (const VMStateDescription * const []) {
         &vmstate_cirrus_pixel_mask,
+        &vmstate_cirrus_ddc,
         NULL
     }
 };
@@ -3374,6 +3470,7 @@ static void cirrus_reset(void *opaque)
     s->cirrus_srcptr_end = s->cirrus_bltbuf;
     s->cirrus_srccounter = 0;
     vga_common_reset(&s->vga);
+    cirrus_ddc_reset(s);
     if (s->gd5446_revision == CIRRUS_GD5446_REV_B) {
         cirrus_update_shadow(s);
     }
@@ -3657,6 +3754,21 @@ static void pci_cirrus_vga_realize(PCIDevice *dev, Error **errp)
                          &d->legacy_io_lo, &d->legacy_io_hi);
     }
     s->vga.con = qemu_graphic_console_create(DEVICE(dev), 0, s->vga.hw_ops, &s->vga);
+    if (s->gd5446_revision == CIRRUS_GD5446_REV_B) {
+        I2CBus *bus = i2c_init_bus(DEVICE(dev), "cirrus-ddc");
+        I2CDDCState *ddc = I2CDDC(qdev_new(TYPE_I2CDDC));
+
+        bitbang_i2c_init(&s->ddc, bus);
+        s->ddc.current_addr = -1;
+        ddc->edid_info.prefx = 800;
+        ddc->edid_info.prefy = 600;
+        ddc->edid_info.maxx = 1280;
+        ddc->edid_info.maxy = 1024;
+        ddc->edid_info.refresh_rate = 60000;
+        i2c_ddc_set_input(ddc, QEMU_EDID_INPUT_VGA);
+        i2c_slave_set_address(I2C_SLAVE(ddc), 0x50);
+        qdev_realize_and_unref(DEVICE(ddc), BUS(bus), &error_abort);
+    }
 
     /*
      * GD5446 TRM 7.4-7.8: revision A claims 16 MiB, revision B 32 MiB.
