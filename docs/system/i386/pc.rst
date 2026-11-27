@@ -392,6 +392,23 @@ not been verified against physical silicon. AccuPak capture and
 YUV-to-AccuPak compression remain unimplemented. See TRM figure 9-6
 and sections 9.3.2.4 and 9.5.10.
 
+V-Port capture controls are separate from the video-window compositor.
+Revision B accepts CR50-CR54, CR56-CR57 and CR5C with documented
+writable masks; CR55 remains reserved. CR58-CR5A and CR5E retain
+their shared capture/playback roles. GR17 accepts programmable output,
+feature-connector direction and interrupt control bits, but its
+V-Port interrupt status stays clear. Capture-only writes, including
+CR58[6:5], do not invalidate the playback surface.
+
+The emulated V-Port is disconnected: writing CR51[3] arms the
+capture control but cannot produce input clocks, VREF transitions,
+VRAM writes, automatic buffer switches or capture interrupts.
+No host camera, synthetic video stream or additional PCI device is
+implied. CR3F capture status remains inactive. Capture input,
+decimation, luminance-only capture and compression are not implemented.
+See TRM sections 6.14-6.25, 8.26 and 9.6. The existing PCI no-interrupt
+board configuration is unchanged.
+
 Window enable and buffer selection take effect at the next host display
 refresh rather than an exact guest VSYNC/window-start edge. Disabling
 or moving the window restores the underlying graphics at the next
