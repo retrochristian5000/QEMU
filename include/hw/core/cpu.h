@@ -287,6 +287,7 @@ typedef struct CPUTLBDesc {
     int64_t window_begin_ns;
     /* maximum number of entries observed in the window */
     size_t window_max_entries;
+    /* Number of occupied main-table slots; excludes the victim table. */
     size_t n_used_entries;
     /* The next index to use in the tlb victim table.  */
     size_t vindex;
