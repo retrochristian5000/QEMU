@@ -61,6 +61,13 @@ typedef struct CirrusDisplayTiming {
     unsigned vsync_start, vsync_end;
 } CirrusDisplayTiming;
 
+/* Explicit silicon profiles; keep the historical QEMU layout separate. */
+typedef enum CirrusGD5446Revision {
+    CIRRUS_GD5446_LEGACY = 0,
+    CIRRUS_GD5446_REV_A,
+    CIRRUS_GD5446_REV_B,
+} CirrusGD5446Revision;
+
 typedef struct CirrusVGAState {
     VGACommonState vga;
     CirrusDisplayTiming display_timing;
@@ -110,6 +117,7 @@ typedef struct CirrusVGAState {
     int real_vram_size; /* XXX: suppress that */
     int device_id;
     int bustype;
+    CirrusGD5446Revision gd5446_revision; /* derived from device type */
 } CirrusVGAState;
 
 /*
