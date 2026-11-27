@@ -48,6 +48,7 @@ struct PITState {
     char *model;
     bool is_8253;
     bool board_wired;
+    bool strict_programming;
 };
 
 struct PITClass {
@@ -58,6 +59,52 @@ struct PITClass {
 };
 
 static void pit_irq_timer_update(PITChannelState *s, int64_t current_time);
+
+/*
+ * The existing migrated null-count bits also identify a channel waiting
+ * for the first complete count after a control word. Do not run the
+ * previous counting sequence under the newly selected mode.
+ */
+static bool pit_waiting_for_count(PITCommonState *pit, PITChannelState *s)
+{
+    PITState *ps = PIT(pit);
+
+    return ps->strict_programming && !ps->is_8253 &&
+           (pit->pending_initial_count & (1U << (s - pit->channels)));
+}
+
+static int pit_programmed_out(PITChannelState *s)
+{
+    return pit_effective_mode(s) != 0;
+}
+
+static void pit_hold_initial_out(PITChannelState *s)
+{
+    s->next_transition_time = -1;
+    if (s->irq_timer) {
+        timer_del(s->irq_timer);
+        if (!s->irq_disabled) {
+            qemu_set_irq(s->irq, pit_programmed_out(s));
+        }
+    }
+}
+
+static int pit_get_programmed_out(PITCommonState *pit, PITChannelState *s,
+                                  int64_t now)
+{
+    return pit_waiting_for_count(pit, s) ? pit_programmed_out(s) :
+                                          pit_get_out(s, now);
+}
+
+static void pit_get_channel_info_programmed(PITCommonState *pit,
+                                            PITChannelState *s,
+                                            PITChannelInfo *info)
+{
+    pit_get_channel_info_common(pit, s, info);
+    if (pit_waiting_for_count(pit, s)) {
+        info->out = pit_programmed_out(s);
+    }
+}
 
 static int pit_get_count(PITChannelState *s, bool is_8253)
 {
@@ -117,6 +164,11 @@ static int pit_get_count(PITChannelState *s, bool is_8253)
 static void pit_set_channel_gate(PITCommonState *s, PITChannelState *sc,
                                  int val)
 {
+    if (pit_waiting_for_count(s, sc)) {
+        sc->gate = val;
+        return;
+    }
+
     switch (pit_effective_mode(sc)) {
     default:
     case 0:
@@ -195,8 +247,8 @@ static void pit_ioport_write(void *opaque, hwaddr addr,
                         /* status latch */
                         /* BCD counting and deferred reloads remain TODO. */
                         s->status =
-                            (pit_get_out(s,
-                                         qemu_clock_get_ns(QEMU_CLOCK_VIRTUAL)) << 7) |
+                            (pit_get_programmed_out(pit, s,
+                                qemu_clock_get_ns(QEMU_CLOCK_VIRTUAL)) << 7) |
                             ((pit->pending_initial_count & (1U << channel))
                              ? 0x40 : 0) |
                             (s->rw_mode << 4) |
@@ -215,7 +267,7 @@ static void pit_ioport_write(void *opaque, hwaddr addr,
                 /* Reprogramming releases any outstanding count latch. */
                 s->count_latched = 0;
                 /* Preserve the default model's historical status semantics. */
-                if (ps->model && !ps->is_8253) {
+                if ((ps->model || ps->strict_programming) && !ps->is_8253) {
                     pit->pending_initial_count |= 1U << channel;
                 }
                 s->rw_mode = access;
@@ -224,7 +276,9 @@ static void pit_ioport_write(void *opaque, hwaddr addr,
 
                 s->mode = (val >> 1) & 7;
                 s->bcd = val & 1;
-                /* XXX: update irq timer ? */
+                if (pit_waiting_for_count(pit, s)) {
+                    pit_hold_initial_out(s);
+                }
             }
         }
     } else {
@@ -232,21 +286,20 @@ static void pit_ioport_write(void *opaque, hwaddr addr,
         switch(s->write_state) {
         default:
         case RW_STATE_LSB:
-            pit_load_count(s, val);
             pit->pending_initial_count &= ~(1U << addr);
+            pit_load_count(s, val);
             break;
         case RW_STATE_MSB:
-            pit_load_count(s, val << 8);
             pit->pending_initial_count &= ~(1U << addr);
+            pit_load_count(s, val << 8);
             break;
         case RW_STATE_WORD0:
             s->write_latch = val;
             s->write_state = RW_STATE_WORD1;
             break;
         case RW_STATE_WORD1:
-            pit_load_count(s, s->write_latch | (val << 8));
-            /* The existing timing engine loads complete counts immediately. */
             pit->pending_initial_count &= ~(1U << addr);
+            pit_load_count(s, s->write_latch | (val << 8));
             s->write_state = RW_STATE_WORD0;
             break;
         }
@@ -373,7 +426,11 @@ static void pit_irq_control(void *opaque, int n, int enable)
 
     if (enable) {
         s->irq_disabled = 0;
-        pit_irq_timer_update(s, qemu_clock_get_ns(QEMU_CLOCK_VIRTUAL));
+        if (pit_waiting_for_count(pit, s)) {
+            pit_hold_initial_out(s);
+        } else {
+            pit_irq_timer_update(s, qemu_clock_get_ns(QEMU_CLOCK_VIRTUAL));
+        }
     } else {
         s->irq_disabled = 1;
         timer_del(s->irq_timer);
@@ -394,7 +451,10 @@ static void pit_post_load(PITCommonState *s)
 {
     PITChannelState *sc = &s->channels[0];
 
-    if (sc->next_transition_time != -1 && !sc->irq_disabled) {
+    if (pit_waiting_for_count(s, sc)) {
+        sc->next_transition_time = -1;
+        timer_del(sc->irq_timer);
+    } else if (sc->next_transition_time != -1 && !sc->irq_disabled) {
         timer_mod(sc->irq_timer, sc->next_transition_time);
     } else {
         timer_del(sc->irq_timer);
@@ -491,6 +551,7 @@ static void pit_realizefn(DeviceState *dev, Error **errp)
 
 static const Property pit_properties[] = {
     DEFINE_PROP_STRING("model", PITState, model),
+    DEFINE_PROP_BOOL("strict-programming", PITState, strict_programming, false),
 };
 
 static void pit_class_initfn(ObjectClass *klass, const void *data)
@@ -505,7 +566,7 @@ static void pit_class_initfn(ObjectClass *klass, const void *data)
     dc->hotpluggable = false;
     set_bit(DEVICE_CATEGORY_MISC, dc->categories);
     k->set_channel_gate = pit_set_channel_gate;
-    k->get_channel_info = pit_get_channel_info_common;
+    k->get_channel_info = pit_get_channel_info_programmed;
     k->post_load = pit_post_load;
     device_class_set_legacy_reset(dc, pit_reset);
     device_class_set_props(dc, pit_properties);

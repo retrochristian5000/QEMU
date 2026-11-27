@@ -242,7 +242,7 @@ static void test_reprogram_latch(void)
 static void test_i8253_model(void)
 {
     static const uint16_t counts[] = { 5, 4, 2, 5, 2, 5, 4 };
-    QTestState *s = qtest_init("-machine pc,hpet=off -nodefaults "
+    QTestState *s = qtest_init("-machine generic-pc,hpet=off -nodefaults "
                               "-global isa-pit.model=i8253");
     uint64_t elapsed = 0;
     unsigned int i;
@@ -262,7 +262,7 @@ static void test_i8253_model(void)
 
 static void test_i8254_model(void)
 {
-    QTestState *s = qtest_init("-machine pc,hpet=off -nodefaults "
+    QTestState *s = qtest_init("-machine generic-pc,hpet=off -nodefaults "
                               "-global isa-pit.model=i8254");
 
     load_mode3(s, 5);
@@ -280,7 +280,7 @@ static uint8_t read_status(QTestState *s, unsigned channel)
 
 static void test_i8254_initial_count(void)
 {
-    QTestState *s = qtest_init("-machine pc,hpet=off -nodefaults "
+    QTestState *s = qtest_init("-machine generic-pc,hpet=off -nodefaults "
                               "-global isa-pit.model=i8254");
 
     /* Program every counter, but only complete channel 1's count. */
@@ -413,6 +413,88 @@ static void test_pcspk_port61(gconstpointer opaque)
     qtest_quit(s);
 }
 
+static void test_pc_reprogram_pending(void)
+{
+    QTestState *s = qtest_init("-M pc,hpet=off -nodefaults");
+    uint64_t elapsed = 0;
+
+    qtest_irq_intercept_in(s, "ioapic");
+    qtest_outb(s, PIT_CONTROL, PIT_MODE2);
+    qtest_outb(s, PIT_COUNTER0, 5);
+    qtest_outb(s, PIT_COUNTER0, 0);
+    advance_to_tick(s, 4, &elapsed);
+    check_output(s, false);
+
+    /* A new control word restores OUT high and retires the old divisor. */
+    qtest_outb(s, PIT_CONTROL, PIT_MODE3);
+    check_output(s, true);
+    g_assert_cmphex(read_status(s, 0) & 0x40, ==, 0x40);
+    qtest_clock_step(s, 100000);
+    check_output(s, true);
+    qtest_outb(s, PIT_COUNTER0, 7);
+    qtest_clock_step(s, 100000);
+    check_output(s, true);
+    g_assert_cmphex(read_status(s, 0) & 0x40, ==, 0x40);
+    qtest_outb(s, PIT_COUNTER0, 0);
+    elapsed = 0;
+    g_assert_cmphex(read_status(s, 0) & 0x40, ==, 0);
+    advance_to_tick(s, 4, &elapsed);
+    check_output(s, false);
+    advance_to_tick(s, 7, &elapsed);
+    check_output(s, true);
+
+    /* Mode 0 forces OUT low while waiting for its complete initial count. */
+    qtest_outb(s, PIT_CONTROL, 0x30);
+    check_output(s, false);
+    qtest_clock_step(s, 100000);
+    check_output(s, false);
+    qtest_quit(s);
+}
+
+static void test_pc_reprogram_compat(void)
+{
+    QTestState *s = qtest_init("-M pc,hpet=off -nodefaults "
+                              "-global i8254.strict-programming=off");
+    uint64_t elapsed = 0;
+
+    qtest_irq_intercept_in(s, "ioapic");
+    qtest_outb(s, PIT_CONTROL, PIT_MODE2);
+    qtest_outb(s, PIT_COUNTER0, 5);
+    qtest_outb(s, PIT_COUNTER0, 0);
+    qtest_outb(s, PIT_CONTROL, PIT_MODE2);
+    advance_to_tick(s, 4, &elapsed);
+    check_output(s, false);
+    advance_to_tick(s, 5, &elapsed);
+    check_output(s, true);
+    qtest_quit(s);
+}
+
+static void test_pc_periodic_cadence(gconstpointer opaque)
+{
+    unsigned divisor = GPOINTER_TO_UINT(opaque);
+    QTestState *s = qtest_init("-M pc,hpet=off -nodefaults");
+    uint64_t elapsed = 0;
+
+    qtest_irq_intercept_in(s, "ioapic");
+    load_mode3(s, divisor);
+    for (unsigned i = 0; i < 64; i++) {
+        uint64_t high_end = (uint64_t)i * divisor + (divisor + 1) / 2;
+        uint64_t period_end = (uint64_t)(i + 1) * divisor;
+
+        step_to_tick(s, high_end, &elapsed);
+        check_output(s, true);
+        qtest_clock_step(s, 1);
+        elapsed++;
+        check_output(s, false);
+        step_to_tick(s, period_end, &elapsed);
+        check_output(s, false);
+        qtest_clock_step(s, 1);
+        elapsed++;
+        check_output(s, true);
+    }
+    qtest_quit(s);
+}
+
 int main(int argc, char **argv)
 {
     g_test_init(&argc, &argv, NULL);
@@ -426,6 +508,12 @@ int main(int argc, char **argv)
     qtest_add_func("/i8254/mode3/bios-tick-latch", test_bios_tick_latch);
     qtest_add_func("/i8254/mode-aliases", test_mode_aliases);
     qtest_add_func("/i8254/reprogram-latch", test_reprogram_latch);
+    qtest_add_func("/i8254/reprogram/pending", test_pc_reprogram_pending);
+    qtest_add_func("/i8254/reprogram/compat", test_pc_reprogram_compat);
+    qtest_add_data_func("/i8254/cadence/bios", GUINT_TO_POINTER(65536),
+                        test_pc_periodic_cadence);
+    qtest_add_data_func("/i8254/cadence/1193", GUINT_TO_POINTER(1193),
+                        test_pc_periodic_cadence);
     qtest_add_func("/i8254/model/i8253", test_i8253_model);
     qtest_add_func("/i8254/model/i8254", test_i8254_model);
     qtest_add_func("/i8254/model/initial-count", test_i8254_initial_count);

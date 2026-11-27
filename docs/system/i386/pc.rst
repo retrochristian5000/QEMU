@@ -985,6 +985,31 @@ logging itself affects timing. Compare against the same guest's RTC time
 and host elapsed time while the VM is running. The diagnostic requires a
 trace backend that emits these events.
 
+The named motherboard ``i8254`` in ``pc`` and ``laptop-pc`` enables
+``strict-programming`` by default. After a new control word the counter
+holds the initial OUT level (low in mode 0, high otherwise) and cancels
+the previous IRQ deadline until the complete initial count is written.
+This avoids reusing an obsolete divisor while the guest writes the
+low and high bytes. The null-count status, gate handling, HPET legacy
+IRQ handoff and restored timer deadline respect this waiting state.
+Generic and versioned profiles retain their previous programming
+behavior. For a controlled comparison, disable only this change::
+
+    -machine pc -global i8254.strict-programming=off
+
+The oscillator remains 1193182 Hz, with guest-programmed divisors and
+absolute virtual-clock deadlines. The BIOS divisor 65536 produces about
+18.2065 Hz, while divisor 1193 gives about 1000.15 Hz. These are not
+guarantees of real-time host dispatch or guest IRQ acknowledgment.
+Overdue edges can still be dispatched together, and the PIC may merge
+unacknowledged requests. Do not alter the oscillator or inject synthetic
+interrupts to compensate for host contention. For PIT-only diagnostics,
+``-machine pc,hpet=off`` bypasses the HPET legacy routing path.
+Intel 8254 datasheet, modes 0-3 and figures 15-18, documents the initial
+OUT levels and periodic operation. The modeled count-load epoch is still
+immediate, not a cycle-accurate oscillator phase; deferred reloads
+without a new control word are not addressed here.
+
 Modes 4 and 5 now produce an active-low strobe at the modeled terminal
 count, instead of an inverted pulse. The existing immediate count-load
 epoch is unchanged; deferred loads, gate pause and mode 5 trigger arming
