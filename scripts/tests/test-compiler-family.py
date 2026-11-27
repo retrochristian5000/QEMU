@@ -151,6 +151,35 @@ if compiler_probe_once bad target CC broken; then exit 1; fi
             "target:clang", "target:broken", "target:broken",
         ])
 
+    def test_independent_compiler_pair_admission(self):
+        begin = SOURCE.index("require_supported_compiler_pair()\n")
+        end = SOURCE.index("# Apple defaults", begin)
+        helper = SOURCE[begin:end]
+        cases = (
+            ("0", "clang", "clang", True),
+            ("1", "gcc", "gcc", True),
+            ("0", "gcc", "gcc", False),
+            ("1", "clang", "gcc", False),
+            ("1", "gcc", "clang", False),
+            ("1", "unknown", "unknown", False),
+        )
+        for role in ("QEMU host artifacts", "QEMU build-machine tools"):
+            for allow, c_family, cxx_family, accepted in cases:
+                with self.subTest(role=role, allow=allow,
+                                  c=c_family, cxx=cxx_family):
+                    result = subprocess.run(
+                        ["bash", "-c",
+                         helper + '\nrequire_supported_compiler_pair "$@"\n',
+                         "whp-pair-test", role, c_family, cxx_family],
+                        env=dict(os.environ, MACOS_ALLOW_NONCLANG=allow),
+                        capture_output=True, text=True, timeout=20,
+                        check=False,
+                    )
+                    self.assertEqual(result.returncode == 0, accepted,
+                                     result.stderr)
+                    if not accepted:
+                        self.assertIn(role, result.stderr)
+
     def test_native_compilers_when_installed(self):
         for name in ("clang", "gcc", "g++"):
             executable = shutil.which(name)

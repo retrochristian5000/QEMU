@@ -138,10 +138,26 @@ Build-machine and host compilers
 ``CC_FOR_BUILD`` and ``CXX_FOR_BUILD`` compile tools that execute during the
 build, including firmware helpers and cross-toolchain host programs.
 
-Apple Clang selected through ``xcrun`` is the default for all of those roles.
-An experimental non-Clang QEMU host compiler requires a matching C/C++ pair and
-``MACOS_ALLOW_NONCLANG=1``. Objective-C and build-machine tools remain on the
-validated Apple toolchain unless the build logic explicitly says otherwise.
+Apple Clang selected through ``xcrun`` remains the default. The QEMU artifact
+and build-machine C/C++ pairs are independent. Either may explicitly select
+a matching GNU GCC pair with ``MACOS_ALLOW_NONCLANG=1``; Objective-C remains
+on Clang. For example, to build native helper programs with GCC while leaving
+QEMU itself on Apple Clang::
+
+  MACOS_ALLOW_NONCLANG=1 CC_FOR_BUILD=/path/to/gcc \
+    CXX_FOR_BUILD=/path/to/g++ BOOTSTRAP_NATIVE_LLVM=0 ./build.sh
+
+Use installed driver paths and a compatible native SDK, target ABI and
+runtime. Explicit invalid choices fail instead of silently falling back.
+The GCC path is experimental; artifact GCC selection disables the Clang LTO
+default. The managed LLVM bootstrap is an explicit artifact-toolchain choice
+and must be disabled when selecting a different artifact compiler.
+
+Do not reuse native CC/CXX for embedded firmware. The independent CT1741
+MCS-51 build uses SDCC; retain it as an independent toolchain even if LLVM
+adds MCS-51 support. BCC, PCC and Open Watcom are candidate toolchains only
+for roles whose language, instruction set, ABI, linker and image format they
+actually support; they are not interchangeable QEMU C/C++ compilers.
 
 Before QEMU configuration, ``scripts/verify-macos-toolchain.sh`` verifies the
 effective compiler pipeline. It checks target triples, Clang resource paths,

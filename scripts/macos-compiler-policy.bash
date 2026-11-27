@@ -187,6 +187,29 @@ compiler_probe_once()
     printf -v "$destination" '%s' "$result"
 }
 
+# C and C++ toolchains are selected independently for artifacts and native
+# helpers. Each pair must agree; Cocoa keeps its separate Clang contract.
+require_supported_compiler_pair()
+{
+    local role="$1" c_family="$2" cxx_family="$3"
+
+    case "$c_family:$cxx_family" in
+        clang:clang) return 0 ;;
+        gcc:gcc)
+            if [[ "$MACOS_ALLOW_NONCLANG" == 1 ]]; then
+                return 0
+            fi
+            printf 'error: %s GNU GCC pair requires MACOS_ALLOW_NONCLANG=1\n' \
+                "$role" >&2
+            ;;
+        *)
+            printf 'error: %s requires a matching supported C/C++ pair (C=%s, C++=%s)\n' \
+                "$role" "$c_family" "$cxx_family" >&2
+            ;;
+    esac
+    return 1
+}
+
 # Apple defaults must follow the active Xcode or standalone CLT root.
 source "$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)/whp-build/macos-developer-tools.sh"
 APPLE_CLANG="$(whp_apple_find_tool clang)" || return 1 2>/dev/null || exit 1
@@ -210,8 +233,14 @@ elif [[ "$cc_was_set" != "$cxx_was_set" ]]; then
 fi
 
 export OBJC="${OBJC:-$APPLE_CLANG}"
+# Resolve a missing native C++ companion through the validated seed rather
+# than pairing an explicit GCC C compiler with Apple Clang++.
 export CC_FOR_BUILD="${CC_FOR_BUILD:-$APPLE_CLANG}"
-export CXX_FOR_BUILD="${CXX_FOR_BUILD:-$APPLE_CLANGXX}"
+if [[ -z "${CXX_FOR_BUILD:-}" ]]; then
+    CXX_FOR_BUILD="$("$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)/seeds/cxx.sh" --print-cxx)" || \
+        return 1 2>/dev/null || exit 1
+fi
+export CXX_FOR_BUILD
 export OBJC_FOR_BUILD="${OBJC_FOR_BUILD:-$APPLE_CLANG}"
 
 compiler_probe_once cc_family family CC "$CC" || \
@@ -225,20 +254,8 @@ compiler_probe_once build_cc_family family CC_FOR_BUILD "$CC_FOR_BUILD" || \
 compiler_probe_once build_cxx_family family CXX_FOR_BUILD "$CXX_FOR_BUILD" || \
     return 1 2>/dev/null || exit 1
 
-if [[ "$cc_family" == unknown || "$cxx_family" == unknown ]]; then
-    printf '%s\n' \
-        'error: could not identify the macOS QEMU compiler family.' \
-        "CC=$CC ($cc_family)" \
-        "CXX=$CXX ($cxx_family)" >&2
+require_supported_compiler_pair "QEMU host artifacts" "$cc_family" "$cxx_family" || \
     return 1 2>/dev/null || exit 1
-fi
-if [[ "$cc_family" != "$cxx_family" ]]; then
-    printf '%s\n' \
-        'error: mixed C and C++ compiler families are not supported.' \
-        "CC=$CC ($cc_family)" \
-        "CXX=$CXX ($cxx_family)" >&2
-    return 1 2>/dev/null || exit 1
-fi
 
 if [[ "$objc_family" != clang ]]; then
     printf '%s\n' \
@@ -248,15 +265,9 @@ if [[ "$objc_family" != clang ]]; then
     return 1 2>/dev/null || exit 1
 fi
 
-if [[ "$build_cc_family" != clang || "$build_cxx_family" != clang ]]; then
-    printf '%s\n' \
-        'error: QEMU build-machine tools must use Apple Clang on macOS.' \
-        "CC_FOR_BUILD=$CC_FOR_BUILD ($build_cc_family)" \
-        "CXX_FOR_BUILD=$CXX_FOR_BUILD ($build_cxx_family)" \
-        'Use TOOLCHAIN_HOST_CC/TOOLCHAIN_HOST_CXX to experiment with GNU GCC' \
-        'only inside the PowerPC cross-toolchain bootstrap.' >&2
+require_supported_compiler_pair "QEMU build-machine tools" \
+    "$build_cc_family" "$build_cxx_family" || \
     return 1 2>/dev/null || exit 1
-fi
 
 compiler_probe_once MACOS_CC_TARGET_TRIPLE target CC "$CC" || \
     return 1 2>/dev/null || exit 1
@@ -276,14 +287,6 @@ case "$cc_family" in
         MACOS_EFFECTIVE_COMPILER_FAMILY=clang
         ;;
     gcc)
-        if [[ "$MACOS_ALLOW_NONCLANG" != "1" ]]; then
-            printf '%s\n' \
-                'error: GNU GCC was selected for the QEMU macOS host build.' \
-                'Apple Clang is the supported default for Cocoa and Apple SDK integration.' \
-                'Set MACOS_ALLOW_NONCLANG=1 only for an intentional experiment.' >&2
-            return 1 2>/dev/null || exit 1
-        fi
-
         # Native Apple Silicon defaults to Clang LTO.  GNU GCC uses a
         # different linker-plugin and archive-tool contract, so never inherit
         # that default into the experimental GCC path.
