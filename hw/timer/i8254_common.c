@@ -55,8 +55,13 @@ static uint64_t pit_elapsed_ticks(PITChannelState *s, int64_t current_time)
 static int pit_get_out_elapsed(PITChannelState *s, uint64_t d)
 {
     int out;
+    int mode = pit_effective_mode(s);
 
-    switch (pit_effective_mode(s)) {
+    /* In periodic modes, a low GATE immediately forces OUT high. */
+    if (!s->gate && (mode == 2 || mode == 3)) {
+        return 1;
+    }
+    switch (mode) {
     default:
     case 0:
     case 1:
@@ -89,8 +94,12 @@ static int64_t pit_next_transition_elapsed(PITChannelState *s,
 {
     uint64_t next_time, base;
     int period2;
+    int mode = pit_effective_mode(s);
 
-    switch (pit_effective_mode(s)) {
+    if (!s->gate && (mode == 2 || mode == 3)) {
+        return -1;
+    }
+    switch (mode) {
     default:
     case 0:
     case 1:
