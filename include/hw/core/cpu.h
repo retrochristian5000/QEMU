@@ -285,12 +285,12 @@ typedef struct CPUTLBDesc {
     vaddr large_page_mask;
     /* host time (in ns) at the beginning of the time window */
     int64_t window_begin_ns;
-    /* maximum number of entries observed in the window */
-    size_t window_max_entries;
+    /* Main-table capacity is bounded by CPU_TLB_DYN_MAX_BITS. */
+    uint32_t window_max_entries;
     /* Number of occupied main-table slots; excludes the victim table. */
-    size_t n_used_entries;
-    /* The next index to use in the tlb victim table.  */
-    size_t vindex;
+    uint32_t n_used_entries;
+    /* Next victim slot, always less than CPU_VTLB_SIZE. */
+    uint8_t vindex;
     /* The tlb victim table, in two parts.  */
     CPUTLBEntry vtable[CPU_VTLB_SIZE];
     CPUTLBEntryFull vfulltlb[CPU_VTLB_SIZE];
