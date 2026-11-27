@@ -136,8 +136,6 @@ void ide_identify(IDEState *s)
     oldsize = s->cylinders * s->heads * s->sectors;
     ide_put_le16(p + 57, oldsize);
     ide_put_le16(p + 58, oldsize >> 16);
-    if (s->mult_sectors)
-        ide_put_le16(p + 59, 0x100 | s->mult_sectors);
     /* *(p + 60) := nb_sectors       -- see ide_identify_size */
     /* *(p + 61) := nb_sectors >> 16 -- see ide_identify_size */
     ide_put_le16(p + 62, 0x07); /* single word dma0-2 supported */
@@ -210,6 +208,8 @@ void ide_identify(IDEState *s)
     s->identify_set = 1;
 
 fill_buffer:
+    /* Word 59 is live state, not a static drive capability. */
+    ide_put_le16(p + 59, 0x100 | s->mult_sectors);
     ide_identify_historical(s, p);
     memcpy(s->io_buffer, p, sizeof(s->identify_data));
 }
