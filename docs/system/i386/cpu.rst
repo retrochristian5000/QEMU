@@ -42,3 +42,19 @@ https://instlatx64.github.io/InstLatx64/GenuineIntel/GenuineIntel0000543_P55C_CP
 The hypervisor feature remains available, and the TSC rate is not changed
 by this revision. These changes do not implement a physical cache or
 cycle-accurate processor timing.
+
+Virtual interrupt flags under TCG
+---------------------------------
+
+The Pentium MMX model requests the VME feature (CPUID.1:EDX bit 1),
+but TCG continues to filter it out. The shared TCG flag paths now handle
+restricted CPL 3 CLI/STI using CR4.VME or CR4.PVI, and 16-bit virtual-8086
+PUSHF/POPF using CR4.VME. Physical IF and IOPL remain unchanged on these
+virtual paths. Pending virtual interrupts and disallowed operand sizes
+retain their architectural faults. Software interrupt redirection via the
+TSS bitmap and virtual-8086 IRET still require implementation and guest
+regression tests before VME can be advertised. No CPU model version or
+migration field is changed by this work.
+
+Reference: Intel 64 and IA-32 Architectures Software Developer's Manual,
+Volume 3A, 8086 Emulation; Volume 2, CLI, STI, PUSHF and POPF.
