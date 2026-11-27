@@ -195,6 +195,21 @@ check environment and wrapper conflicts without a full LLVM rebuild.
   the QEMU and native LLVM wrappers. This avoids accidental cache-path
   differences due only to capitalization of the host OS tag.
 
+* Both ccache and sccache use the same provider-specific local directory
+  across Ninja, native LLVM and QEMU. Ninja honors ``CCACHE_DIR`` as well as
+  ``SCCACHE_DIR``, and uses ``WHP_COMPILER_CACHE_ROOT`` with the raw host
+  OS/architecture tag when no provider directory is specified. Existing
+  directories created with the old Ninja-specific tag are left untouched.
+
+* ``WHP_COMPILER_CACHE_SIZE=4G`` is an optional common disk budget for
+  the selected cache provider. Use a positive integer followed by M or G.
+  Explicit ``CCACHE_MAXSIZE``, ``SCCACHE_CACHE_SIZE``,
+  ``CCACHE_CONFIGPATH`` or ``SCCACHE_CONF`` take precedence.
+  The budget applies to a provider's local cache, not the combined build
+  tree, and does not limit RAM or remote storage. The cache provider handles
+  eviction. No shared daemon is restarted and no existing directory is
+  removed. Unset the option to retain provider defaults.
+
 * ``SCCACHE_CACHE_SIZE=4G`` is an **optional example** disk limit. sccache
   itself defaults to 10G when not configured. Smaller sizes save storage but
   may evict expensive LLVM objects and increase rebuild time. They do not
