@@ -1,5 +1,5 @@
 /*
- * QEMU Hayes-compatible serial modem emulation
+ * QEMU AT-compatible serial modem emulation
  *
  * Copyright 2026
  *
@@ -38,6 +38,7 @@
 #include "qemu/timer.h"
 #include "qemu/atomic.h"
 #include "chardev-internal.h"
+#include "modem-models.h"
 #include "trace.h"
 
 #define TYPE_CHARDEV_MODEM "chardev-modem"
@@ -50,10 +51,6 @@ OBJECT_DECLARE_SIMPLE_TYPE(ModemChardev, CHARDEV_MODEM)
 #define MODEM_SREG_COUNT 100
 #define MODEM_XON 0x11
 #define MODEM_XOFF 0x13
-#define MODEM_DEFAULT_MODEL "hayes-accura-2400"
-#define MODEM_VOICE_MODEL "rockwell-voice-14400"
-#define MODEM_PARADYNE_3711 "att-paradyne-dataport-3711"
-#define MODEM_PARADYNE_3740 "att-paradyne-3740"
 
 #define MODEM_INPUT_LINES (CHR_TIOCM_DTR | CHR_TIOCM_RTS)
 #define MODEM_OUTPUT_LINES \
@@ -75,98 +72,6 @@ typedef enum DataPortHighSpeedMode {
     DATAPORT_V34_ONLY,
     DATAPORT_VFC_ONLY,
 } DataPortHighSpeedMode;
-
-typedef struct ModemModel {
-    const char *name;
-    int connect_speed;
-    int max_fax_rate; /* Separate from the data DCE rate. */
-    bool supports_voice;
-    bool paradyne_commands;
-    bool dataport_3740_line;
-    int max_reliable_mode;
-    const char *identification[11];
-    const char *fallback_identification;
-} ModemModel;
-
-static const ModemModel modem_models[] = {
-    {
-        .name = MODEM_DEFAULT_MODEL,
-        .connect_speed = 2400,
-        .supports_voice = false,
-        .identification = {
-            "240",
-            "000",
-            "ROM CHECKSUM OK",
-            "Hayes Accura 2400",
-            "QEMU Hayes-compatible modem",
-            "V1.0",
-            "RCV2400",
-            "Hayes-compatible error correcting modem",
-            "2400",
-            "QEMU",
-            "SERIAL MODEM",
-        },
-        .fallback_identification = "QEMU Hayes-compatible modem",
-    },
-    {
-        .name = MODEM_VOICE_MODEL,
-        .connect_speed = 14400,
-        .supports_voice = true,
-        .identification = {
-            "144",
-            "000",
-            "ROM CHECKSUM OK",
-            "Rockwell-compatible 14.4 Voice",
-            "QEMU Rockwell-compatible voice modem",
-            "V1.0",
-            "VOICE14400",
-            "Hayes-compatible voice/fax/data modem",
-            "14400",
-            "QEMU",
-            "VOICE MODEM",
-        },
-        .fallback_identification = "QEMU Rockwell-compatible voice modem",
-    },
-    {
-        .name = MODEM_PARADYNE_3711,
-        .connect_speed = 14400,
-        .paradyne_commands = true,
-        .max_reliable_mode = 7,
-        .identification = {
-            "144",
-            "000",
-            "ROM NOT EMULATED",
-            "Paradyne DataPort Express 3711 (QEMU emulation)",
-            "QEMU Paradyne-compatible serial modem",
-            "V1.0",
-            "DATAPORT3711",
-            "Paradyne-compatible data modem",
-            "14400",
-            "QEMU",
-            "SERIAL MODEM",
-        },
-        .fallback_identification = "QEMU DataPort Express 3711 profile",
-    },
-    {
-        .name = MODEM_PARADYNE_3740,
-        .connect_speed = 28800,
-        .max_fax_rate = 14400,
-        .paradyne_commands = true,
-        .dataport_3740_line = true,
-        /* The archived DataPort Express V.34 driver requests \N7. */
-        .max_reliable_mode = 7,
-        /*
-         * Rockwell reference product code, corroborated by HylaFAX.
-         * Exact OEM firmware replies are not recovered. NULL means
-         * unavailable, not a known original firmware response.
-         */
-        .identification = {
-            [0] = "28800",
-            [3] = "AT&T DataPort Express 3740 V.34 V.FC (QEMU emulation)",
-        },
-        .fallback_identification = "QEMU DataPort Express 3740 profile",
-    },
-};
 
 /* Only configuration, never connection state or host transport resources. */
 typedef struct ModemStoredProfile {
@@ -537,24 +442,6 @@ static void modem_result(ModemChardev *modem, ModemResult result)
     modem_queue_line(modem, modem->verbose ? text : numeric);
 }
 
-static const ModemModel *modem_model_find(const char *name)
-{
-    size_t i;
-
-    /* Preserve the original command-line model spelling. */
-    if (strcmp(name, "att-paradyne-dataport-3740") == 0) {
-        name = MODEM_PARADYNE_3740;
-    }
-
-    for (i = 0; i < ARRAY_SIZE(modem_models); i++) {
-        if (strcmp(name, modem_models[i].name) == 0) {
-            return &modem_models[i];
-        }
-    }
-
-    return NULL;
-}
-
 static void modem_voice_defaults(ModemChardev *modem)
 {
     modem->voice_line = 0;
@@ -723,13 +610,11 @@ static char *modem_normalize_command(const char *command)
 
 static bool modem_report_identification(ModemChardev *modem, int index)
 {
-    const char *identification = modem->model->fallback_identification;
+    const char *identification = modem->model->unknown_ati_response;
 
     if (index >= 0 &&
         (size_t)index < ARRAY_SIZE(modem->model->identification)) {
         identification = modem->model->identification[index];
-    } else if (modem->model->dataport_3740_line) {
-        identification = NULL;
     }
     if (modem->model->dataport_3740_line) {
         trace_dataport_3740_ident(qemu_clock_get_ns(QEMU_CLOCK_VIRTUAL),
@@ -1226,7 +1111,7 @@ static bool modem_handle_dataport_fax(ModemChardev *modem,
             reply = "DataPort Express 3740";
             p += 6;
         } else if (g_str_has_prefix(p, "+FREV?")) {
-            reply = modem->model->fallback_identification;
+            reply = modem->model->percent_version;
             p += 6;
         } else if (g_str_has_prefix(p, "+FDCC=?")) {
             formatted = g_strdup_printf("(0,1),(0-%d),(0-3),(0-2),"
@@ -1553,7 +1438,12 @@ static void modem_execute_command(ModemChardev *modem, const char *input)
                 break;
             }
             case 'C':
-                modem->compression = modem_parse_number(&p, 0) != 0;
+                value = modem_parse_number(&p, 0);
+                if (modem->model->paradyne_commands && value > 1) {
+                    modem_result(modem, MODEM_RESULT_ERROR);
+                    return;
+                }
+                modem->compression = value != 0;
                 break;
             case 'M':
                 value = modem_parse_number(&p, -1);
@@ -1570,15 +1460,9 @@ static void modem_execute_command(ModemChardev *modem, const char *input)
                 if (modem->model->dataport_3740_line) {
                     trace_dataport_3740_ident(
                         qemu_clock_get_ns(QEMU_CLOCK_VIRTUAL), -1,
-                        modem->model->fallback_identification);
+                        modem->model->percent_version);
                 }
-                if (modem->model->paradyne_commands) {
-                    /* Model-specific placeholder, not a firmware dump. */
-                    modem_queue_line(modem,
-                                     modem->model->fallback_identification);
-                } else {
-                    modem_queue_line(modem, "QEMU Hayes modem V1.0");
-                }
+                modem_queue_line(modem, modem->model->percent_version);
                 break;
             default:
                 modem_result(modem, MODEM_RESULT_ERROR);

@@ -32,6 +32,7 @@ chardev_ss = chardev_ss.apply({})
 system_ss.add(files(
     'char-hmp-cmds.c',
     'modem.c',
+    'modem-models.c',
     'msmouse.c',
     'wctablet.c',
     'testdev.c'))

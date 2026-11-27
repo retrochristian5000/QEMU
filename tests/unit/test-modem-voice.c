@@ -917,6 +917,54 @@ static void test_dataport_indicators(void)
     g_ptr_array_unref(snapshots);
 }
 
+static void test_modem_identity_isolation(void)
+{
+    static const struct {
+        const char *model;
+        const char *version;
+        bool paradyne;
+    } cases[] = {
+        { "hayes-accura-2400", "QEMU Hayes modem V1.0", false },
+        { "rockwell-voice-14400", "QEMU Rockwell-compatible voice modem",
+          false },
+        { "att-paradyne-dataport-3711", "QEMU DataPort Express 3711 profile",
+          true },
+        { "att-paradyne-3740", "QEMU DataPort Express 3740 profile", true },
+    };
+
+    for (unsigned i = 0; i < ARRAY_SIZE(cases); i++) {
+        ModemOutput out = { 0 };
+        CharFrontend fe = { 0 };
+        Chardev *chr = modem_new("modem-identity-isolation", cases[i].model);
+        g_autofree char *expected = g_strdup_printf("\r\n%s\r\n\r\nOK\r\n",
+                                                    cases[i].version);
+
+        modem_frontend_init(&fe, &out, chr);
+        assert_response_contains(modem_command(&fe, &out, "ATE0Q0V1\r"),
+                                 "\r\nOK\r\n");
+        g_assert_cmpstr(modem_command(&fe, &out, "AT%V\r"), ==, expected);
+        if (i != 0) {
+            for (unsigned j = 0; j <= 11; j++) {
+                g_autofree char *command = g_strdup_printf("ATI%u\r", j);
+
+                g_assert_null(strstr(modem_command(&fe, &out, command),
+                                     "Hayes"));
+            }
+        }
+        if (cases[i].paradyne) {
+            assert_response_contains(modem_command(&fe, &out, "AT%C0\r"),
+                                     "\r\nOK\r\n");
+            assert_response_contains(modem_command(&fe, &out, "AT%C2\r"),
+                                     "\r\nERROR\r\n");
+            assert_response_contains(modem_command(&fe, &out, "AT&V\r"),
+                                     "%C0");
+            assert_response_contains(modem_command(&fe, &out, "AT%C1\r"),
+                                     "\r\nOK\r\n");
+        }
+        modem_frontend_cleanup(&fe, chr);
+    }
+}
+
 static void test_generic_modem_rejects_paradyne_controls(void)
 {
     ModemOutput out = { 0 };
@@ -1006,6 +1054,8 @@ int main(int argc, char **argv)
                     test_paradyne_3740_unimodem_probe);
     g_test_add_func("/modem/paradyne/3740-legacy-name",
                     test_paradyne_3740_legacy_name);
+    g_test_add_func("/modem/identity-isolation",
+                    test_modem_identity_isolation);
     g_test_add_func("/modem/paradyne/generic-isolation",
                     test_generic_modem_rejects_paradyne_controls);
 

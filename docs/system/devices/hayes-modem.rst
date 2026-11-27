@@ -60,7 +60,13 @@ is accepted as a single combined command.
 AT&T/Paradyne DataPort Express command profiles
 ------------------------------------------------
 
-The DataPort Express profiles reuse the existing Hayes command/serial layer.
+The DataPort Express profiles reuse the common AT command and serial
+transport layer. Hayes compatibility describes command syntax, not
+manufacturer identity. Model-specific ATI and AT%V responses are held in
+the separate modem model table, rather than in the shared parser. The
+3740 retains ERROR for unidentified ATI responses; it never substitutes
+another manufacturer's identification. The documented DataPort %C0 and
+%C1 compression settings are accepted; other values return ERROR.
 They provide separate maximum *emulated* DCE speeds (14,400 and 28,800 bit/s),
 model-specific identification strings clearly marked as QEMU emulation, and
 profile-scoped Paradyne configuration commands:

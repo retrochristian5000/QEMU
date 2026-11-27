@@ -202,12 +202,14 @@ if have_system
           'test-char': [
             'socket-helpers.c',
             meson.project_source_root() / 'chardev/modem.c',
+            meson.project_source_root() / 'chardev/modem-models.c',
             qom,
             io,
             chardev,
           ],
           'test-modem-voice': [
             meson.project_source_root() / 'chardev/modem.c',
+            meson.project_source_root() / 'chardev/modem-models.c',
             qom,
             io,
             chardev,
