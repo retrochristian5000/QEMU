@@ -5669,6 +5669,10 @@ SRST
 ``-sandbox arg[,obsolete=string][,elevateprivileges=string][,spawn=string][,resourcecontrol=string]``
     Enable Seccomp mode 2 system call filter. 'on' will enable syscall
     filtering and 'off' will disable it. The default is 'off'.
+    This option requires Linux host seccomp support. QEMU refuses startup
+    if the requested synchronized filter cannot be installed. The filter
+    restricts selected system calls; it does not provide filesystem or
+    network isolation. Use additional host confinement where needed.
 
     ``obsolete=string``
         Enable Obsolete system calls
