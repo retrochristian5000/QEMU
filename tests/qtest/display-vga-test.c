@@ -278,6 +278,58 @@ static void test_cirrus_gray_palette(void)
     qtest_quit(qts);
 }
 
+static void cirrus_dac_unlock(QTestState *qts, uint8_t mask)
+{
+    for (int i = 0; i < 4; i++) {
+        g_assert_cmphex(qtest_inb(qts, VGA_PEL_MSK), ==, mask);
+    }
+}
+
+static void test_gd5446_dac_sequence(void)
+{
+    static const uint16_t ports[] = {
+        VGA_PEL_IR, VGA_PEL_IW, VGA_PEL_D,
+    };
+    QTestState *qts = qtest_init("-M pc -vga none -device gd5446-pci");
+
+    /* The reset state must not require a dummy address-port read. */
+    cirrus_dac_unlock(qts, 0xff);
+    g_assert_cmphex(qtest_inb(qts, VGA_PEL_MSK), ==, 0);
+    qtest_outb(qts, VGA_PEL_MSK, 0x5a);
+    cirrus_dac_unlock(qts, 0x5a);
+    qtest_outb(qts, VGA_PEL_MSK, 0xc1);
+    cirrus_dac_unlock(qts, 0x5a);
+    g_assert_cmphex(qtest_inb(qts, VGA_PEL_MSK), ==, 0xc1);
+
+    /* Both directions of palette I/O must cancel a pending HDR access. */
+    for (int i = 0; i < ARRAY_SIZE(ports); i++) {
+        for (int write = 0; write < 2; write++) {
+            qtest_outb(qts, VGA_PEL_IW, 0);
+            cirrus_dac_unlock(qts, 0x5a);
+            if (write) {
+                qtest_outb(qts, ports[i], 0);
+            } else {
+                qtest_inb(qts, ports[i]);
+            }
+            qtest_outb(qts, VGA_PEL_MSK, 0xa5);
+            cirrus_dac_unlock(qts, 0xa5);
+            g_assert_cmphex(qtest_inb(qts, VGA_PEL_MSK), ==, 0xc1);
+            qtest_outb(qts, VGA_PEL_MSK, 0x5a);
+        }
+    }
+
+    /* An ordinary mask write also terminates a partial unlock. */
+    g_assert_cmphex(qtest_inb(qts, VGA_PEL_MSK), ==, 0x5a);
+    qtest_outb(qts, VGA_PEL_MSK, 0xff);
+    cirrus_dac_unlock(qts, 0xff);
+    g_assert_cmphex(qtest_inb(qts, VGA_PEL_MSK), ==, 0xc1);
+
+    qtest_system_reset(qts);
+    cirrus_dac_unlock(qts, 0xff);
+    g_assert_cmphex(qtest_inb(qts, VGA_PEL_MSK), ==, 0);
+    qtest_quit(qts);
+}
+
 static void test_vga_eram_memory_decode(void)
 {
     static const bool chain4_modes[] = { false, true };
@@ -832,6 +884,8 @@ int main(int argc, char **argv)
                                 test_cirrus_named_pci_profile);
         }
         if (qtest_has_device("gd5446-pci")) {
+            qtest_add_func("/display/pci/cirrus-gd5446-dac-sequence",
+                           test_gd5446_dac_sequence);
             qtest_add_data_func("/display/pci/cirrus-gd5446-profile",
                                 GINT_TO_POINTER(0),
                                 test_cirrus_named_pci_profile);
