@@ -133,7 +133,13 @@ and auto-init exit commands apply to the current transfer width only;
 resume requires a paused transfer. Starting a new PCM transfer releases
 the old DMA request, and reset clears paused state and the time constant.
 Bxh/Cxh lengths count individual samples, not stereo frames, so single
-cycle and auto-init use the same sample-to-byte conversion.
+cycle and auto-init use the same sample-to-byte conversion. Named profiles
+stop each DMA service at the programmed controller buffer boundary and
+return the terminal byte position without wrapping it. The ISA DMA
+controller latches terminal count and reloads address and count only if
+the controller's own auto-init mode is enabled. DSP block IRQs remain
+independent of controller terminal count. The generic SB16 retains its
+historical wrapping behavior.
 
 Unsupported ADPCM (16h/17h/1Fh), ADC (24h/2Ch) and DSP MIDI commands
 (30h/31h/34h-38h) are recognized for command framing only. Parameter

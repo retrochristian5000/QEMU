@@ -367,6 +367,10 @@ static void i8257_channel_run(I8257State *d, int ichan)
     if (n == (r->base[COUNT] + 1) << ncont) {
         ldebug("transfer done\n");
         d->status |= (1 << ichan);
+        if (r->mode & 0x10) {
+            /* Auto-init reloads the address and count at terminal count. */
+            i8257_init_chan(d, ichan);
+        }
     }
 }
 

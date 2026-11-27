@@ -309,6 +309,92 @@ static void test_ct1741_dma_width(void)
     qtest_quit(s);
 }
 
+/*
+ * Exercise actual ISA DMA service, not only the DSP's request bits.
+ * The controller and DSP have independent auto-initialization settings.
+ */
+static void test_ct1740_dma_terminal_count(gconstpointer data)
+{
+    unsigned int flags = GPOINTER_TO_UINT(data);
+    bool wide = flags & 1;
+    bool auto_init = flags & 2;
+    bool continuous = flags & 4;
+    unsigned int addr_port = wide ? 0xc4 : 0x02;
+    unsigned int count_port = wide ? 0xc6 : 0x03;
+    unsigned int clear_port = wide ? 0xd8 : 0x0c;
+    unsigned int status_port = wide ? 0xd0 : 0x08;
+    unsigned int mask_port = wide ? 0xd4 : 0x0a;
+    unsigned int mode_port = wide ? 0xd6 : 0x0b;
+    unsigned int address = wide ? 0x0800 : 0x1000;
+    uint8_t irq_bit = wide ? 2 : 1;
+    uint8_t cmd = wide ? 0xb0 : 0xc0;
+    uint8_t samples[128] = { 0 };
+    QTestState *s = qtest_init("-M pc,chipset-controllers=on -nodefaults "
+                               "-audiodev none,id=snd "
+                               "-device sb16,audiodev=snd");
+
+    qtest_outb(s, 0x226, 1);
+    qtest_outb(s, 0x226, 0);
+    g_assert_cmphex(qtest_inb(s, 0x22a), ==, 0xaa);
+
+    /* Channel 1 or 5, 64 samples, single transfer, memory to device. */
+    qtest_outb(s, mask_port, 5);
+    qtest_outb(s, clear_port, 0);
+    qtest_outb(s, addr_port, address & 0xff);
+    qtest_outb(s, addr_port, address >> 8);
+    qtest_outb(s, count_port, 63);
+    qtest_outb(s, count_port, 0);
+    qtest_outb(s, wide ? 0x8b : 0x83, 0);
+    qtest_outb(s, mode_port, auto_init ? 0x59 : 0x49);
+    qtest_memwrite(s, 0x1000, samples, wide ? 128 : 64);
+
+    /* The lower DMA controller must be enabled through the cascade. */
+    if (!wide) {
+        qtest_outb(s, 0xd6, 0xc0);
+        qtest_outb(s, 0xd4, 0);
+    }
+    qtest_inb(s, status_port);
+    qtest_outb(s, mask_port, 1);
+
+    /* 11025 Hz, mono, unsigned PCM, 64 samples per DSP block. */
+    qtest_outb(s, 0x22c, 0x41);
+    qtest_outb(s, 0x22c, 0x2b);
+    qtest_outb(s, 0x22c, 0x11);
+    qtest_outb(s, 0x22c, cmd | (continuous ? 4 : 0));
+    qtest_outb(s, 0x22c, 0);
+    qtest_outb(s, 0x22c, 63);
+    qtest_outb(s, 0x22c, 0);
+
+    for (unsigned int block = 0; block < (continuous ? 2 : 1); block++) {
+        unsigned int elapsed;
+
+        for (elapsed = 0; elapsed < 100; elapsed++) {
+            qtest_clock_step(s, 10 * G_GINT64_CONSTANT(1000000));
+            if (mixer_read(s, 0x220, 0x82) & irq_bit) {
+                break;
+            }
+        }
+        g_assert_cmpuint(elapsed, <, 100);
+        /* DSP completion and controller terminal count must both be visible. */
+        g_assert_cmphex(qtest_inb(s, status_port) & 2, ==, 2);
+        qtest_inb(s, wide ? 0x22f : 0x22e);
+    }
+
+    if (!continuous) {
+        unsigned int count;
+
+        g_assert_cmphex(qtest_inb(s, status_port) & 0x20, ==, 0);
+        qtest_outb(s, clear_port, 0);
+        count = qtest_inb(s, count_port);
+        count |= (unsigned int)qtest_inb(s, count_port) << 8;
+        g_assert_cmphex(count, ==, auto_init ? 63 : 0xffff);
+    } else {
+        qtest_outb(s, 0x22c, wide ? 0xd5 : 0xd0);
+    }
+
+    qtest_quit(s);
+}
+
 static void test_ct1740_alias(void)
 {
     static const char *const names[] = { "sb16", "sb16-ct1740" };
@@ -357,6 +443,18 @@ int main(int argc, char **argv)
                             test_ct1740_probe);
         qtest_add_func("/ct1740/no-csp", test_ct1740_no_csp);
         qtest_add_func("/ct1740/alias", test_ct1740_alias);
+        qtest_add_data_func("/ct1740/dma/8-bit-terminal-count",
+                            GUINT_TO_POINTER(0), test_ct1740_dma_terminal_count);
+        qtest_add_data_func("/ct1740/dma/16-bit-terminal-count",
+                            GUINT_TO_POINTER(1), test_ct1740_dma_terminal_count);
+        qtest_add_data_func("/ct1740/dma/8-bit-auto-reload",
+                            GUINT_TO_POINTER(2), test_ct1740_dma_terminal_count);
+        qtest_add_data_func("/ct1740/dma/16-bit-auto-reload",
+                            GUINT_TO_POINTER(3), test_ct1740_dma_terminal_count);
+        qtest_add_data_func("/ct1740/dma/8-bit-continuous",
+                            GUINT_TO_POINTER(6), test_ct1740_dma_terminal_count);
+        qtest_add_data_func("/ct1740/dma/16-bit-continuous",
+                            GUINT_TO_POINTER(7), test_ct1740_dma_terminal_count);
         qtest_add_data_func("/ct1740/no-emu8000", "sb16-ct1740",
                             test_sb16_no_emu8000);
         qtest_add_data_func("/ct1740/invalid-base", "iobase=0x230",

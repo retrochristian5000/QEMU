@@ -1417,7 +1417,7 @@ static int SB_read_DMA (void *opaque, int nchan, int dma_pos, int dma_len)
 
     if (s->legacy_board &&
         (!s->dma_running || nchan != (s->use_hdma ? s->hdma : s->dma) ||
-         dma_len <= 0)) {
+         dma_len <= 0 || dma_pos < 0 || dma_pos >= dma_len)) {
         return dma_pos;
     }
     if (s->block_size <= 0) {
@@ -1455,8 +1455,19 @@ static int SB_read_DMA (void *opaque, int nchan, int dma_pos, int dma_len)
         }
     }
 
+    if (s->legacy_board) {
+        /*
+         * Do not wrap the controller's byte position here. It must observe
+         * terminal count and decide whether to reload an auto-init channel.
+         */
+        copy = MIN(copy, dma_len - dma_pos);
+    }
+
     written = write_audio (s, nchan, dma_pos, dma_len, copy);
-    dma_pos = (dma_pos + written) % dma_len;
+    dma_pos += written;
+    if (!s->legacy_board) {
+        dma_pos %= dma_len;
+    }
     s->left_till_irq -= written;
 
     if (s->left_till_irq <= 0) {
