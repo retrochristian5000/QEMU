@@ -1423,7 +1423,7 @@ static void test_piix_channel_irq_reset(void)
     ide_test_quit(qts);
 }
 
-static void cdrom_pio_impl(int nblocks)
+static void cdrom_pio_impl(int nblocks, uint16_t byte_count_limit)
 {
     QTestState *qts;
     QPCIDevice *dev;
@@ -1454,8 +1454,8 @@ static void cdrom_pio_impl(int nblocks)
 
     /* PACKET command on device 0 */
     qpci_io_writeb(dev, ide_bar, reg_device, 0);
-    qpci_io_writeb(dev, ide_bar, reg_lba_middle, BYTE_COUNT_LIMIT & 0xFF);
-    qpci_io_writeb(dev, ide_bar, reg_lba_high, (BYTE_COUNT_LIMIT >> 8 & 0xFF));
+    qpci_io_writeb(dev, ide_bar, reg_lba_middle, byte_count_limit & 0xFF);
+    qpci_io_writeb(dev, ide_bar, reg_lba_high, (byte_count_limit >> 8 & 0xFF));
     qpci_io_writeb(dev, ide_bar, reg_command, CMD_PACKET);
     /* HP0: Check_Status_A State */
     nsleep(qts, 400);
@@ -1467,14 +1467,14 @@ static void cdrom_pio_impl(int nblocks)
     /* SCSI CDB (READ10) -- read n*2048 bytes from block 0 */
     send_scsi_cdb_read10(dev, ide_bar, 0, nblocks);
 
-    /* Read data back: occurs in bursts of 'BYTE_COUNT_LIMIT' bytes.
-     * If BYTE_COUNT_LIMIT is odd, we transfer BYTE_COUNT_LIMIT - 1 bytes.
+    /* Read data back: occurs in bursts of 'byte_count_limit' bytes.
+     * If byte_count_limit is odd, we transfer byte_count_limit - 1 bytes.
      * We allow an odd limit only when the remaining transfer size is
-     * less than BYTE_COUNT_LIMIT. However, SCSI's read10 command can only
+     * less than byte_count_limit. However, SCSI's read10 command can only
      * request n blocks, so our request size is always even.
      * For this reason, we assume there is never a hanging byte to fetch. */
     g_assert(!(rxsize & 1));
-    limit = BYTE_COUNT_LIMIT & ~1;
+    limit = byte_count_limit & ~1;
     for (i = 0; i < DIV_ROUND_UP(rxsize, limit); i++) {
         size_t offset = i * (limit / 2);
         size_t rem = (rxsize / 2) - offset;
@@ -1708,15 +1708,22 @@ static void test_cdrom_invalid_bcl(void)
 
 static void test_cdrom_pio(void)
 {
-    cdrom_pio_impl(1);
+    cdrom_pio_impl(1, BYTE_COUNT_LIMIT);
 }
 
 static void test_cdrom_pio_large(void)
 {
     /* Test a few loops of the PIO DRQ mechanism. */
-    cdrom_pio_impl(BYTE_COUNT_LIMIT * 4 / ATAPI_BLOCK_SIZE);
+    cdrom_pio_impl(BYTE_COUNT_LIMIT * 4 / ATAPI_BLOCK_SIZE,
+                   BYTE_COUNT_LIMIT);
 }
 
+
+static void test_cdrom_pio_linux_limit(void)
+{
+    /* Legacy Linux ide-cd uses a 32 KiB packet byte-count limit. */
+    cdrom_pio_impl(40, 32768);
+}
 
 static void test_cdrom_dma(void)
 {
@@ -2059,6 +2066,7 @@ int main(int argc, char **argv)
     qtest_add_func("/ide/cdrom/invalid-bcl", test_cdrom_invalid_bcl);
     qtest_add_func("/ide/cdrom/pio", test_cdrom_pio);
     qtest_add_func("/ide/cdrom/pio_large", test_cdrom_pio_large);
+    qtest_add_func("/ide/cdrom/pio-linux-limit", test_cdrom_pio_linux_limit);
     qtest_add_func("/ide/cdrom/dma", test_cdrom_dma);
     qtest_add_data_func("/ide/cdrom/dma-batched-cooked", GINT_TO_POINTER(0),
                         test_cdrom_dma_batched);
