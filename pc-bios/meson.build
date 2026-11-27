@@ -161,6 +161,29 @@ if whp_seabios_enabled
     install_dir: qemu_datadir)
   alias_target('whp-seabios-x86', whp_seabios_x86)
   roms += whp_seabios_x86
+
+  # Peripheral ROMs are outputs of the selected provider, never source blobs.
+  # A missing MCU toolchain must not prevent the ordinary system BIOS build.
+  if config_all_devices.has_key('CONFIG_SB16') and ('i386-softmmu' in target_dirs or 'x86_64-softmmu' in target_dirs)
+    ct1741_sdcc = find_program('sdcc', required: false)
+    ct1741_makebin = find_program('makebin', required: false)
+    if ct1741_sdcc.found() and ct1741_makebin.found()
+      whp_seabios_ct1741 = custom_target('whp-seabios-ct1741-output',
+        output: 'seabios-ct1741.bin',
+        command: whp_seabios_entry_env + [whp_seabios_bash, whp_seabios_script,
+                  whp_seabios_config, '--ct1741', ct1741_sdcc, ct1741_makebin,
+                  '@OUTPUT@'],
+        build_by_default: true,
+        build_always_stale: true,
+        console: true,
+        install: get_option('install_blobs'),
+        install_dir: qemu_datadir)
+      alias_target('whp-seabios-ct1741', whp_seabios_ct1741)
+      roms += whp_seabios_ct1741
+    else
+      message('SeaBIOS CT1741 ROM not built: SDCC and makebin are optional and must both be installed')
+    endif
+  endif
 else
   blobs += ['bios.bin', 'bios-256k.bin', 'bios-microvm.bin']
 endif

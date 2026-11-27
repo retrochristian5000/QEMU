@@ -2,6 +2,7 @@
 /* CT1741 experimental firmware transport. No PCM engine is connected yet. */
 #include "qemu/osdep.h"
 #include "qemu/log.h"
+#include "qemu/datadir.h"
 #include "qemu/timer.h"
 #include "hw/cpu/mcs51.h"
 #include "ct1741-firmware.h"
@@ -76,6 +77,7 @@ CT1741Firmware *ct1741_fw_new(const char *filename, const char *model,
 {
     const MCS51Model *profile = mcs51_model_find(model ? model : "intel-80c52");
     g_autofree CT1741Firmware *s = NULL;
+    g_autofree char *provider_rom = NULL;
     FILE *fp;
     size_t size;
     int extra;
@@ -84,6 +86,18 @@ CT1741Firmware *ct1741_fw_new(const char *filename, const char *model,
     if (!profile || profile->rom_size != 8192) {
         error_setg(errp, "ct1741: dsp-cpu must be intel-8052 or intel-80c52");
         return NULL;
+    }
+    /* Explicit opt-in to the default provider image. Existing explicit
+     * filenames remain literal paths, and no firmware is embedded here. */
+    if (!strcmp(filename, "auto")) {
+        provider_rom = qemu_find_file(QEMU_FILE_TYPE_BIOS,
+                                      "seabios-ct1741.bin");
+        if (!provider_rom) {
+            error_setg(errp, "ct1741: SeaBIOS provider ROM seabios-ct1741.bin "
+                       "not found; build whp-seabios-ct1741 or supply a ROM path");
+            return NULL;
+        }
+        filename = provider_rom;
     }
     fp = fopen(filename, "rb");
     if (!fp) {

@@ -76,6 +76,19 @@ class SeaBiosConfigTests(unittest.TestCase):
         self.assertIn('if (!machine->firmware)', original_x86)
         self.assertIn('X86_16BIT_ROM_SIZE (64 * KiB)', original_x86)
 
+    def test_ct1741_provider_is_a_separate_optional_output(self):
+        meson = (ROOT / 'pc-bios/meson.build').read_text(encoding='utf-8')
+        self.assertIn("find_program('sdcc', required: false)", meson)
+        self.assertIn("find_program('makebin', required: false)", meson)
+        self.assertIn("output: 'seabios-ct1741.bin'", meson)
+        self.assertIn("alias_target('whp-seabios-ct1741'", meson)
+        self.assertIn("output: ['bios.bin', 'bios-256k.bin', "
+                      "'bios-microvm.bin', 'ide-isa.rom']", meson)
+        driver = (ROOT / 'hw/audio/ct1741-firmware.c').read_text(
+            encoding='utf-8')
+        self.assertIn('qemu_find_file(QEMU_FILE_TYPE_BIOS,', driver)
+        self.assertIn('"seabios-ct1741.bin"', driver)
+
     def test_seabios_cross_toolchain_remains_i386_not_x86_64(self):
         build = (ROOT / 'scripts/whp-build/configure-seabios.bash').read_text(
             encoding='utf-8')

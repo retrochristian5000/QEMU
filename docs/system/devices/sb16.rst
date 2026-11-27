@@ -513,3 +513,26 @@ Set ``QTEST_CT1741_FIRMWARE`` to the independently built identification
 ROM to exercise reset, version and identification with the actual MCU
 program in the SB16 qtest. Without the fixture that case is skipped;
 the built-in instruction and latch tests require no external ROM.
+
+
+Default firmware provider
+~~~~~~~~~~~~~~~~~~~~~~~~~
+
+When the WHP build selects SeaBIOS for i386 or x86_64 system firmware
+and SB16 support is present, Meson discovers the independent SDCC and
+makebin tools. If both are installed it builds and installs
+``seabios-ct1741.bin`` as a separate ROM under the usual QEMU data
+directory (subject to ``install_blobs``). The source remains in
+``roms/seabios/firmware/ct1741/``; no ROM bytes are checked into the QEMU
+repository. The x86 BIOS build does not require SDCC. The explicit target
+``whp-seabios-ct1741`` is available when both tools and the SeaBIOS source
+build are configured.
+
+Use ``-device sb16,audiodev=snd,dsp-firmware=auto`` to request the default
+SeaBIOS provider ROM, located through the normal firmware search path,
+including ``-L``. An explicit ROM path remains supported. If the provider
+image is missing or has the wrong size, realization fails rather than
+silently changing DSP implementations. Selecting a different system BIOS
+at runtime does not replace a peripheral's ROM; it is an independent
+device. The ordinary SB16 command without a firmware property retains
+the existing PCM engine until firmware-driven audio is implemented.
