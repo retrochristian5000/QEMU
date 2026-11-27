@@ -47,6 +47,7 @@ static QDict *x86_cpu_static_props(void)
         "model-id",
         "vendor",
         "lmce",
+        "x-p5-cpuid1-reserved-ebx",
         NULL,
     };
     static QDict *d;
