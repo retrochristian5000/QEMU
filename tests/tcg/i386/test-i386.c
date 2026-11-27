@@ -1368,6 +1368,33 @@ void test_segs(void)
                  : "m" (segoff));
     printf("FS:reg = %04x:%08x\n", res2, res);
 
+    /* LES/LDS share the VEX lead bytes in protected mode. The decoder
+     * must retain the ModR/M byte and advance exactly once. */
+    uint32_t loaded_offset;
+    uint16_t loaded_seg;
+
+    asm volatile("pushl %%es\n\t"
+                 "les %2, %0\n\t"
+                 "movw %%es, %1\n\t"
+                 "popl %%es"
+                 : "=&r" (loaded_offset), "=&r" (loaded_seg)
+                 : "m" (segoff) : "memory");
+    if (loaded_offset != segoff.offset || loaded_seg != segoff.seg) {
+        fprintf(stderr, "LES segment or offset mismatch\n");
+        exit(1);
+    }
+
+    asm volatile("pushl %%ds\n\t"
+                 "lds %2, %0\n\t"
+                 "movw %%ds, %1\n\t"
+                 "popl %%ds"
+                 : "=&r" (loaded_offset), "=&r" (loaded_seg)
+                 : "m" (segoff) : "memory");
+    if (loaded_offset != segoff.offset || loaded_seg != segoff.seg) {
+        fprintf(stderr, "LDS segment or offset mismatch\n");
+        exit(1);
+    }
+
     TEST_LR("larw", "w", MK_SEL(2), 0x0100);
     TEST_LR("larl", "", MK_SEL(2), 0x0100);
     TEST_LR("lslw", "w", MK_SEL(2), 0);

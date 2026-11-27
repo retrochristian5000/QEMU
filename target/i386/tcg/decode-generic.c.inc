@@ -299,7 +299,7 @@ static uint64_t advance_pc(CPUX86State *env, DisasContext *s, int num_bytes)
          * This can happen even if the operand is only one byte long!
          */
         if (((s->pc - 1) ^ (pc - 1)) & TARGET_PAGE_MASK) {
-            (void)translator_ldub(env, &s->base,
+            translator_probe_code(env, &s->base,
                                   (s->pc - 1) & TARGET_PAGE_MASK);
         }
         siglongjmp(s->jmpbuf, 1);
@@ -2739,7 +2739,7 @@ illegal:
     return false;
 }
 
-static void dump_unknown_opcode(CPUX86State *env, DisasContext *s)
+static void dump_unknown_opcode(DisasContext *s)
 {
     if (qemu_loglevel_mask(LOG_UNIMP)) {
         FILE *logfile = qemu_log_trylock();
@@ -2748,7 +2748,13 @@ static void dump_unknown_opcode(CPUX86State *env, DisasContext *s)
 
             fprintf(logfile, "ILLOPC: " TARGET_FMT_lx ":", pc);
             for (; pc < end; ++pc) {
-                fprintf(logfile, " %02x", translator_ldub(env, &s->base, pc));
+                uint8_t byte;
+
+                if (translator_st_current(&s->base, &byte, pc, 1, end)) {
+                    fprintf(logfile, " %02x", byte);
+                } else {
+                    fprintf(logfile, " ??");
+                }
             }
             fprintf(logfile, "\n");
             qemu_log_unlock(logfile);
@@ -2854,7 +2860,10 @@ static void disas_insn(DisasContext *s, CPUState *cpu)
             int vex3, vex2 = x86_ldub_code(env, s);
 
             if (!CODE64(s) && (vex2 & 0xc0) != 0xc0) {
-                s->pc--; /* rewind the advance_pc() x86_ldub_code() did */
+                /* LES/LDS: this is the ModR/M byte, not a VEX prefix.
+                 * Keep the consumed byte instead of fetching it again. */
+                s->modrm = vex2;
+                s->has_modrm = true;
                 break;
             }
 
@@ -3145,5 +3154,5 @@ static void disas_insn(DisasContext *s, CPUState *cpu)
      * feature, or just a bogus instruction stream.
      */
     gen_illegal_opcode(s);
-    dump_unknown_opcode(env, s);
+    dump_unknown_opcode(s);
 }

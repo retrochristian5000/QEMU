@@ -405,19 +405,21 @@ size_t translator_st_len(const DisasContextBase *db)
     return db->fake_insn ? db->record_len : db->tb->size;
 }
 
-bool translator_st(const DisasContextBase *db, void *dest,
-                   vaddr addr, size_t len)
+static bool translator_st_copy(const DisasContextBase *db, void *dest,
+                               vaddr addr, size_t len, size_t available)
 {
     size_t offset, offset_end;
+    vaddr delta;
 
     if (addr < db->pc_first) {
         return false;
     }
-    offset = addr - db->pc_first;
-    offset_end = offset + len;
-    if (offset_end > translator_st_len(db)) {
+    delta = addr - db->pc_first;
+    if (delta > available || len > available - (size_t)delta) {
         return false;
     }
+    offset = delta;
+    offset_end = offset + len;
 
     if (!db->fake_insn) {
         size_t offset_page1 = -(db->pc_first | TARGET_PAGE_MASK);
@@ -453,6 +455,39 @@ bool translator_st(const DisasContextBase *db, void *dest,
         return true;
     }
     return false;
+}
+
+bool translator_st(const DisasContextBase *db, void *dest,
+                   vaddr addr, size_t len)
+{
+    return translator_st_copy(db, dest, addr, len, translator_st_len(db));
+}
+
+bool translator_st_current(const DisasContextBase *db, void *dest,
+                           vaddr addr, size_t len, vaddr end)
+{
+    /*
+     * During decode, tb->size is not final. The caller supplies the
+     * exclusive end of the bytes already consumed by this instruction.
+     * Never read beyond the two pages tracked by the translator.
+     */
+    vaddr page_limit = -(db->pc_first | TARGET_PAGE_MASK) + TARGET_PAGE_SIZE;
+
+    if (addr < db->pc_next || end < db->pc_next ||
+        end < db->pc_first || end - db->pc_first > page_limit) {
+        return false;
+    }
+    return translator_st_copy(db, dest, addr, len, end - db->pc_first);
+}
+
+void translator_probe_code(CPUArchState *env, DisasContextBase *db, vaddr pc)
+{
+    uint8_t val;
+
+    if (!translator_ld(env, db, &val, pc, sizeof(val))) {
+        MemOpIdx oi = make_memop_idx(MO_UB, db->code_mmuidx);
+        (void)cpu_ldb_code_mmu(env, pc, oi, 0);
+    }
 }
 
 uint8_t translator_ldub(CPUArchState *env, DisasContextBase *db, vaddr pc)

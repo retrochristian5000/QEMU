@@ -243,6 +243,12 @@ bool translator_io_start(DisasContextBase *db);
  */
 
 uint8_t translator_ldub(CPUArchState *env, DisasContextBase *db, vaddr pc);
+
+/*
+ * Probe an instruction fetch for faults without recording its byte as
+ * part of the decoded instruction.
+ */
+void translator_probe_code(CPUArchState *env, DisasContextBase *db, vaddr pc);
 uint16_t translator_lduw_end(CPUArchState *env, DisasContextBase *db,
                              vaddr pc, MemOp endian);
 uint32_t translator_ldl_end(CPUArchState *env, DisasContextBase *db,
@@ -318,6 +324,14 @@ void translator_fake_ld(DisasContextBase *db, const void *data, size_t len);
  */
 bool translator_st(const DisasContextBase *db, void *dest,
                    vaddr addr, size_t len);
+
+/*
+ * Copy already-consumed bytes during instruction decoding, before tb->size
+ * has been finalized. end is the exclusive end of the current instruction
+ * bytes consumed by the decoder. No guest memory transaction is issued.
+ */
+bool translator_st_current(const DisasContextBase *db, void *dest,
+                           vaddr addr, size_t len, vaddr end);
 
 /**
  * translator_st_len
