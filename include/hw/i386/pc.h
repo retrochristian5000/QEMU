@@ -37,6 +37,8 @@ typedef struct PCMachineState {
     I2CBus *smbus;
     PFlashCFI01 *flash[2];
     char *rom_chip;
+    char *ide_hd_model;
+    char *ide_cd_model;
     ISADevice *pcspk;
     DeviceState *iommu;
     BusState *idebus[MAX_IDE_BUS];
