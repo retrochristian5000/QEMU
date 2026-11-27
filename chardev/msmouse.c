@@ -138,57 +138,75 @@ typedef struct MouseChardev MouseChardev;
 DECLARE_INSTANCE_CHECKER(MouseChardev, MOUSE_CHARDEV,
                          TYPE_CHARDEV_MSMOUSE)
 
-static void msmouse_chr_accept_input(Chardev *chr)
+static bool msmouse_has_pending_event(const MouseChardev *mouse)
 {
-    MouseChardev *mouse = MOUSE_CHARDEV(chr);
-    uint32_t len, avail;
-
-    len = qemu_chr_be_can_write(chr);
-    avail = fifo8_num_used(&mouse->outbuf);
-    while (len > 0 && avail > 0) {
-        const uint8_t *buf;
-        uint32_t size;
-
-        buf = fifo8_pop_bufptr(&mouse->outbuf, MIN(len, avail), &size);
-        qemu_chr_be_write(chr, buf, size);
-        len = qemu_chr_be_can_write(chr);
-        avail -= size;
-    }
+    return mouse->axis[INPUT_AXIS_X] || mouse->axis[INPUT_AXIS_Y] ||
+           mouse->btnc[INPUT_BUTTON_LEFT] ||
+           mouse->btnc[INPUT_BUTTON_RIGHT] ||
+           mouse->btnc[INPUT_BUTTON_MIDDLE];
 }
 
-static void msmouse_queue_event(MouseChardev *mouse)
+static bool msmouse_queue_event(MouseChardev *mouse)
 {
-    unsigned char bytes[4] = { 0x40, 0x00, 0x00, 0x00 };
-    int dx, dy, count = 3;
+    uint8_t bytes[4] = { 0x40, 0x00, 0x00, 0x00 };
+    int dx = CLAMP(mouse->axis[INPUT_AXIS_X], -128, 127);
+    int dy = CLAMP(mouse->axis[INPUT_AXIS_Y], -128, 127);
+    int count = 3;
 
-    dx = mouse->axis[INPUT_AXIS_X];
-    mouse->axis[INPUT_AXIS_X] = 0;
-
-    dy = mouse->axis[INPUT_AXIS_Y];
-    mouse->axis[INPUT_AXIS_Y] = 0;
-
-    /* Movement deltas */
+    /* Signed eight-bit movement, encoded as three seven-bit characters. */
     bytes[0] |= (MSMOUSE_HI2(dy) << 2) | MSMOUSE_HI2(dx);
     bytes[1] |= MSMOUSE_LO6(dx);
     bytes[2] |= MSMOUSE_LO6(dy);
 
-    /* Buttons */
-    bytes[0] |= (mouse->btns[INPUT_BUTTON_LEFT] ? 0x20 : 0x00);
+    bytes[0] |= mouse->btns[INPUT_BUTTON_LEFT] ? 0x20 : 0;
     if (mouse->profile->right_button) {
-        bytes[0] |= (mouse->btns[INPUT_BUTTON_RIGHT] ? 0x10 : 0x00);
+        bytes[0] |= mouse->btns[INPUT_BUTTON_RIGHT] ? 0x10 : 0;
     }
     if (mouse->profile->middle_button &&
         (mouse->btns[INPUT_BUTTON_MIDDLE] ||
          mouse->btnc[INPUT_BUTTON_MIDDLE])) {
-        bytes[3] |= (mouse->btns[INPUT_BUTTON_MIDDLE] ? 0x20 : 0x00);
-        mouse->btnc[INPUT_BUTTON_MIDDLE] = false;
+        bytes[3] = mouse->btns[INPUT_BUTTON_MIDDLE] ? 0x20 : 0;
         count++;
     }
 
-    if (fifo8_num_free(&mouse->outbuf) >= count) {
-        fifo8_push_all(&mouse->outbuf, bytes, count);
-    } else {
-        /* queue full -> drop event */
+    if (fifo8_num_free(&mouse->outbuf) < count) {
+        return false;
+    }
+
+    /* Commit motion and button changes only after the entire packet fits. */
+    fifo8_push_all(&mouse->outbuf, bytes, count);
+    mouse->axis[INPUT_AXIS_X] -= dx;
+    mouse->axis[INPUT_AXIS_Y] -= dy;
+    memset(mouse->btnc, 0, sizeof(mouse->btnc));
+    return true;
+}
+
+static void msmouse_chr_accept_input(Chardev *chr)
+{
+    MouseChardev *mouse = MOUSE_CHARDEV(chr);
+
+    while (MSMOUSE_PWR(mouse->tiocm)) {
+        uint32_t len = qemu_chr_be_can_write(chr);
+        uint32_t avail = fifo8_num_used(&mouse->outbuf);
+        const uint8_t *buf;
+        uint32_t size;
+
+        if (!len) {
+            break;
+        }
+        /*
+         * Drain identification and already queued packets first.  Resume
+         * pending movement even if there is no subsequent host input event.
+         */
+        if (!avail) {
+            if (!msmouse_has_pending_event(mouse) ||
+                !msmouse_queue_event(mouse)) {
+                break;
+            }
+            avail = fifo8_num_used(&mouse->outbuf);
+        }
+        buf = fifo8_pop_bufptr(&mouse->outbuf, MIN(len, avail), &size);
+        qemu_chr_be_write(chr, buf, size);
     }
 }
 
@@ -204,27 +222,29 @@ static void msmouse_input_event(DeviceState *dev, QemuConsole *src,
 
     switch (evt->type) {
     case INPUT_EVENT_KIND_REL:
-        mouse->axis[evt->rel.axis] += evt->rel.value;
+        if (evt->rel.axis == INPUT_AXIS_X ||
+            evt->rel.axis == INPUT_AXIS_Y) {
+            int *axis = &mouse->axis[evt->rel.axis];
+
+            /* Saturate accumulated host motion without signed overflow. */
+            *axis = CLAMP((int64_t)*axis +
+                          CLAMP(evt->rel.value, INT_MIN, INT_MAX),
+                          INT_MIN, INT_MAX);
+        }
         break;
 
     case INPUT_EVENT_KIND_BTN:
-        /*
-         * EasyBall has one physical button.  Ignore every other host button,
-         * including wheels and later side-button event types.
-         */
-        if (!mouse->profile->right_button &&
-            !mouse->profile->middle_button &&
-            evt->btn.button != INPUT_BUTTON_LEFT) {
+        if (evt->btn.button != INPUT_BUTTON_LEFT &&
+            !(mouse->profile->right_button &&
+              evt->btn.button == INPUT_BUTTON_RIGHT) &&
+            !(mouse->profile->middle_button &&
+              evt->btn.button == INPUT_BUTTON_MIDDLE)) {
             return;
         }
-        if ((!mouse->profile->right_button &&
-             evt->btn.button == INPUT_BUTTON_RIGHT) ||
-            (!mouse->profile->middle_button &&
-             evt->btn.button == INPUT_BUTTON_MIDDLE)) {
-            return;
+        if (mouse->btns[evt->btn.button] != evt->btn.down) {
+            mouse->btns[evt->btn.button] = evt->btn.down;
+            mouse->btnc[evt->btn.button] = true;
         }
-        mouse->btns[evt->btn.button] = evt->btn.down;
-        mouse->btnc[evt->btn.button] = true;
         break;
 
     default:
@@ -243,7 +263,13 @@ static void msmouse_input_sync(DeviceState *dev)
         return;
     }
 
-    msmouse_queue_event(mouse);
+    /*
+     * Stage complete packets while space is available, preserving button
+     * transitions even when the UART cannot currently accept a byte.
+     */
+    while (msmouse_has_pending_event(mouse) && msmouse_queue_event(mouse)) {
+        /* Keep the existing FIFO capacity. */
+    }
     msmouse_chr_accept_input(chr);
 }
 
@@ -322,7 +348,7 @@ static int msmouse_chr_ioctl(Chardev *chr, int cmd, void *arg)
         fifo8_reset(&mouse->outbuf);
         memset(mouse->axis, 0, sizeof(mouse->axis));
         memset(mouse->btns, false, sizeof(mouse->btns));
-        memset(mouse->btnc, false, sizeof(mouse->btns));
+        memset(mouse->btnc, 0, sizeof(mouse->btnc));
         break;
     case CHR_IOCTL_SERIAL_GET_TIOCM:
         /* Remember line control status. */
