@@ -1815,6 +1815,25 @@ static void pc_machine_set_max_ram_below_4g(Object *obj, Visitor *v,
     pcms->max_ram_below_4g = value;
 }
 
+static char *pc_machine_get_rom_chip(Object *obj, Error **errp)
+{
+    return g_strdup(PC_MACHINE(obj)->rom_chip ?: "auto");
+}
+
+static void pc_machine_set_rom_chip(Object *obj, const char *value,
+                                    Error **errp)
+{
+    PCMachineState *pcms = PC_MACHINE(obj);
+
+    if (strcmp(value, "auto") && strcmp(value, "sst39sf010a") &&
+        strcmp(value, "sst39sf020a") && strcmp(value, "sst39sf040")) {
+        error_setg(errp, "Unknown ROM chip '%s'", value);
+        return;
+    }
+    g_free(pcms->rom_chip);
+    pcms->rom_chip = strcmp(value, "auto") ? g_strdup(value) : NULL;
+}
+
 static void pc_machine_get_max_fw_size(Object *obj, Visitor *v,
                                        const char *name, void *opaque,
                                        Error **errp)
@@ -1905,6 +1924,7 @@ static void pc_machine_finalize(Object *obj)
 {
     PCMachineState *pcms = PC_MACHINE(obj);
 
+    g_free(pcms->rom_chip);
     if (pcms->pcspk && !qdev_is_realized(DEVICE(pcms->pcspk))) {
         object_unref(OBJECT(pcms->pcspk));
     }
@@ -2032,6 +2052,10 @@ static void pc_machine_class_init(ObjectClass *oc, const void *data)
         NULL, NULL);
     object_class_property_set_description(oc, PC_MACHINE_MAX_FW_SIZE,
         "Maximum combined firmware size");
+    object_class_property_add_str(oc, "rom-chip", pc_machine_get_rom_chip,
+                                  pc_machine_set_rom_chip);
+    object_class_property_set_description(oc, "rom-chip",
+        "System ROM chip (auto, sst39sf010a, sst39sf020a, sst39sf040)");
 
     object_class_property_add(oc, PC_MACHINE_SMBIOS_EP, "str",
         pc_machine_get_smbios_ep, pc_machine_set_smbios_ep,
