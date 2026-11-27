@@ -366,9 +366,28 @@ without discarding buffered source bytes. The alternate PCI source
 aperture does not consume source data while suspended. See TRM 5.10 and
 9.4.4.3. This supports concurrent framebuffer and accelerator access
 used by Windows display drivers. Buffered BitBLT commands, the GR2F
-source DWORD offset and hardware overlay/page-switch synchronization
-remain incomplete; DirectDraw support depends on the guest driver and
-is not implied by the device name.
+source DWORD offset and hardware page-switch synchronization remain
+incomplete; DirectDraw support depends on the guest driver and is not
+implied by the device name.
+
+The Revision B video window accepts CR31-CR3F, CR58-CR5A and CR5D-CR5E
+with documented register masks. Rectangular playback supports RGB555,
+RGB565 and packed UYVY (including the alternate planar-assist byte
+layout), with 8- or 15/16-bpp primary graphics. Window positions and
+widths use the primary graphics pixel size; source addresses and pitch
+are independent. Manual buffer selection uses CR5E[5:4]. Unscaled
+horizontal playback and vertical line replication are implemented.
+The host compositor clips the window to the display and checks each
+source row against physical VRAM before reading it.
+
+Window enable and buffer selection take effect at the next host display
+refresh rather than an exact guest VSYNC/window-start edge. Disabling
+or moving the window restores the underlying graphics at the next
+refresh. Color-key/chroma-key occlusion, horizontal and vertical
+interpolation, LUT/AccuPak video, brightness adjustment, capture,
+automatic buffer switching and the video write aperture are not yet
+implemented. Unsupported formats and configurations do not composite
+a window. See TRM chapter 6 and sections 9.3.2 and 9.5.
 
 The CL-GD5422 does not have a hardware BitBLT engine, as documented in
 Table 2-1 of the January 1994 CL-GD542X Technical Reference Manual.
