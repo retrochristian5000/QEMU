@@ -951,6 +951,66 @@ static void test_gd5446_host_alignment(gconstpointer opaque)
     qtest_quit(qts);
 }
 
+static void test_gd5446_indexed_expand(gconstpointer opaque)
+{
+    const char *model = opaque;
+    const uint32_t config = 0x80002000U;
+    const uint32_t lfb = 0xe0000000U;
+    const uint32_t dst = lfb + 0x100;
+    const uint8_t rgb[] = { 0, 0, 0x3f, 0x3f, 0, 0x3f };
+    QTestState *qts = qtest_initf("-M pc -vga none -nodefaults "
+                                 "-device %s,addr=4,romfile=", model);
+
+    qtest_outl(qts, 0xcf8, config | 0x10);
+    qtest_outl(qts, 0xcfc, lfb);
+    cirrus_pci_command(qts, config, 3);
+    qtest_outb(qts, VGA_MIS_W, VGA_MIS_COLOR | VGA_MIS_ENB_MEM_ACCESS);
+    vga_seq_write(qts, 6, 0x12);
+    vga_seq_write(qts, 7, 1);
+    vga_seq_write(qts, 0x12, 0);
+    vga_gfx_write(qts, 0x0b, 0);
+
+    /* Adjacent palette entries represent blue and magenta, not RGB pixels. */
+    qtest_outb(qts, VGA_PEL_IW, 0x2a);
+    for (unsigned i = 0; i < sizeof(rgb); i++) {
+        qtest_outb(qts, VGA_PEL_D, rgb[i]);
+    }
+
+    for (unsigned invert = 0; invert < 2; invert++) {
+        qtest_writel(qts, dst, 0x19191919);
+        qtest_writel(qts, dst + 4, 0x19191919);
+
+        vga_gfx_write(qts, 0, 0x2b);
+        vga_gfx_write(qts, 1, 0x2a);
+        vga_gfx_write(qts, 0x20, 7);
+        vga_gfx_write(qts, 0x22, 0);
+        vga_gfx_write(qts, 0x24, 8);
+        vga_gfx_write(qts, 0x29, 1);
+        vga_gfx_write(qts, 0x2f, 0);
+        vga_gfx_write(qts, 0x30, 0x8c);
+        vga_gfx_write(qts, 0x32, 0x0d);
+        vga_gfx_write(qts, 0x33, 1 | (invert << 1));
+        vga_gfx_write(qts, 0x31, 2);
+        g_assert_cmphex(vga_gfx_read(qts, 0x31) & 1, ==, 1);
+        qtest_writel(qts, lfb + 0x200, 0xaa);
+        g_assert_cmphex(vga_gfx_read(qts, 0x31) & 3, ==, 0);
+
+        for (unsigned i = 0; i < 8; i++) {
+            bool write = ((i & 1) == invert);
+
+            g_assert_cmphex(qtest_readb(qts, dst + i), ==,
+                            write ? 0x2a : 0x19);
+        }
+    }
+
+    /* The transfer must not change either palette entry. */
+    qtest_outb(qts, VGA_PEL_IR, 0x2a);
+    for (unsigned i = 0; i < sizeof(rgb); i++) {
+        g_assert_cmphex(qtest_inb(qts, VGA_PEL_D), ==, rgb[i]);
+    }
+    qtest_quit(qts);
+}
+
 static void test_cirrus_pci_dword_expand(void)
 {
     const uint32_t config = 0x80000000U | (5U << 11);
@@ -1566,6 +1626,12 @@ int main(int argc, char **argv)
                                 "gd5446a-pci", test_gd5446_host_alignment);
             qtest_add_data_func("/display/pci/cirrus-gd5446b-host-alignment",
                                 "gd5446b-pci", test_gd5446_host_alignment);
+            qtest_add_data_func("/display/pci/cirrus-gd5446-indexed-expand",
+                                "gd5446-pci", test_gd5446_indexed_expand);
+            qtest_add_data_func("/display/pci/cirrus-gd5446a-indexed-expand",
+                                "gd5446a-pci", test_gd5446_indexed_expand);
+            qtest_add_data_func("/display/pci/cirrus-gd5446b-indexed-expand",
+                                "gd5446b-pci", test_gd5446_indexed_expand);
             qtest_add_data_func("/display/pci/cirrus-gd5446b-pause-primary",
                                 GINT_TO_POINTER(0), test_gd5446b_blt_pause);
             qtest_add_data_func("/display/pci/cirrus-gd5446b-pause-alternate",
