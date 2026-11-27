@@ -139,7 +139,9 @@ glue(glue(glue(cirrus_colorexpand_transp_, ROP_NAME), _),DEPTH)
 
     if (s->cirrus_blt_modeext & CIRRUS_BLTMODEEXT_COLOREXPINV) {
         bits_xor = 0xff;
-        col = s->cirrus_blt_bgcol;
+        /* GD5446 8-bpp: only the source sense changes (TRM 5.12). */
+        col = s->device_id == CIRRUS_ID_CLGD5446 && DEPTH == 8 ?
+              s->cirrus_blt_fgcol : s->cirrus_blt_bgcol;
     } else {
         bits_xor = 0x00;
         col = s->cirrus_blt_fgcol;
@@ -260,7 +262,9 @@ glue(glue(glue(cirrus_colorexpand_pattern_transp_, ROP_NAME), _),DEPTH)
 
     if (s->cirrus_blt_modeext & CIRRUS_BLTMODEEXT_COLOREXPINV) {
         bits_xor = 0xff;
-        col = s->cirrus_blt_bgcol;
+        /* GD5446 8-bpp: only the source sense changes (TRM 5.12). */
+        col = s->device_id == CIRRUS_ID_CLGD5446 && DEPTH == 8 ?
+              s->cirrus_blt_fgcol : s->cirrus_blt_bgcol;
     } else {
         bits_xor = 0x00;
         col = s->cirrus_blt_fgcol;
