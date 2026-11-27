@@ -31,6 +31,16 @@
 
 static const ModemModel modem_models[] = {
     {
+        .name = "modem-generic",
+        .connect_speed = 2400,
+        .data_only = true,
+        .identification = {
+            [0] = "2400",
+            [2] = "ROM NOT EMULATED",
+            [3] = "QEMU generic AT-compatible data modem",
+        },
+        .percent_version = "QEMU generic modem",
+    }, {
         .name = MODEM_DEFAULT_MODEL,
         .connect_speed = 2400,
         .supports_voice = false,

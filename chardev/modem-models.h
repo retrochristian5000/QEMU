@@ -32,6 +32,7 @@ typedef struct ModemModel {
     int connect_speed;
     int max_fax_rate; /* Separate from the data DCE rate. */
     bool supports_voice;
+    bool data_only;
     bool paradyne_commands;
     bool dataport_3740_line;
     int max_reliable_mode;

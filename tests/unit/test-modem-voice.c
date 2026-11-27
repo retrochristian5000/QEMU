@@ -104,6 +104,30 @@ static void modem_frontend_cleanup(CharFrontend *fe, Chardev *chr)
     object_unparent(OBJECT(chr));
 }
 
+static void test_generic_data_identity(void)
+{
+    ModemOutput out = { 0 };
+    CharFrontend fe = { 0 };
+    Chardev *chr = modem_new("modem-generic-data", "modem-generic");
+
+    modem_frontend_init(&fe, &out, chr);
+    assert_response_contains(modem_command(&fe, &out, "ATI3\r"),
+                             "QEMU generic AT-compatible data modem");
+    assert_response_contains(modem_command(&fe, &out, "ATI2\r"),
+                             "ROM NOT EMULATED");
+    assert_response_contains(modem_command(&fe, &out, "ATI4\r"),
+                             "\r\nERROR\r\n");
+    assert_response_contains(modem_command(&fe, &out, "AT+FCLASS=?\r"),
+                             "\r\n0\r\n");
+    assert_response_contains(modem_command(&fe, &out, "AT+FCLASS=1\r"),
+                             "\r\nERROR\r\n");
+    assert_response_contains(modem_command(&fe, &out, "AT+FCLASS=8\r"),
+                             "\r\nERROR\r\n");
+    assert_response_contains(modem_command(&fe, &out, "AT+FCLASS?\r"),
+                             "\r\n0\r\n");
+    modem_frontend_cleanup(&fe, chr);
+}
+
 static void test_data_model_rejects_voice(void)
 {
     ModemOutput out = { 0 };
@@ -1728,6 +1752,7 @@ int main(int argc, char **argv)
                     test_paradyne_3740_unimodem_probe);
     g_test_add_func("/modem/paradyne/3740-legacy-name",
                     test_paradyne_3740_legacy_name);
+    g_test_add_func("/modem/generic/data-identity", test_generic_data_identity);
     g_test_add_func("/modem/identity-isolation",
                     test_modem_identity_isolation);
     g_test_add_func("/modem/paradyne/generic-isolation",

@@ -16,6 +16,13 @@ The optional ``model`` property selects the emulated modem model::
 
 Supported models are:
 
+``modem-generic``
+  Explicit generic AT-compatible data modem at an emulated 2400 bit/s.
+  Reports QEMU identity rather than a manufacturer or firmware checksum.
+  Only data service class 0 is accepted. Available both as a modem
+  chardev model and as an ISA UART with an owned offline modem backend.
+  The historical default is unchanged.
+
 ``hayes-accura-2400``
   The default data/fax profile.  It intentionally does not advertise voice
   service.
@@ -620,3 +627,42 @@ If ``host`` and ``port`` are omitted, ``ATD`` and ``ATA`` retain the
 existing local-carrier behavior used by modem-detection tests.  Incoming TCP
 ringing/``ATA`` service is not implemented yet; this first transport layer is
 outbound dialing only.  Voice sample transport also remains separate.
+
+
+Windows 98 Dial-Up Networking and device naming
+------------------------------------------------
+
+Microsoft Dial-Up Adapter is a Windows software network interface installed
+by Dial-Up Networking (Microsoft KB Q181599 and Q311357), not an emulated
+ISA or PCI Ethernet card. Keep it separate from Unimodem, the COM UART,
+and the modem command profile. Do not add a QOM network device or invent a
+PnP identifier to replace this guest software component.
+
+Follow the SB16 distinction between generic compatibility models, named
+hardware profiles, and aliases. A named modem profile describes only its
+implemented command and transport behavior; it is not proof of an exact
+physical modem or recovered firmware. The integrated 3740 device is a
+convenience combination of an ISA UART and the external modem profile,
+not evidence that the historical 3740 was an ISA card. To represent an
+external modem separately, attach its chardev to an existing COM port::
+
+  -chardev modem,id=modem0,model=att-paradyne-3740 \\
+    -serial chardev:modem0
+
+The generic alternative is ``model=modem-generic`` or the convenience device
+``-device modem-generic``. Neither changes the existing default Hayes model
+or the established DataPort alias. Use one UART for one connection; do
+not instantiate an additional integrated modem on the same COM resources.
+
+A successful AT probe or local simulated CONNECT is not a PPP connection.
+The raw TCP transport passes bytes to an explicitly configured endpoint;
+for dial-up IP networking it needs a compatible PPP peer at the other end.
+PPP LCP, authentication and IPCP belong to the guest and peer, not to the
+AT command parser. There is no automatic ISP, host PPP service or telephone
+network in this backend. Test modem detection, carrier establishment and
+PPP negotiation separately before diagnosing a Windows Dial-Up Adapter fault.
+
+References:
+
+* https://www.betaarchive.com/wiki/index.php/Microsoft_KB_Archive/181599
+* https://www.betaarchive.com/wiki/index.php/Microsoft_KB_Archive/311357

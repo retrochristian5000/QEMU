@@ -321,6 +321,12 @@ static void isa_modem_class_init(ObjectClass *klass, const void *data)
 
 static const TypeInfo isa_modem_types[] = {
     {
+        .name = "modem-generic",
+        .parent = TYPE_ISA_SERIAL,
+        .instance_init = isa_modem_init,
+        .class_init = isa_modem_class_init,
+        .class_data = "Generic AT-compatible ISA UART with data modem",
+    }, {
         .name = "hayes-accura-2400",
         .parent = TYPE_ISA_SERIAL,
         .instance_init = isa_modem_init,
@@ -343,7 +349,7 @@ static const TypeInfo isa_modem_types[] = {
         .parent = TYPE_ISA_SERIAL,
         .instance_init = isa_modem_init,
         .class_init = isa_modem_class_init,
-        .class_data = "AT&T Paradyne DataPort Express 3740 external serial modem (ISA UART)",
+        .class_data = "ISA UART with AT&T Paradyne DataPort Express 3740 serial modem",
     },
 };
 

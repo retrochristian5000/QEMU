@@ -1117,7 +1117,8 @@ static bool modem_handle_service_class(ModemChardev *modem,
     p += strlen(prefix);
 
     if (g_str_has_prefix(p, "=?")) {
-        modem_queue_line(modem, modem->model->max_fax_rate ? "0,1,2" :
+        modem_queue_line(modem, modem->model->data_only ? "0" :
+                         modem->model->max_fax_rate ? "0,1,2" :
                          modem->model->supports_voice ? "0,1,8" : "0,1");
         p += 2;
     } else if (*p == '?') {
@@ -1128,7 +1129,8 @@ static bool modem_handle_service_class(ModemChardev *modem,
     } else if (*p == '=') {
         p++;
         value = modem_parse_number(&p, -1);
-        if ((value != 0 && value != 1 &&
+        if ((modem->model->data_only && value != 0) ||
+            (value != 0 && value != 1 &&
              !(value == 2 && modem->model->max_fax_rate) &&
              !(value == 8 && modem->model->supports_voice)) ||
             *p == '.' ||
