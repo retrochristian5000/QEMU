@@ -495,6 +495,17 @@ static int i8257_dma_memory(IsaDma *obj, int nchan, void *buf, int pos,
         return len;
     }
 
+    /*
+     * The PIIX 82C37 transfer type controls the memory bus strobes.
+     * Never perform a transfer opposite to the programmed direction,
+     * or treat the reserved transfer type as a valid memory cycle.
+     * Keep the legacy controller's historical behavior unchanged.
+     */
+    if (d->piix_82c37 &&
+        (r->mode & 0x0c) != (write ? 0x04 : 0x08)) {
+        return 0;
+    }
+
     if (linear) {
         start |= page;
     }

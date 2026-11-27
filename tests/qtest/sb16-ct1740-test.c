@@ -397,6 +397,36 @@ static void test_ct1740_dma_id(gconstpointer data)
         g_assert_cmphex(qtest_inb(s, 0x22e) & 0x80, ==, 0);
     }
 
+    /*
+     * A device-to-memory DSP request must not write RAM when the
+     * controller is programmed for memory-to-device or illegal mode.
+     * Reprogramming the channel correctly must service the pending byte.
+     */
+    for (unsigned int mode = 0x49; mode <= 0x4d; mode += 4) {
+        qtest_outb(s, 0x226, 1);
+        qtest_outb(s, 0x226, 0);
+        if (firmware) {
+            qtest_clock_step(s, 10000000);
+        }
+        g_assert_cmphex(qtest_inb(s, 0x22a), ==, 0xaa);
+        dma_id_program(s, 0x1000);
+        qtest_outb(s, 0x0b, mode);
+        qtest_writeb(s, 0x1000, 0x11);
+        qtest_writeb(s, 0x1001, 0x77);
+        dma_id_send(s, firmware, 0);
+        qtest_outb(s, 0x0a, 1);
+        g_assert_cmphex(qtest_readb(s, 0x1000), ==, 0x11);
+        g_assert_cmphex(qtest_readb(s, 0x1001), ==, 0x77);
+        g_assert_cmphex(qtest_inb(s, 0x08) & 0x22, ==, 0x20);
+        qtest_outb(s, 0x0a, 5);
+        qtest_outb(s, 0x0b, 0x45);
+        qtest_outb(s, 0x0a, 1);
+        g_assert_cmphex(qtest_readb(s, 0x1000), ==, 0x40);
+        g_assert_cmphex(qtest_readb(s, 0x1001), ==, 0x77);
+        g_assert_cmphex(qtest_inb(s, 0x08) & 0x22, ==, 2);
+        g_assert_cmphex(mixer_read(s, 0x220, 0x82) & 3, ==, 0);
+    }
+
     /* Reset cancels a masked pending request, and restarts the sequence. */
     dma_id_program(s, 0x1000);
     qtest_writeb(s, 0x1000, 0x11);
