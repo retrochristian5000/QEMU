@@ -75,6 +75,7 @@ static inline uint8_t pit_effective_mode(const PITChannelState *s)
     return s->mode >= 6 ? s->mode - 4 : s->mode;
 }
 
+int pit_get_count_at(PITChannelState *s, int64_t current_time, bool is_8253);
 int pit_get_out(PITChannelState *s, int64_t current_time);
 void pit_get_irq_timing(PITChannelState *s, int64_t current_time,
                         int *out, int64_t *next_transition);
