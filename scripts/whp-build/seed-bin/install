@@ -6,6 +6,11 @@ if [ "${1:-}" = --whp-install-adapter-probe ]; then
     printf '%s\n' whp-qemu-install-seed-adapter
     exit 0
 fi
+# Retain seed-management commands as explicit fresh validation requests.
+case "${1:-}" in
+    --print-seed|--check)
+        exec "${0%/*}/../../../seeds/install.sh" "$@" ;;
+esac
 # Preserve the opt-in diagnostic path in install.sh.
 if [ "${WHP_INSTALL_LOCKED:-0}" = 1 ] &&
    [ "${WHP_INSTALL_VERBOSE:-0}" = 0 ]; then
