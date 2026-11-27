@@ -406,20 +406,17 @@ static void i8257_dma_run(void *opaque)
     }
 
     for (ichan = 0; ichan < 4 && i8257_dma_group_enabled(d); ichan++) {
-        int mask;
-
-        mask = 1 << ichan;
-
+        int mask = 1 << ichan;
         I8257Regs *r = &d->regs[ichan];
+        int total = (r->base[COUNT] + 1) << d->dshift;
 
         if (!(d->mask & mask) && (d->status & (mask << 4)) &&
             r->transfer_handler != i8257_phony_handler &&
-            ((r->mode & 0x10) ||
-             r->now[COUNT] < ((r->base[COUNT] + 1) << d->dshift))) {
+            ((r->mode & 0x10) || r->now[COUNT] < total)) {
             i8257_channel_run(d, ichan);
+            total = (r->base[COUNT] + 1) << d->dshift;
             if ((d->status & (mask << 4)) && !(d->mask & mask) &&
-                ((r->mode & 0x10) ||
-             r->now[COUNT] < ((r->base[COUNT] + 1) << d->dshift))) {
+                ((r->mode & 0x10) || r->now[COUNT] < total)) {
                 rearm = 1;
             }
         }
