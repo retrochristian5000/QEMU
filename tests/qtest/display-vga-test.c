@@ -1101,6 +1101,107 @@ static void test_gd5446b_overlay_registers(void)
     qtest_quit(qts);
 }
 
+static void cirrus_ddc_lines(QTestState *qts, uint8_t lines)
+{
+    vga_seq_write(qts, 8, 0x40 | lines);
+}
+
+static uint8_t cirrus_ddc_clock(QTestState *qts, uint8_t data)
+{
+    uint8_t pins;
+
+    cirrus_ddc_lines(qts, data);
+    cirrus_ddc_lines(qts, data | 1);
+    pins = vga_seq_read(qts, 8);
+    g_assert_cmphex(pins & 4, ==, 4);
+    cirrus_ddc_lines(qts, data);
+    return pins;
+}
+
+static void cirrus_ddc_start(QTestState *qts)
+{
+    cirrus_ddc_lines(qts, 2);
+    cirrus_ddc_lines(qts, 3);
+    cirrus_ddc_lines(qts, 1);
+    cirrus_ddc_lines(qts, 0);
+}
+
+static void cirrus_ddc_stop(QTestState *qts)
+{
+    cirrus_ddc_lines(qts, 0);
+    cirrus_ddc_lines(qts, 1);
+    cirrus_ddc_lines(qts, 3);
+}
+
+static bool cirrus_ddc_send(QTestState *qts, uint8_t byte)
+{
+    for (unsigned i = 0; i < 8; i++) {
+        cirrus_ddc_clock(qts, byte & 0x80 ? 2 : 0);
+        byte <<= 1;
+    }
+    return !(cirrus_ddc_clock(qts, 2) & 0x80);
+}
+
+static uint8_t cirrus_ddc_recv(QTestState *qts, bool last)
+{
+    uint8_t byte = 0;
+
+    for (unsigned i = 0; i < 8; i++) {
+        byte = (byte << 1) | !!(cirrus_ddc_clock(qts, 2) & 0x80);
+    }
+    cirrus_ddc_clock(qts, last ? 2 : 0);
+    return byte;
+}
+
+static void test_gd5446b_ddc(void)
+{
+    static const uint8_t header[] = { 0, 255, 255, 255, 255, 255, 255, 0 };
+    uint8_t edid[128], sum = 0;
+    QTestState *qts = qtest_init("-M pc -vga none -nodefaults "
+                                "-device gd5446b-pci,romfile=");
+
+    vga_seq_write(qts, 6, 0x12);
+    g_assert_cmphex(vga_seq_read(qts, 8), ==, 0);
+    vga_seq_write(qts, 8, 0x7f);
+    g_assert_cmphex(vga_seq_read(qts, 8), ==, 0xc7);
+    cirrus_ddc_lines(qts, 0);
+    g_assert_cmphex(vga_seq_read(qts, 8), ==, 0x40);
+    cirrus_ddc_stop(qts);
+
+    /* Unoccupied I2C address must not acknowledge. */
+    cirrus_ddc_start(qts);
+    g_assert_false(cirrus_ddc_send(qts, 0xa2));
+    cirrus_ddc_stop(qts);
+
+    /* EDID random read: pointer write, repeated START, read, final NACK. */
+    cirrus_ddc_start(qts);
+    g_assert_true(cirrus_ddc_send(qts, 0xa0));
+    g_assert_true(cirrus_ddc_send(qts, 0));
+    cirrus_ddc_start(qts);
+    g_assert_true(cirrus_ddc_send(qts, 0xa1));
+    for (unsigned i = 0; i < sizeof(edid); i++) {
+        edid[i] = cirrus_ddc_recv(qts, i == sizeof(edid) - 1);
+        sum += edid[i];
+    }
+    cirrus_ddc_stop(qts);
+    g_assert_cmpmem(edid, sizeof(header), header, sizeof(header));
+    g_assert_cmphex(sum, ==, 0);
+    g_assert_cmpuint(edid[18], ==, 1);
+    g_assert_cmphex(edid[20] & 0x80, ==, 0); /* Analog VGA input. */
+    g_assert_cmpuint(edid[126], ==, 0);
+
+    /* Reset must release any interrupted transaction and clear SR8. */
+    cirrus_ddc_start(qts);
+    g_assert_true(cirrus_ddc_send(qts, 0xa0));
+    qtest_system_reset(qts);
+    vga_seq_write(qts, 6, 0x12);
+    g_assert_cmphex(vga_seq_read(qts, 8), ==, 0);
+    cirrus_ddc_start(qts);
+    g_assert_true(cirrus_ddc_send(qts, 0xa0));
+    cirrus_ddc_stop(qts);
+    qtest_quit(qts);
+}
+
 static void test_gd5446b_vport(void)
 {
     const uint32_t config = 0x80002000U;
@@ -1394,6 +1495,8 @@ int main(int argc, char **argv)
                            test_gd5446b_overlay_registers);
             qtest_add_func("/display/pci/cirrus-gd5446b-vport",
                            test_gd5446b_vport);
+            qtest_add_func("/display/pci/cirrus-gd5446b-ddc",
+                           test_gd5446b_ddc);
             qtest_add_data_func("/display/pci/cirrus-gd5446b-pause-primary",
                                 GINT_TO_POINTER(0), test_gd5446b_blt_pause);
             qtest_add_data_func("/display/pci/cirrus-gd5446b-pause-alternate",
