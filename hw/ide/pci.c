@@ -28,6 +28,8 @@
 #include "hw/pci/pci.h"
 #include "migration/vmstate.h"
 #include "system/dma.h"
+#include "system/block-backend.h"
+#include "system/blockdev.h"
 #include "qemu/error-report.h"
 #include "qemu/module.h"
 #include "hw/ide/pci.h"
@@ -589,8 +591,30 @@ const VMStateDescription vmstate_ide_pci = {
     }
 };
 
+/*
+ * Match documented native capacities, not rounded marketing sizes.
+ * Seagate 36314-21 (January 1996), section 1.1.1; IBM S00K-0286-02
+ * (1998), figure 1. A different image size is not proof of a drive model.
+ */
+static const char *pci_ide_auto_hd_model(DriveInfo *drive)
+{
+    int64_t bytes = blk_getlength(blk_by_legacy_dinfo(drive));
+
+    switch (bytes) {
+    case INT64_C(3175200) * 512:
+        return "seagate-st31640a";
+    case INT64_C(4127760) * 512:
+        return "seagate-st32140a";
+    case INT64_C(19807200) * 512:
+        return "ibm-dtta-351010";
+    default:
+        return "ide-hd";
+    }
+}
+
 /* hd_table must contain 4 block drivers */
-void pci_ide_create_devs(PCIDevice *dev)
+void pci_ide_create_devs_with_models(PCIDevice *dev, const char *hd_model,
+                                     const char *cd_model)
 {
     PCIIDEState *d = PCI_IDE(dev);
     DriveInfo *hd_table[2 * MAX_IDE_DEVS];
@@ -600,10 +624,30 @@ void pci_ide_create_devs(PCIDevice *dev)
 
     ide_drive_get(hd_table, ARRAY_SIZE(hd_table));
     for (i = 0; i < 4; i++) {
-        if (hd_table[i]) {
-            ide_bus_create_drive(d->bus + bus[i], unit[i], hd_table[i]);
+        DriveInfo *drive = hd_table[i];
+        const char *model;
+
+        if (!drive) {
+            continue;
         }
+        model = drive->media_cd ? cd_model : hd_model;
+        if (!drive->media_cd && model && !strcmp(model, "auto")) {
+            model = pci_ide_auto_hd_model(drive);
+        }
+        if (!drive->media_cd && model && strcmp(model, "ide-hd") &&
+            blk_getlength(blk_by_legacy_dinfo(drive)) >
+            (INT64_C(1) << 37)) {
+            error_report("IDE model '%s' cannot address this image with LBA28",
+                         model);
+            exit(EXIT_FAILURE);
+        }
+        ide_bus_create_drive_model(d->bus + bus[i], unit[i], drive, model);
     }
+}
+
+void pci_ide_create_devs(PCIDevice *dev)
+{
+    pci_ide_create_devs_with_models(dev, NULL, NULL);
 }
 
 static const struct IDEDMAOps bmdma_ops = {
