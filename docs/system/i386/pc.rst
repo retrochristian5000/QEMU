@@ -372,19 +372,31 @@ implied by the device name.
 
 The Revision B video window accepts CR31-CR3F, CR58-CR5A and CR5D-CR5E
 with documented register masks. Rectangular playback supports RGB555,
-RGB565 and packed UYVY (including the alternate planar-assist byte
-layout), with 8- or 15/16-bpp primary graphics. Window positions and
+RGB565, packed UYVY (including the alternate planar-assist byte
+layout), and AccuPak YUV 4:1:1, with 8- or 15/16-bpp primary graphics. Window positions and
 widths use the primary graphics pixel size; source addresses and pitch
 are independent. Manual buffer selection uses CR5E[5:4]. Unscaled
 horizontal playback and vertical line replication are implemented.
 The host compositor clips the window to the display and checks each
 source row against physical VRAM before reading it.
 
+AccuPak playback is selected by CR3E[3:1] = 1. Each little-endian
+32-bit packet represents four pixels (four five-bit Y samples and
+shared six-bit U and V samples). The decoder zero-extends sample
+precision by left shifting, reconstructs chroma with linear quarter
+steps, and uses the existing limited-range YUV-to-RGB conversion.
+The final partial packet requires a complete DWORD fetch. Chroma
+interpolation at the source edge repeats the final sample without
+reading row padding. Interpolation rounding and chroma phase have
+not been verified against physical silicon. AccuPak capture and
+YUV-to-AccuPak compression remain unimplemented. See TRM figure 9-6
+and sections 9.3.2.4 and 9.5.10.
+
 Window enable and buffer selection take effect at the next host display
 refresh rather than an exact guest VSYNC/window-start edge. Disabling
 or moving the window restores the underlying graphics at the next
 refresh. Color-key/chroma-key occlusion, horizontal and vertical
-interpolation, LUT/AccuPak video, brightness adjustment, capture,
+interpolation, LUT video, brightness adjustment, capture,
 automatic buffer switching and the video write aperture are not yet
 implemented. Unsupported formats and configurations do not composite
 a window. See TRM chapter 6 and sections 9.3.2 and 9.5.
