@@ -566,6 +566,8 @@ DEFINE_I440FX_MACHINE(11, 1);
 static GlobalProperty pc_hardware_defaults[] = {
     { TYPE_I8042, "mouse-model", "intellimouse" },
     { "i8254", "strict-programming", "on" },
+    { TYPE_I440FX_PCI_DEVICE, "strict-timing-config", "on" },
+    { TYPE_I440FX_PCI_DEVICE, "strict-reserved-config", "on" },
 };
 
 static void pc_hardware_common_options(MachineClass *m)

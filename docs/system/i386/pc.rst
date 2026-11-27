@@ -817,6 +817,42 @@ migration endpoints. Do not substitute an ISA NIC merely because
 Windows uses a shared PCI/ISA driver name. Am79C960, Am79C961,
 Am79C961A and Am79C970 require separate hardware implementations.
 
+PCI and ISA host topology
+~~~~~~~~~~~~~~~~~~~~~~~~~
+
+The i440FX machines already instantiate the Intel 82441FX PCI and memory
+controller (8086:1237, ``i440FX``) through the host-facing
+``i440FX-pcihost`` object. The default ISA bridge is Intel 82371SB PIIX3
+(8086:7000, ``PIIX3``); it owns the ISA bus and its integrated devices.
+The ``PCI`` and ``ISA`` bus types describe reusable interconnect
+infrastructure, not additional guest-visible generic bridges. In particular,
+``isabus-bridge`` is not instantiated on this PCI-based machine.
+The host-facing QOM path, PCI bus and ISA bus names remain unchanged.
+
+The named ``pc`` and ``laptop-pc`` profiles now enable the existing
+``strict-timing-config`` property and the new
+``strict-reserved-config`` property of the native 82441FX function.
+The former restores the documented DBC, DRAMT and CLT register reset
+values and writable masks; the latter clears reserved configuration
+bytes and ignores writes to them, including on reset and state load.
+See Intel 440FX PCIset datasheet 290549-001 (May 1996), Table 1 and
+sections 3.2.13, 3.2.17 and 3.2.22. These controls are register-level
+accuracy improvements, not cycle-accurate memory or PCI bus timing.
+
+The generic and versioned profiles keep the previous register behavior.
+For a controlled comparison, override either property independently::
+
+    -machine pc -global i440FX.strict-timing-config=off
+    -machine pc -global i440FX.strict-reserved-config=off
+
+The FX masks do not apply to the experimental 440BX or IGD passthrough
+host functions. The legacy coreboot RAM-size handoff at offset 57h,
+PAM mapping, PCI addresses, PIIX3 routing and DMA wiring remain unchanged.
+SMRAM lock/reset and data-versus-code access behavior, complete DRAM
+configuration, actual DBX transactions and PCI arbitration still require
+separate work. PIIX3 with ACPI enabled also uses a compatibility PIIX4
+PM function rather than a fully faithful original PIIX3 package.
+
 PIIX3 PCI-to-ISA bridge configuration
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 

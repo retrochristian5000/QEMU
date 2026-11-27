@@ -86,14 +86,51 @@ static void i440fx_reset_timing_config(PCIDevice *dev)
     dev->config[I440FX_CLT] = 0x10;
 }
 
+/*
+ * Intel 290549-001, Table 1. These offsets are reserved on the
+ * 82441FX, not generic writable PCI configuration storage.
+ * Leave implemented registers (including the legacy coreboot 57h
+ * handoff) alone. Do not apply FX masks to related BX or IGD types.
+ */
+static void i440fx_clear_reserved_config(PCIDevice *dev)
+{
+    static const struct {
+        uint8_t start;
+        uint8_t end;
+    } reserved[] = {
+        { 0x0c, 0x0c },
+        { 0x10, 0x4f },
+        { 0x69, 0x6f },
+        { 0x73, 0x8f },
+        { 0x92, 0x92 },
+        { 0x94, 0xff },
+    };
+
+    for (size_t i = 0; i < ARRAY_SIZE(reserved); i++) {
+        unsigned start = reserved[i].start;
+        unsigned size = reserved[i].end - start + 1;
+
+        memset(dev->config + start, 0, size);
+        memset(dev->wmask + start, 0, size);
+        memset(dev->w1cmask + start, 0, size);
+    }
+}
+
+static bool i440fx_is_native(PCIDevice *dev)
+{
+    return object_get_class(OBJECT(dev)) ==
+           object_class_by_name(TYPE_I440FX_PCI_DEVICE);
+}
+
 static void i440fx_reset(DeviceState *dev)
 {
     PCII440FXState *s = I440FX_PCI_DEVICE(dev);
 
-    if (s->strict_timing_config &&
-        object_get_class(OBJECT(dev)) ==
-        object_class_by_name(TYPE_I440FX_PCI_DEVICE)) {
+    if (s->strict_timing_config && i440fx_is_native(PCI_DEVICE(dev))) {
         i440fx_reset_timing_config(PCI_DEVICE(dev));
+    }
+    if (s->strict_reserved_config && i440fx_is_native(PCI_DEVICE(dev))) {
+        i440fx_clear_reserved_config(PCI_DEVICE(dev));
     }
 }
 
@@ -102,13 +139,14 @@ static void i440fx_realize(PCIDevice *dev, Error **errp)
     PCII440FXState *s = I440FX_PCI_DEVICE(dev);
 
     dev->config[I440FX_SMRAM] = 0x02;
-    if (s->strict_timing_config &&
-        object_get_class(OBJECT(dev)) ==
-        object_class_by_name(TYPE_I440FX_PCI_DEVICE)) {
+    if (s->strict_timing_config && i440fx_is_native(dev)) {
         dev->wmask[I440FX_DBC] = 0xff;
         dev->wmask[I440FX_DRAMT] = 0x7f;
         dev->wmask[I440FX_CLT] = 0x1f;
         i440fx_reset_timing_config(dev);
+    }
+    if (s->strict_reserved_config && i440fx_is_native(dev)) {
+        i440fx_clear_reserved_config(dev);
     }
 
     if (object_property_get_bool(qdev_get_machine(), "iommu", NULL)) {
@@ -150,8 +188,12 @@ static void i440fx_write_config(PCIDevice *dev,
 static int i440fx_post_load(void *opaque, int version_id)
 {
     PCII440FXState *d = opaque;
+    PCIDevice *dev = PCI_DEVICE(d);
 
-    i440fx_update_memory_mappings(d, PCI_DEVICE(d)->config[I440FX_SMRAM]);
+    if (d->strict_reserved_config && i440fx_is_native(dev)) {
+        i440fx_clear_reserved_config(dev);
+    }
+    i440fx_update_memory_mappings(d, dev->config[I440FX_SMRAM]);
     return 0;
 }
 
@@ -380,6 +422,8 @@ static void i440fx_pcihost_realize(DeviceState *dev, Error **errp)
 static const Property i440fx_device_props[] = {
     DEFINE_PROP_BOOL("strict-timing-config", PCII440FXState,
                      strict_timing_config, false),
+    DEFINE_PROP_BOOL("strict-reserved-config", PCII440FXState,
+                     strict_reserved_config, false),
 };
 
 static void i440fx_class_init(ObjectClass *klass, const void *data)

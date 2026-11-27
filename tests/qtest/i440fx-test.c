@@ -809,6 +809,58 @@ static void test_i440fx_timing_config(void)
     qtest_quit(qts);
 }
 
+typedef struct PCBridgeProfileTest {
+    const char *args;
+    bool strict;
+} PCBridgeProfileTest;
+
+static void test_pc_bridge_profile(gconstpointer opaque)
+{
+    const PCBridgeProfileTest *profile = opaque;
+    QTestState *qts = qtest_initf("%s -nodefaults", profile->args);
+    QPCIBus *bus = qpci_new_pc(qts, NULL);
+    QPCIDevice *host = qpci_device_find(bus, QPCI_DEVFN(0, 0));
+    QPCIDevice *isa = qpci_device_find(bus, QPCI_DEVFN(1, 0));
+    g_autofree char *tree = qtest_hmp(qts, "info qtree");
+    static const uint8_t offsets[] = {
+        0x40, 0x4f, 0x69, 0x6f, 0x73, 0x8f, 0x92, 0x94, 0xff,
+    };
+
+    g_assert_nonnull(host);
+    g_assert_nonnull(isa);
+    g_assert_cmphex(qpci_config_readl(host, PCI_VENDOR_ID), ==, 0x12378086);
+    g_assert_cmphex(qpci_config_readw(host, PCI_CLASS_DEVICE), ==, 0x0600);
+    g_assert_cmphex(qpci_config_readl(isa, PCI_VENDOR_ID), ==, 0x70008086);
+    g_assert_cmphex(qpci_config_readw(isa, PCI_CLASS_DEVICE), ==, 0x0601);
+    g_assert_nonnull(strstr(tree, "dev: i440FX,"));
+    g_assert_nonnull(strstr(tree, "dev: PIIX3,"));
+    g_assert_null(strstr(tree, "dev: isabus-bridge,"));
+    g_assert_cmphex(qpci_config_readb(host, 0x53), ==,
+                    profile->strict ? 0x80 : 0);
+    for (size_t i = 0; i < ARRAY_SIZE(offsets); i++) {
+        qpci_config_writeb(host, offsets[i], 0xff);
+        g_assert_cmphex(qpci_config_readb(host, offsets[i]), ==,
+                        profile->strict ? 0 : 0xff);
+    }
+
+    /* Multi-byte configuration writes must obey the same masks. */
+    qpci_config_writew(host, 0x4e, 0xffff);
+    g_assert_cmphex(qpci_config_readw(host, 0x4e), ==,
+                    profile->strict ? 0 : 0xffff);
+    if (profile->strict) {
+        qtest_system_reset(qts);
+        for (size_t i = 0; i < ARRAY_SIZE(offsets); i++) {
+            g_assert_cmphex(qpci_config_readb(host, offsets[i]), ==, 0);
+        }
+        g_assert_cmphex(qpci_config_readb(host, 0x53), ==, 0x80);
+    }
+
+    g_free(host);
+    g_free(isa);
+    qpci_free_pc(bus);
+    qtest_quit(qts);
+}
+
 static void test_piix4_pm_io_decode(void)
 {
     QTestState *qts = qtest_init("-M pc -nodefaults "
@@ -1122,6 +1174,15 @@ int main(int argc, char **argv)
 
     g_test_init(&argc, &argv, NULL);
 
+    static const PCBridgeProfileTest bridges[] = {
+        { "-M pc", true },
+        { "-M laptop-pc", true },
+        { "-M generic-pc", false },
+        { "-M pc-i440fx-11.1", false },
+        { "-M pc -global i440FX.strict-timing-config=off "
+          "-global i440FX.strict-reserved-config=off", false },
+    };
+
     static const PCControllerProfileTest profiles[] = {
         { "pc", true },
         { "generic-pc", false },
@@ -1245,6 +1306,11 @@ int main(int argc, char **argv)
     qtest_add_data_func("i440fx/defaults", &data, test_i440fx_defaults);
     qtest_add_data_func("i440fx/pam", &data, test_i440fx_pam);
     qtest_add_func("i440fx/timing-config", test_i440fx_timing_config);
+    for (size_t i = 0; i < ARRAY_SIZE(bridges); i++) {
+        g_autofree char *path = g_strdup_printf("i440fx/bridge-profile/%zu", i);
+
+        qtest_add_data_func(path, &bridges[i], test_pc_bridge_profile);
+    }
     if (qtest_has_device("isa-serial")) {
         qtest_add_func("i440fx/isa/serial-indices", test_i440fx_isa_serial_indices);
         const char *const types[] = {
