@@ -474,6 +474,14 @@ static void serial_ioport_write(void *opaque, hwaddr addr, uint64_t val,
 
         serial_write_fcr(s, val & 0xC9);
         serial_update_irq(s);
+        /*
+         * A receive reset or FIFO mode change frees space for bytes still
+         * queued in the backend. Resume reception using the new FIFO mode.
+         * External input remains disconnected during diagnostic loopback.
+         */
+        if ((val & UART_FCR_RFR) && !(s->mcr & UART_MCR_LOOP)) {
+            qemu_chr_fe_accept_input(&s->chr);
+        }
         break;
     case 3:
         {
