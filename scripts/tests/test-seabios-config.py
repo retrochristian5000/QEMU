@@ -108,6 +108,8 @@ class SeaBiosConfigTests(unittest.TestCase):
         isapc = (ROOT / 'roms' / 'config.seabios-128k').read_text(encoding='utf-8')
         self.assertIn('CONFIG_ATA_DMA=y', normal)
         self.assertIn('CONFIG_ATA_DMA=n', isapc)
+        self.assertIn('CONFIG_ATA_PIO32=y', normal)
+        self.assertIn('CONFIG_ATA_PIO32=n', isapc)
 
     def test_external_ide_core_is_explicit_only(self):
         def options(name):
