@@ -687,6 +687,39 @@ static void test_mouse_profile(gconstpointer opaque)
     mouse_ack(s, 0xff);
     g_assert_cmphex(mouse_read(s), ==, 0xaa);
     g_assert_cmphex(mouse_read(s), ==, 0);
+
+    /* Exercise the diagnostic echo path with reporting still enabled. */
+    mouse_ack(s, 0xf4);
+    mouse_ack(s, 0xee);
+    qtest_qmp_assert_success(s,
+        "{'execute':'input-send-event','arguments':{'events':["
+        "{'type':'rel','data':{'axis':'x','value':7}}]}}");
+    g_assert_cmphex(qtest_inb(s, 0x64) & 1, ==, 0);
+    mouse_send(s, 0xf2);
+    g_assert_cmphex(mouse_read(s), ==, 0xf2);
+    mouse_ack(s, 0xec);
+
+    /* The movement during wrap must not appear in the next poll. */
+    mouse_ack(s, 0xf0);
+    mouse_ack(s, 0xeb);
+    g_assert_cmphex(mouse_read(s), ==, 0x08);
+    g_assert_cmphex(mouse_read(s), ==, 0);
+    g_assert_cmphex(mouse_read(s), ==, 0);
+
+    /* F6 discards pending remote-mode movement and restores defaults. */
+    qtest_qmp_assert_success(s,
+        "{'execute':'input-send-event','arguments':{'events':["
+        "{'type':'rel','data':{'axis':'x','value':9}}]}}");
+    g_assert_cmphex(qtest_inb(s, 0x64) & 1, ==, 0);
+    mouse_ack(s, 0xf6);
+    mouse_ack(s, 0xe9);
+    g_assert_cmphex(mouse_read(s), ==, 0);
+    g_assert_cmphex(mouse_read(s), ==, 2);
+    g_assert_cmphex(mouse_read(s), ==, 100);
+    mouse_ack(s, 0xeb);
+    g_assert_cmphex(mouse_read(s), ==, 0x08);
+    g_assert_cmphex(mouse_read(s), ==, 0);
+    g_assert_cmphex(mouse_read(s), ==, 0);
     qtest_quit(s);
 }
 
