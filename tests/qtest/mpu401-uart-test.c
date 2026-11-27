@@ -5,6 +5,7 @@
 #include "qemu/osdep.h"
 #include "libqtest.h"
 #include "qobject/qdict.h"
+#include <glib/gstdio.h>
 #ifndef _WIN32
 #include "qemu/sockets.h"
 #endif
@@ -107,6 +108,65 @@ static void test_sb16_waveblaster(gconstpointer opaque)
     check_midi_capture(s, "wave", "");
     qtest_quit(s);
 }
+
+static void test_sb16_soundfont_error(void)
+{
+    if (g_test_subprocess()) {
+        g_autofree char *dir = g_dir_make_tmp("qemu-wave-XXXXXX", NULL);
+        g_autofree char *missing = NULL;
+        g_autofree char *arg = NULL;
+
+        g_assert_nonnull(dir);
+        missing = g_build_filename(dir, "missing.sf2", NULL);
+        arg = g_shell_quote(missing);
+        /* Ensure the path does not exist without leaving a temporary file. */
+        g_assert_cmpint(g_rmdir(dir), ==, 0);
+        QTestState *s = qtest_initf("-M pc -nodefaults -audiodev none,id=snd "
+                                   "-device sb16,audiodev=snd,"
+                                   "waveblaster-soundfont=%s", arg);
+        qtest_quit(s);
+        return;
+    }
+
+    g_test_trap_subprocess(NULL, 10 * G_USEC_PER_SEC, 0);
+    g_test_trap_assert_failed();
+#ifdef CONFIG_FSYNTH
+    g_test_trap_assert_stderr("*Wave Blaster: unable to load SoundFont*");
+#else
+    g_test_trap_assert_stderr("*Wave Blaster: Fsynth support is not built in*");
+#endif
+}
+
+#ifdef CONFIG_FSYNTH
+static void test_sb16_soundfont(void)
+{
+    const char *font = g_getenv("QTEST_WAVEBLASTER_SOUNDFONT");
+    static const uint8_t notes[] = { 0x90, 60, 100, 0x80, 60, 0 };
+    QTestState *s;
+
+    if (!font || !*font) {
+        g_test_skip("Set QTEST_WAVEBLASTER_SOUNDFONT to a local SF2 fixture");
+        return;
+    }
+
+    g_auto(GStrv) parts = g_strsplit(font, ",", -1);
+    g_autofree char *escaped = g_strjoinv(",,", parts);
+    g_autofree char *device = g_strdup_printf(
+        "sb16,id=card,audiodev=snd,waveblaster-soundfont=%s", escaped);
+    g_autofree char *arg = g_shell_quote(device);
+
+    s = qtest_initf("-M pc -nodefaults -audiodev none,id=snd -device %s", arg);
+    enter_uart(s, 0x330);
+    for (size_t i = 0; i < ARRAY_SIZE(notes); i++) {
+        qtest_outb(s, 0x330, notes[i]);
+        qtest_clock_step(s, MIDI_FRAME_NS);
+        g_assert_cmphex(qtest_inb(s, 0x331), ==, 0x80);
+    }
+    qtest_system_reset(s);
+    g_assert_cmphex(qtest_inb(s, 0x331), ==, 0x80);
+    qtest_quit(s);
+}
+#endif
 
 static uint8_t sb16_pending(QTestState *s)
 {
@@ -225,6 +285,11 @@ int main(int argc, char **argv)
     if (qtest_has_machine("pc") && qtest_has_device("mpu401-uart-compat")) {
         qtest_add_func("/mpu401/tx", test_mpu_tx);
         if (qtest_has_device("sb16-ct1740")) {
+            qtest_add_func("/mpu401/sb16/soundfont-error",
+                           test_sb16_soundfont_error);
+#ifdef CONFIG_FSYNTH
+            qtest_add_func("/mpu401/sb16/soundfont", test_sb16_soundfont);
+#endif
             qtest_add_data_func("/mpu401/sb16/waveblaster", "sb16-ct1740",
                                 test_sb16_waveblaster);
             qtest_add_data_func("/mpu401/sb16/waveblaster-alias", "sb16",

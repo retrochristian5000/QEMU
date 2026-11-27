@@ -14,7 +14,11 @@ system_ss.add(when: 'CONFIG_MARVELL_88W8618', if_true: files('marvell_88w8618.c'
 system_ss.add(when: 'CONFIG_PCSPK', if_true: files('pcspk.c'))
 system_ss.add(when: 'CONFIG_PL041', if_true: files('pl041.c', 'lm4549.c'))
 system_ss.add(when: 'CONFIG_GAMEBLASTER', if_true: files('gameblaster.c'))
-system_ss.add(when: 'CONFIG_MPU401_UART', if_true: files('mpu401-uart.c'))
+system_ss.add(when: 'CONFIG_MPU401_UART',
+              if_true: files('mpu401-uart.c', 'waveblaster-synth.c'))
+if fsynth.found()
+  system_ss.add(when: 'CONFIG_MPU401_UART', if_true: fsynth)
+endif
 system_ss.add(when: 'CONFIG_SB16', if_true: files('sb16.c', 'sb16-legacy.c', 'ct1745-mixer.c', 'ct1741-dsp.c'))
 system_ss.add(when: 'CONFIG_SB16_PNP', if_true: files('sb16-pnp.c'))
 system_ss.add(when: 'CONFIG_AWE32', if_true: files('awe32.c'))

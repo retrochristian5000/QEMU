@@ -1,4 +1,5 @@
 config_host_data.set('CONFIG_LIBSAMPLERATE', samplerate.found())
+config_host_data.set('CONFIG_FSYNTH', fsynth.found())
 audio_drivers_selected = []
 if have_system
   audio_drivers_available = {

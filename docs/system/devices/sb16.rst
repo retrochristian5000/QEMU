@@ -244,11 +244,46 @@ frame, but cannot retract bytes already delivered. The daughterboard
 endpoint does not provide MIDI input or generate IRQs. Unconnected
 endpoints discard output.
 
-This is an interface model, not a CT1900, CT1910, DB50XG or SCB-55
-synthesizer. Wavetable ROMs, instrument synthesis, reset wiring and the
-stereo analog return to the CT1745 mixer remain unimplemented. The
-generic SB16 has no new property; existing configurations without the
-daughterboard endpoint keep their behavior.
+Optional SoundFont synthesis
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+The separate ``waveblaster-soundfont`` property attaches a software
+wavetable synthesizer to the existing connector. It requires the
+Fsynth fork (https://github.com/retrochristian5000/Fsynth), at commit
+767cebc7ba29b9cf4760dc81bbb80d50a6e9f27f or a compatible descendant.
+Install that library and its development headers in an explicit prefix;
+select its pkg-config directory and configure QEMU with
+``--enable-fsynth`` (Meson ``-Dfsynth=enabled``). Configuration checks
+the fork's embedded stream API by compiling and linking, not just its
+version. The dependency is disabled by default and ordinary upstream
+FluidSynth without the stream API does not satisfy the check.
+
+Example with an existing, locally licensed SoundFont::
+
+    -audiodev coreaudio,id=snd \\
+    -device sb16,audiodev=snd,waveblaster-soundfont=/path/to/bank.sf2
+
+QEMU owns the stereo audio voice and output backend; Fsynth does not
+open another audio driver. MIDI frames reach the synth once at the
+existing UART completion deadline, independent of backend retry.
+The synth uses 44.1 kHz stereo, 64 voices and one synthesis core, with
+bounded 512-frame PCM staging and retained short writes. The CT1745
+master and MIDI register values apply an approximate linear gain to
+newly rendered PCM. This is not calibrated analog attenuation.
+Machine reset clears the synthesizer and partial stream, while the
+MPU UART reset command only resets the UART. Already queued backend
+audio may still drain. No new ISA I/O, IRQ, DMA or PnP identity is added.
+The optional endpoint can coexist with the external raw MIDI outputs.
+
+This is generic SoundFont synthesis, not a CT1900, CT1910, DB50XG or
+SCB-55 hardware model. No instrument ROM is bundled. The exact analog
+mixer curve, effects, input routing and sample-accurate guest MIDI/audio
+synchronization remain future work. The generic SB16 is unchanged and
+the named board remains unmigratable. A missing library or invalid
+SoundFont fails explicitly instead of silently producing no sound.
+Set ``QTEST_WAVEBLASTER_SOUNDFONT`` to a local SF2 fixture for the optional
+QTest startup, MIDI transmission and machine reset case; the error case
+runs without a fixture.
 
 References: Creative Sound Blaster 16 User's Guide, pp. 2-3 to 2-4,
 Appendix A-8, Appendix C-3:

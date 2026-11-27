@@ -73,6 +73,7 @@ struct SB16State {
     uint32_t mpu_iobase;
     char *midi_chardev;
     char *waveblaster_chardev;
+    char *waveblaster_soundfont;
     IsaDma *isa_dma;
     IsaDma *isa_hdma;
 
@@ -1670,6 +1671,14 @@ static bool sb16_realize_mpu(SB16State *s, ISABus *bus, Error **errp)
         object_unref(OBJECT(mpu));
         return false;
     }
+    if (s->waveblaster_soundfont &&
+        !mpu401_uart_attach_waveblaster(mpu, s->audio_be,
+                                      s->waveblaster_soundfont,
+                                      s->mixer_regs, errp)) {
+        object_unparent(OBJECT(mpu));
+        object_unref(OBJECT(mpu));
+        return false;
+    }
     s->mpu = ISA_DEVICE(mpu);
     object_unref(OBJECT(mpu));
     return true;
@@ -1786,6 +1795,7 @@ static const Property sb16_legacy_midi_properties[] = {
     DEFINE_PROP_UINT32("mpu-iobase", SB16State, mpu_iobase, 0x330),
     DEFINE_PROP_STRING("midi-chardev", SB16State, midi_chardev),
     DEFINE_PROP_STRING("waveblaster-chardev", SB16State, waveblaster_chardev),
+    DEFINE_PROP_STRING("waveblaster-soundfont", SB16State, waveblaster_soundfont),
 };
 
 void sb16_legacy_add_midi_properties(DeviceClass *dc)

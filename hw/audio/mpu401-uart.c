@@ -12,6 +12,7 @@
 #include "qapi/error.h"
 #include "chardev/char-fe.h"
 #include "hw/audio/mpu401-uart.h"
+#include "waveblaster-synth.h"
 #include "hw/core/irq.h"
 #include "hw/core/qdev-properties.h"
 #include "hw/core/qdev-properties-system.h"
@@ -31,6 +32,7 @@ struct MPU401UARTState {
     MemoryRegion io;
     CharFrontend chr;
     CharFrontend waveblaster;
+    WaveBlasterSynth *synth;
     qemu_irq irq_out;
     QEMUTimer *tx_timer;
     uint32_t iobase;
@@ -42,6 +44,7 @@ struct MPU401UARTState {
     bool tx_busy;
     bool tx_midi_done;
     bool tx_wave_done;
+    bool tx_synth_done;
     bool uart;
     bool ack_pending;
 };
@@ -59,11 +62,20 @@ static void mpu_reset(DeviceState *dev)
     s->tx_busy = false;
     s->tx_midi_done = false;
     s->tx_wave_done = false;
+    s->tx_synth_done = false;
     s->uart = false;
     s->ack_pending = false;
     s->rx_head = 0;
     s->rx_count = 0;
     mpu_update_irq(s);
+}
+
+static void mpu_device_reset(DeviceState *dev)
+{
+    MPU401UARTState *s = MPU401_UART(dev);
+
+    mpu_reset(dev);
+    waveblaster_synth_reset(s->synth);
 }
 
 static int mpu_can_receive(void *opaque)
@@ -118,6 +130,10 @@ static void mpu_tx_complete(void *opaque)
 
     if (!s->tx_busy) {
         return;
+    }
+    if (!s->tx_synth_done) {
+        waveblaster_synth_write(s->synth, s->tx_byte);
+        s->tx_synth_done = true;
     }
     if (!s->tx_midi_done) {
         s->tx_midi_done = mpu_tx_sink(&s->chr, &s->tx_byte, "MIDI");
@@ -179,6 +195,7 @@ static void mpu_write(void *opaque, hwaddr addr, uint64_t value,
     s->tx_byte = value;
     s->tx_midi_done = false;
     s->tx_wave_done = false;
+    s->tx_synth_done = false;
     s->tx_busy = true;
     timer_mod(s->tx_timer,
               qemu_clock_get_ns(QEMU_CLOCK_VIRTUAL) + MPU_BYTE_NS);
@@ -233,12 +250,27 @@ static void mpu_realize(DeviceState *dev, Error **errp)
                              NULL, NULL, s, NULL, true);
 }
 
+bool mpu401_uart_attach_waveblaster(DeviceState *dev, AudioBackend *be,
+                                   const char *soundfont,
+                                   const uint8_t *mixer_regs, Error **errp)
+{
+    MPU401UARTState *s = MPU401_UART(dev);
+
+    if (s->synth) {
+        error_setg(errp, "MPU-401 UART: daughterboard already attached");
+        return false;
+    }
+    s->synth = waveblaster_synth_new(be, soundfont, mixer_regs, errp);
+    return s->synth != NULL;
+}
+
 static void mpu_unrealize(DeviceState *dev)
 {
     MPU401UARTState *s = MPU401_UART(dev);
 
     qemu_chr_fe_set_handlers(&s->chr, NULL, NULL, NULL, NULL, NULL, NULL, false);
     mpu_reset(dev);
+    g_clear_pointer(&s->synth, waveblaster_synth_free);
     memory_region_del_subregion(isa_address_space_io(ISA_DEVICE(dev)), &s->io);
 }
 
@@ -264,7 +296,7 @@ static void mpu_class_init(ObjectClass *klass, const void *data)
     dc->unrealize = mpu_unrealize;
     dc->hotpluggable = false;
     dc->vmsd = &vmstate_mpu;
-    device_class_set_legacy_reset(dc, mpu_reset);
+    device_class_set_legacy_reset(dc, mpu_device_reset);
     device_class_set_props(dc, mpu_properties);
     set_bit(DEVICE_CATEGORY_SOUND, dc->categories);
 }
