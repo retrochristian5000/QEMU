@@ -2827,7 +2827,8 @@ static void cirrus_swapped_fb_write(void *opaque, hwaddr addr,
     }
 
     for (unsigned i = 0; i < size; i++) {
-        cirrus_linear_write(s, (offset + i) ^ lane, value >> (8 * i), 1);
+        cirrus_linear_write(s, (offset + i) ^ lane,
+                            (uint8_t)(value >> (8 * i)), 1);
     }
 }
 
