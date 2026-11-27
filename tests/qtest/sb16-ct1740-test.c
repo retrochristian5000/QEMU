@@ -57,6 +57,76 @@ static void test_ct1740_probe(gconstpointer data)
     qtest_quit(s);
 }
 
+static uint8_t ct1740_csp_read(QTestState *s, uint8_t reg)
+{
+    qtest_outb(s, 0x22c, 0x0f);
+    qtest_outb(s, 0x22c, reg);
+    g_assert_cmphex(qtest_inb(s, 0x22e) & 0x80, ==, 0x80);
+    return qtest_inb(s, 0x22a);
+}
+
+static void test_ct1740_no_csp(void)
+{
+    QTestState *s = qtest_init("-M pc -nodefaults -audiodev none,id=snd "
+                               "-device sb16,audiodev=snd");
+    uint8_t before;
+
+    qtest_outb(s, 0x226, 1);
+    qtest_outb(s, 0x226, 0);
+    g_assert_cmphex(qtest_inb(s, 0x22a), ==, 0xaa);
+
+    /* Probe the optional coprocessor without confusing its state with PCM. */
+    qtest_outb(s, 0x22c, 0x05);
+    qtest_outb(s, 0x22c, 0);
+    qtest_outb(s, 0x22c, 0);
+    qtest_outb(s, 0x22c, 0x04);
+    qtest_outb(s, 0x22c, 0xfc);
+    before = ct1740_csp_read(s, 0x83);
+    g_assert_cmphex(before, ==, 0xff);
+    qtest_outb(s, 0x22c, 0x0e);
+    qtest_outb(s, 0x22c, 0x83);
+    qtest_outb(s, 0x22c, before ^ 0xff);
+    g_assert_cmphex(ct1740_csp_read(s, 0x83), ==, before);
+    qtest_outb(s, 0x22c, 0x08);
+    qtest_outb(s, 0x22c, 0x03);
+    g_assert_cmphex(qtest_inb(s, 0x22a), ==, 0xff);
+
+    /* Probe arguments must not be reinterpreted as ordinary DSP commands. */
+    qtest_outb(s, 0x22c, 0x0e);
+    qtest_outb(s, 0x22c, 0xe1);
+    qtest_outb(s, 0x22c, 0xe0);
+    g_assert_cmphex(qtest_inb(s, 0x22e) & 0x80, ==, 0);
+    qtest_outb(s, 0x22c, 0xe1);
+    g_assert_cmphex(qtest_inb(s, 0x22a), ==, 4);
+    g_assert_cmphex(qtest_inb(s, 0x22a), ==, 5);
+    qtest_quit(s);
+}
+
+static void test_sb16_no_emu8000(gconstpointer data)
+{
+    const char *model = data;
+    QTestState *s = qtest_initf("-M pc -nodefaults -audiodev none,id=snd "
+                               "-device %s,audiodev=snd", model);
+
+    /* Default EMU8000 data and index windows are not SB16 DSP aliases. */
+    for (unsigned int port = 0x620; port <= 0xe20; port += 0x400) {
+        for (unsigned int offset = 0; offset < 4; offset += 2) {
+            g_assert_cmphex(qtest_inw(s, port + offset), ==, 0xffff);
+            qtest_outw(s, port + offset, 0x55aa);
+            g_assert_cmphex(qtest_inw(s, port + offset), ==, 0xffff);
+        }
+    }
+
+    /* The writes to absent synthesizer ports must not disturb the DSP. */
+    qtest_outb(s, 0x226, 1);
+    qtest_outb(s, 0x226, 0);
+    g_assert_cmphex(qtest_inb(s, 0x22a), ==, 0xaa);
+    qtest_outb(s, 0x22c, 0xe1);
+    g_assert_cmphex(qtest_inb(s, 0x22a), ==, 4);
+    g_assert_cmphex(qtest_inb(s, 0x22a), ==, 5);
+    qtest_quit(s);
+}
+
 static void test_ct1740_invalid(gconstpointer data)
 {
     const char *properties = data;
@@ -80,6 +150,9 @@ int main(int argc, char **argv)
                             test_ct1740_probe);
         qtest_add_data_func("/ct1740/alternate", GUINT_TO_POINTER(1),
                             test_ct1740_probe);
+        qtest_add_func("/ct1740/no-csp", test_ct1740_no_csp);
+        qtest_add_data_func("/ct1740/no-emu8000", "sb16",
+                            test_sb16_no_emu8000);
         qtest_add_data_func("/ct1740/invalid-base", "iobase=0x230",
                             test_ct1740_invalid);
         qtest_add_data_func("/ct1740/invalid-irq", "irq=3",
@@ -92,6 +165,10 @@ int main(int argc, char **argv)
                             test_ct1740_invalid);
         qtest_add_data_func("/ct1740/invalid-midi-base", "mpu-iobase=0x310",
                             test_ct1740_invalid);
+    }
+    if (qtest_has_machine("pc") && qtest_has_device("sb16-generic")) {
+        qtest_add_data_func("/sb16-generic/no-emu8000", "sb16-generic",
+                            test_sb16_no_emu8000);
     }
     return g_test_run();
 }

@@ -464,7 +464,8 @@ static void command (SB16State *s, uint8_t cmd)
 
         switch (cmd) {
         case 0x03:
-            dsp_out_data (s, 0x10); /* s->csp_param); */
+            /* CT1740 without the optional CT1748 CSP must not report it. */
+            dsp_out_data(s, s->ct1740 ? 0xff : 0x10);
             goto warn;
 
         case 0x04:
@@ -484,7 +485,7 @@ static void command (SB16State *s, uint8_t cmd)
             break;
 
         case 0x09:
-            dsp_out_data (s, 0xf8);
+            dsp_out_data(s, s->ct1740 ? 0xff : 0xf8);
             goto warn;
 
         case 0x0f:              /* CSP register read: index */
@@ -734,15 +735,24 @@ static void complete (SB16State *s)
     else {
         switch (s->cmd) {
         case 0x04:
-            s->csp_mode = dsp_get_data (s);
+            d0 = dsp_get_data(s);
+            if (s->ct1740) {
+                break;
+            }
+            s->csp_mode = d0;
             s->csp_reg83_write = 0;
             s->csp_reg83_read = 0;
             ldebug("CSP command 0x04: mode=0x%x", s->csp_mode);
             break;
 
         case 0x05:
-            s->csp_param = dsp_get_data (s);
-            s->csp_value = dsp_get_data (s);
+            d0 = dsp_get_data(s);
+            d1 = dsp_get_data(s);
+            if (s->ct1740) {
+                break;
+            }
+            s->csp_param = d0;
+            s->csp_value = d1;
             ldebug("CSP command 0x05: param=0x%x value=0x%x",
                     s->csp_param,
                     s->csp_value);
@@ -752,6 +762,9 @@ static void complete (SB16State *s)
             /* Register storage only; CSP microcode execution is not emulated. */
             d0 = dsp_get_data (s);
             d1 = dsp_get_data (s);
+            if (s->ct1740) {
+                break;
+            }
             ldebug("write CSP register %d <- 0x%x", d1, d0);
             if (d1 == 0x83) {
                 unsigned pos = (unsigned)s->csp_reg83_write & 3;
@@ -767,6 +780,11 @@ static void complete (SB16State *s)
 
         case 0x0f:
             d0 = dsp_get_data (s);
+            if (s->ct1740) {
+                /* Consume the probe but expose no writable CSP state. */
+                dsp_out_data(s, 0xff);
+                break;
+            }
             ldebug("read CSP register 0x%x -> 0x%x, mode=0x%x",
                     d0, s->csp_regs[d0], s->csp_mode);
             if (d0 == 0x83) {

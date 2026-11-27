@@ -33,7 +33,12 @@ mapped DSP/mixer I/O ports are checked before realization.
 
 The original CT1740 also contains OPL3 FM synthesis, a Creative/Panasonic
 CD-ROM interface and an analog mixer. These are not fully modeled; the
-shared DSP is not a cycle-accurate CT1741 implementation, and optional ASP hardware is not reproduced. Migration
+shared DSP is not a cycle-accurate CT1741 implementation. This profile
+represents a board without the optional CT1748 ASP/CSP coprocessor.
+CSP probe commands consume their arguments but cannot store register
+values; reads return 0xff as an emulation absence convention, not a
+measurement of physical bus timing. The legacy generic profile retains
+its existing CSP register compatibility behavior. Migration
 is disabled for this new profile pending a board-specific state
 contract. The generic type and its migration state remain unchanged.
 Use ``-device sb16-generic`` for the previous compatibility model.
@@ -104,6 +109,24 @@ Hardware identity
 Linux's SB16 ISA driver lists card IDs CTL0024 through CTL002C with audio
 logical device ID CTL0031. These are family references, not a selection of
 a verified board revision. ViBRA and AWE devices remain separate.
+
+Windows 95/98 may display a combined Sound Blaster 16 or AWE32 driver
+description for the shared PCM interface. This is not an AWE32 hardware
+identifier. The EMU8000 synthesizer requires independent detection at
+its own I/O windows (normally 0x620, 0xa20 and 0xe20); neither legacy
+SB16 profile claims those ports. Do not install an AWE wavetable driver
+on the basis of a DSP 4.xx version or a shared driver label alone.
+The CT1748 ASP/CSP is a separate optional effects processor, not an
+EMU8000. The CT1740 tests check both absent CSP and absent EMU8000
+without changing the legacy generic DSP compatibility contract.
+
+References:
+
+* Creative SB AWE32 Developer's Information Pack, version 3.01,
+  Part II, Hardware Detection and Initialization (awe32Detect and
+  awe32DetectEx): https://doczz.net/doc/8351592/developer-s-information-pack
+* https://www.dosdays.co.uk/topics/Manufacturers/creative/ct1740.php
+* https://www.betaarchive.com/wiki/index.php/Microsoft_KB_Archive/172969
 
 The Creative May 1997 manual for CT4171 describes ISA PnP version 1.0a,
 audio I/O at 0x220-0x22f, IRQ 5, MIDI at 0x330-0x331, FM at 0x388-0x38b,
