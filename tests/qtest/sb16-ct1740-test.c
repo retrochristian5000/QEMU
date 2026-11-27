@@ -28,7 +28,7 @@ static void test_ct1740_probe(gconstpointer data)
     unsigned int irq_mask = alternate ? 8 : 2;
     unsigned int dma_mask = (1U << dma) | (1U << hdma);
     QTestState *s = qtest_initf("-M pc -nodefaults -audiodev none,id=snd "
-                               "-device sb16,audiodev=snd,iobase=0x%x,"
+                               "-device sb16-ct1740,audiodev=snd,iobase=0x%x,"
                                "irq=%u,dma=%u,dma16=%u", base, irq, dma, hdma);
 
     qtest_outb(s, base + 6, 1);
@@ -68,7 +68,7 @@ static uint8_t ct1740_csp_read(QTestState *s, uint8_t reg)
 static void test_ct1740_no_csp(void)
 {
     QTestState *s = qtest_init("-M pc -nodefaults -audiodev none,id=snd "
-                               "-device sb16,audiodev=snd");
+                               "-device sb16-ct1740,audiodev=snd");
     uint8_t before;
 
     qtest_outb(s, 0x226, 1);
@@ -134,6 +134,7 @@ typedef struct SB16BoardProbe {
 } SB16BoardProbe;
 
 static const SB16BoardProbe board_probes[] = {
+    { "sb16-ct1740", "", 5 },
     { "sb16-ct1730", "", 4 },
     { "sb16-ct1730", ",version=0x0405", 5 },
     { "sb16-ct1750", "", 5 },
@@ -166,13 +167,36 @@ static void test_sb16_legacy_board(gconstpointer data)
     qtest_quit(s);
 }
 
+static void test_ct1740_alias(void)
+{
+    static const char *const names[] = { "sb16", "sb16-ct1740" };
+
+    for (size_t i = 0; i < G_N_ELEMENTS(names); i++) {
+        QTestState *s = qtest_initf("-M pc -nodefaults -audiodev none,id=snd "
+                                   "-device %s,id=card,audiodev=snd",
+                                   names[i]);
+        g_autofree char *tree = qtest_hmp(s, "info qtree");
+
+        g_assert_nonnull(strstr(tree, "dev: sb16-ct1740,"));
+        g_assert_true(qtest_qom_get_bool(s, "/machine/peripheral/card",
+                                         "realized"));
+        qtest_outb(s, 0x226, 1);
+        qtest_outb(s, 0x226, 0);
+        g_assert_cmphex(qtest_inb(s, 0x22a), ==, 0xaa);
+        qtest_outb(s, 0x22c, 0xe1);
+        g_assert_cmphex(qtest_inb(s, 0x22a), ==, 4);
+        g_assert_cmphex(qtest_inb(s, 0x22a), ==, 5);
+        qtest_quit(s);
+    }
+}
+
 static void test_ct1740_invalid(gconstpointer data)
 {
     const char *properties = data;
 
     if (g_test_subprocess()) {
         QTestState *s = qtest_initf("-M pc -nodefaults -audiodev none,id=snd "
-                                   "-device sb16,audiodev=snd,%s", properties);
+                                   "-device sb16-ct1740,audiodev=snd,%s", properties);
         qtest_quit(s);
         return;
     }
@@ -184,13 +208,14 @@ static void test_ct1740_invalid(gconstpointer data)
 int main(int argc, char **argv)
 {
     g_test_init(&argc, &argv, NULL);
-    if (qtest_has_machine("pc") && qtest_has_device("sb16")) {
+    if (qtest_has_machine("pc") && qtest_has_device("sb16-ct1740")) {
         qtest_add_data_func("/ct1740/default", GUINT_TO_POINTER(0),
                             test_ct1740_probe);
         qtest_add_data_func("/ct1740/alternate", GUINT_TO_POINTER(1),
                             test_ct1740_probe);
         qtest_add_func("/ct1740/no-csp", test_ct1740_no_csp);
-        qtest_add_data_func("/ct1740/no-emu8000", "sb16",
+        qtest_add_func("/ct1740/alias", test_ct1740_alias);
+        qtest_add_data_func("/ct1740/no-emu8000", "sb16-ct1740",
                             test_sb16_no_emu8000);
         qtest_add_data_func("/ct1740/invalid-base", "iobase=0x230",
                             test_ct1740_invalid);

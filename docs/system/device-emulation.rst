@@ -98,8 +98,10 @@ The generic device types in this fork are:
 The old ``-device cirrus-vga`` and ``-device isa-cirrus-vga`` names
 are no longer registered. Update old generic command lines and
 type-specific global properties to the new names. The short ``sb16``
-name now selects an experimental Creative CT1740 PCM/MIDI profile, not the
-generic model. For ``-audio``, use ``model=sb16-generic``. The legacy
+name is a device alias for the canonical ``sb16-ct1740`` experimental
+Creative CT1740 PCM/MIDI profile, not the generic model. Use
+``sb16-ct1740`` for QOM type lookups and type-specific ``-global``
+properties. For ``-audio``, use ``model=sb16-generic``. The legacy
 ``-vga cirrus`` option still selects the generic model. Guest register
 identities, resource defaults, firmware path names and migration section
 names are retained; cross-version migration has not been validated.

@@ -73,7 +73,7 @@ static void test_sb16_shared_irq(gconstpointer opaque)
     unsigned int base = GPOINTER_TO_UINT(opaque);
     QTestState *s = qtest_initf("-M pc -nodefaults "
                                 "-audiodev none,id=snd "
-                                "-device sb16,id=card,audiodev=snd,"
+                                "-device sb16-ct1740,id=card,audiodev=snd,"
                                 "mpu-iobase=0x%x", base);
 
     g_assert_true(qtest_qom_get_bool(s,
@@ -131,7 +131,7 @@ static void test_sb16_midi_receive(void)
     listener = qtest_socket_server(path);
     s = qtest_initf("-M pc -nodefaults -audiodev none,id=snd "
                     "-chardev socket,id=midi,path=%s "
-                    "-device sb16,audiodev=snd,midi-chardev=midi", arg);
+                    "-device sb16-ct1740,audiodev=snd,midi-chardev=midi", arg);
     peer = accept(listener, NULL, NULL);
     g_assert_cmpint(peer, >=, 0);
     close(listener);
@@ -178,7 +178,7 @@ int main(int argc, char **argv)
     g_test_init(&argc, &argv, NULL);
     if (qtest_has_machine("pc") && qtest_has_device("mpu401-uart-compat")) {
         qtest_add_func("/mpu401/tx", test_mpu_tx);
-        if (qtest_has_device("sb16")) {
+        if (qtest_has_device("sb16-ct1740")) {
 #ifndef _WIN32
             qtest_add_func("/mpu401/sb16/receive", test_sb16_midi_receive);
 #endif
@@ -188,9 +188,9 @@ int main(int argc, char **argv)
                                 test_sb16_shared_irq);
             qtest_add_data_func("/mpu401/sb16/overlap-first",
                                 "-device mpu401-uart-compat "
-                                "-device sb16,audiodev=snd", test_mpu_overlap);
+                                "-device sb16-ct1740,audiodev=snd", test_mpu_overlap);
             qtest_add_data_func("/mpu401/sb16/overlap-last",
-                                "-device sb16,audiodev=snd "
+                                "-device sb16-ct1740,audiodev=snd "
                                 "-device mpu401-uart-compat", test_mpu_overlap);
         }
     }

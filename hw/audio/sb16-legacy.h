@@ -8,7 +8,7 @@
 #include "hw/core/qdev.h"
 
 #define TYPE_SB16_GENERIC "sb16-generic"
-#define TYPE_CREATIVE_SB16 "sb16"
+#define TYPE_CREATIVE_SB16 "sb16-ct1740"
 
 const char *sb16_legacy_model(Object *obj);
 bool sb16_legacy_validate(Object *obj, uint32_t base, uint32_t irq,

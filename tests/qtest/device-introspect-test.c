@@ -253,7 +253,7 @@ static void test_device_intro_display_descriptions(void)
         { "gd5446b-pci",
           "Cirrus Logic CL-GD5446 Revision B PCI VGA" },
         { "sb16-generic", "Generic Sound Blaster 16 compatible (ISA, non-PnP)" },
-        { "sb16", "Creative Sound Blaster 16 CT1740 (experimental PCM and MIDI)" },
+        { "sb16-ct1740", "Creative Sound Blaster 16 CT1740 (experimental PCM and MIDI)" },
         { "sb16-ct1730", "Creative Sound Blaster 16 CT1730 (experimental PCM and MIDI)" },
         { "sb16-ct1750", "Creative Sound Blaster 16 MultiCD CT1750 (PCM and MIDI only)" },
         { "sb16-ct1770", "Creative Sound Blaster 16 SCSI-2 CT1770 (PCM and MIDI only)" },
@@ -401,7 +401,22 @@ static void test_generic_device_types(void)
                                  models[i].old_type);
             g_assert_null(strstr(old_help, " options:"));
         } else if (!strcmp(models[i].type, "sb16-generic")) {
-            g_assert_nonnull(type_list_find(types, "sb16"));
+            g_autofree char *canonical_help = NULL;
+            g_autofree char *alias_help = NULL;
+            const char *ct1740 = strstr(help, "name \"sb16-ct1740\"");
+            const char *line_end;
+
+            g_assert_nonnull(type_list_find(types, "sb16-ct1740"));
+            g_assert_null(type_list_find(types, "sb16"));
+            g_assert_nonnull(ct1740);
+            line_end = strchr(ct1740, '\n');
+            g_assert_nonnull(line_end);
+            g_assert_nonnull(g_strstr_len(ct1740, line_end - ct1740,
+                                          "alias \"sb16\""));
+            canonical_help = qtest_hmp(qts, "device_add sb16-ct1740,help");
+            alias_help = qtest_hmp(qts, "device_add sb16,help");
+            g_assert_nonnull(strstr(canonical_help, "sb16-ct1740 options:"));
+            g_assert_cmpstr(alias_help, ==, canonical_help);
         }
     }
     for (size_t i = 0; i < ARRAY_SIZE(retired_types); i++) {

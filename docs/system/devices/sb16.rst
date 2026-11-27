@@ -10,7 +10,7 @@ remain unchanged. It does not expose ISA Plug and Play card identification.
 Creative CT1740 (non-PnP)
 ------------------------
 
-The ``sb16`` device is a distinct QOM profile targeting the CT1740 with
+The canonical ``sb16-ct1740`` device (alias ``sb16``) targets the CT1740 with
 DSP revision 4.05. It shares the existing PCM engine but enforces
 the board's documented jumper selections:
 
@@ -22,7 +22,7 @@ the board's documented jumper selections:
 
 Example::
 
-    -audiodev none,id=snd -device sb16,audiodev=snd
+    -audiodev none,id=snd -device sb16-ct1740,audiodev=snd
 
 The current profile holds IRQ and DMA assignments fixed, and the
 mixer's 80h and 81h readback cannot drift away from the wired resources.
@@ -54,7 +54,10 @@ Board references:
 Additional fixed-jumper boards
 ------------------------------
 
-The original CT1740 keeps the short name ``sb16``. The following distinct
+The original CT1740 retains the short ``sb16`` device alias. Both names
+instantiate the same ``sb16-ct1740`` QOM type. Use the canonical name for
+QOM introspection and type-specific ``-global`` properties.
+The following distinct
 board profiles reuse the same fixed-jumper audio policy, gameport and
 MPU-401 UART, without claiming any Plug and Play or EMU8000 identity:
 
@@ -132,7 +135,7 @@ the virtual UART without producing sound. To capture outgoing bytes
 to a QEMU ring buffer without attaching host hardware::
 
     -audiodev none,id=snd -chardev ringbuf,id=midi,size=4096 \
-    -device sb16,audiodev=snd,midi-chardev=midi
+    -device sb16-ct1740,audiodev=snd,midi-chardev=midi
 
 The standalone interface can also be used on an ISA machine::
 
