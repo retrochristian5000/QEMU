@@ -1912,8 +1912,8 @@ static const X86OpEntry opcodes_root[256] = {
     [0x99] = X86_OP_ENTRYwr(CWD,   2,v, 0,v), /* rDX, rAX */
     [0x9A] = X86_OP_ENTRYrr(CALLF, I_unsigned,p, I_unsigned,w, chk(i64)),
     [0x9B] = X86_OP_ENTRY0(WAIT),
-    [0x9C] = X86_OP_ENTRY0(PUSHF,  chk(vm86_iopl) svm(PUSHF)),
-    [0x9D] = X86_OP_ENTRY0(POPF,   chk(vm86_iopl) svm(POPF)),
+    [0x9C] = X86_OP_ENTRY0(PUSHF,  svm(PUSHF)),
+    [0x9D] = X86_OP_ENTRY0(POPF,   svm(POPF)),
     [0x9E] = X86_OP_ENTRY0(SAHF),
     [0x9F] = X86_OP_ENTRY0(LAHF),
 
@@ -1969,8 +1969,8 @@ static const X86OpEntry opcodes_root[256] = {
 
     [0xF8] = X86_OP_ENTRY0(CLC),
     [0xF9] = X86_OP_ENTRY0(STC),
-    [0xFA] = X86_OP_ENTRY0(CLI,    chk(iopl)),
-    [0xFB] = X86_OP_ENTRY0(STI,    chk(iopl)),
+    [0xFA] = X86_OP_ENTRY0(CLI),
+    [0xFB] = X86_OP_ENTRY0(STI),
     [0xFC] = X86_OP_ENTRY0(CLD),
     [0xFD] = X86_OP_ENTRY0(STD),
     [0xFE] = X86_OP_GROUP1(group4_5, E,b),
