@@ -1,0 +1,5 @@
+# 256 KiB PC BIOS; CPU policy selected by roms/Makefile.
+CONFIG_QEMU=y
+CONFIG_ROM_SIZE=256
+CONFIG_ATA_DMA=y
+CONFIG_ATA_PIO32=y
