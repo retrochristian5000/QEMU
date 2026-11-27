@@ -1210,6 +1210,64 @@ static bool cmd_specify(IDEState *s, uint8_t cmd)
     return true;
 }
 
+/*
+ * Use the drive's own IDENTIFY capability masks for ATA disk negotiation.
+ * Do not change the supported modes when selecting an active mode.
+ */
+static bool ide_hd_set_transfer_mode(IDEState *s)
+{
+    uint16_t *id = (uint16_t *)s->identify_data;
+    unsigned int mode = s->nsector & 7;
+    unsigned int type = s->nsector >> 3;
+    unsigned int swdma, mwdma, udma;
+
+    if (!s->identify_set) {
+        ide_identify(s);
+    }
+    swdma = le16_to_cpu(id[62]) & 0xff;
+    mwdma = le16_to_cpu(id[63]) & 0xff;
+    udma = le16_to_cpu(id[88]) & 0xff;
+
+    switch (type) {
+    case 0: /* Default PIO */
+        if (mode > 1) {
+            return false;
+        }
+        break;
+    case 1: /* PIO */
+        if (mode > 4 ||
+            (mode >= 3 && !(le16_to_cpu(id[64]) & (1U << (mode - 3))))) {
+            return false;
+        }
+        break;
+    case 2: /* Singleword DMA */
+        if (mode > 2 || !(swdma & (1U << mode))) {
+            return false;
+        }
+        swdma |= 1U << (mode + 8);
+        break;
+    case 4: /* Multiword DMA */
+        if (mode > 2 || !(mwdma & (1U << mode))) {
+            return false;
+        }
+        mwdma |= 1U << (mode + 8);
+        break;
+    case 8: /* Ultra DMA */
+        if (mode > 6 || !(udma & (1U << mode))) {
+            return false;
+        }
+        udma |= 1U << (mode + 8);
+        break;
+    default:
+        return false;
+    }
+
+    ide_put_le16(id + 62, swdma);
+    ide_put_le16(id + 63, mwdma);
+    ide_put_le16(id + 88, udma);
+    return true;
+}
+
 static bool cmd_set_features(IDEState *s, uint8_t cmd)
 {
     uint16_t *identify_data;
@@ -1265,6 +1323,13 @@ static bool cmd_set_features(IDEState *s, uint8_t cmd)
     case 0x03: /* set transfer mode */
         {
             uint8_t val = s->nsector & 0x07;
+
+            if (s->drive_kind == IDE_HD) {
+                if (!ide_hd_set_transfer_mode(s)) {
+                    goto abort_cmd;
+                }
+                return true;
+            }
 
             if (s->ata_revision != IDE_ATA_GENERIC) {
                 unsigned type = s->nsector >> 3;
