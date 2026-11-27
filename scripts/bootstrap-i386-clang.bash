@@ -131,7 +131,8 @@ fi
 
 marker="$TOOLCHAIN_DIR/.whp-i386-toolchain"
 expected_marker="$(cat <<EOF
-BOOTSTRAP_SCHEMA=15
+BOOTSTRAP_SCHEMA=16
+COMPANION_TARGET=i586-none-elf
 TARGET=$TOOLCHAIN_TARGET
 LLVM_GIT_COMMIT=$llvm_revision
 LLVM_TARGETS_TO_BUILD=X86
@@ -169,6 +170,9 @@ usable()
         [[ -x "$prefix/bin/$TOOLCHAIN_TARGET-$tool" ]] || return 1
     done
     [[ -f "$prefix/libexec/seabios-llvm-objdump.py" ]] || return 1
+    for tool in gcc cpp as ld objcopy objdump strip; do
+        [[ -x "$prefix/bin/i586-none-elf-$tool" ]] || return 1
+    done
     for tool in clang ld.lld llvm-objcopy llvm-objdump llvm-strip; do
         [[ -x "$prefix/llvm/bin/$tool" ]] || return 1
     done
@@ -189,6 +193,28 @@ SOURCE
             -fno-omit-frame-pointer -momit-leaf-frame-pointer \
             -ffreestanding -O0 -c "$cache_smoke_dir/cache.c" \
             -o "$cache_smoke_dir/cache.o" >/dev/null 2>&1; then
+        rm -rf "$cache_smoke_dir"
+        return 1
+    fi
+
+    # Verify the companion's implicit CPU baseline and object ABI.
+    if ! printf '%s\n' '#ifndef __i586__' '#error wrong i586 CPU baseline' \
+            '#endif' '#ifdef __SSE__' '#error unexpected SSE' '#endif' \
+            '_Static_assert(__SIZEOF_POINTER__ == 4, "pointer ABI");' | \
+            "$prefix/bin/i586-none-elf-gcc" -m32 -ffreestanding -x c -c - \
+                -o "$cache_smoke_dir/i586.o" >/dev/null 2>&1; then
+        rm -rf "$cache_smoke_dir"
+        return 1
+    fi
+    if ! "$prefix/bin/i586-none-elf-ld" -r "$cache_smoke_dir/i586.o" \
+            -o "$cache_smoke_dir/i586-linked.o" >/dev/null 2>&1; then
+        rm -rf "$cache_smoke_dir"
+        return 1
+    fi
+    object_format="$("$prefix/bin/i586-none-elf-objdump" -f \
+        "$cache_smoke_dir/i586-linked.o" 2>/dev/null)" || return 1
+    if ! grep -Eq 'file format elf32-i386|architecture:[[:space:]]*i386' \
+            <<<"$object_format"; then
         rm -rf "$cache_smoke_dir"
         return 1
     fi
@@ -393,7 +419,12 @@ cat >"$bin/$TOOLCHAIN_TARGET-cpp" <<'EOF'
 #!/usr/bin/env bash
 set -euo pipefail
 prefix="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)"
-exec "$prefix/llvm/bin/clang" --target=i386-none-elf -E "$@"
+case "${0##*/}" in
+    i386-none-elf-cpp) target=i386-none-elf; cpu=i386 ;;
+    i586-none-elf-cpp) target=i586-none-elf; cpu=i586 ;;
+    *) printf 'error: unknown firmware preprocessor entry point\n' >&2; exit 2 ;;
+esac
+exec "$prefix/llvm/bin/clang" --target="$target" -march="$cpu" -E "$@"
 EOF
 chmod +x "$bin/$TOOLCHAIN_TARGET-cpp"
 
@@ -465,10 +496,15 @@ done
     printf 'error: unsupported SeaBIOS assembler invocation\n' >&2
     exit 1
 }
-tmp="${TMPDIR:-/tmp}/whp-i386-as.$$.$RANDOM.s"
+case "${0##*/}" in
+    i386-none-elf-as) target=i386-none-elf; cpu=i386 ;;
+    i586-none-elf-as) target=i586-none-elf; cpu=i586 ;;
+    *) printf 'error: unknown firmware assembler entry point\n' >&2; exit 2 ;;
+esac
+tmp="$(mktemp "${TMPDIR:-/tmp}/whp-x86-as.XXXXXX")"
 trap 'rm -f "$tmp"' EXIT
 cat "${inputs[@]}" > "$tmp"
-"$prefix/llvm/bin/clang" --target=i386-none-elf -m32 -c -x assembler \
+"$prefix/llvm/bin/clang" --target="$target" -march="$cpu" -m32 -c -x assembler \
     "$tmp" -o "$out"
 EOF
 chmod +x "$bin/$TOOLCHAIN_TARGET-as"
@@ -486,6 +522,13 @@ for pair in objcopy:llvm-objcopy strip:llvm-strip; do
     name="${pair%%:*}"
     target="${pair#*:}"
     ln -sfn "../llvm/bin/$target" "$bin/$TOOLCHAIN_TARGET-$name"
+done
+
+# Both legacy architecture prefixes use the same host LLVM binaries and
+# ELF32/i386 linker ABI. The compiler/preprocessor/assembler distinguish
+# their invocation names; object tools need no separate implementation.
+for tool in gcc cpp as ld objcopy objdump strip; do
+    ln -s "$TOOLCHAIN_TARGET-$tool" "$bin/i586-none-elf-$tool"
 done
 
 # SeaBIOS probes -fwhole-program before enabling its whole-file optimization.
@@ -628,4 +671,5 @@ printf '%s\n' \
     'Linker: ELF LLD, elf_i386 default emulation' \
     'Objdump: LLVM with GNU SeaBIOS -thr compatibility' \
     'Object tools: llvm-objcopy, llvm-objdump, llvm-strip' \
-    "Compatibility prefix: $TOOLCHAIN_DIR/bin/$TOOLCHAIN_TARGET-"
+    "Compatibility prefix: $TOOLCHAIN_DIR/bin/$TOOLCHAIN_TARGET-" \
+    "Companion prefix: $TOOLCHAIN_DIR/bin/i586-none-elf-"
