@@ -11,7 +11,8 @@ Creative CT1740 (non-PnP)
 ------------------------
 
 The canonical ``sb16-ct1740`` device (alias ``sb16``) targets the CT1740 with
-DSP revision 4.05. It shares the existing PCM engine but enforces
+DSP revision 4.05 by default. Versions 4.04 and 4.11 are also accepted
+as reported for CT1740 boards. It shares the existing PCM engine but enforces
 the board's documented jumper selections:
 
 * Digital audio base: 0x220 (default), 0x240, 0x260 or 0x280.
@@ -69,8 +70,8 @@ MPU-401 UART, without claiming any Plug and Play or EMU8000 identity:
      - Other accepted DSP revisions
      - Physical CD-ROM interface (not emulated)
    * - ``sb16-ct1730``
-     - 4.04
      - 4.05
+     - 4.04 (compatibility option; sticker attribution unverified)
      - Panasonic
    * - ``sb16-ct1750``
      - 4.05
@@ -84,6 +85,44 @@ MPU-401 UART, without claiming any Plug and Play or EMU8000 identity:
      - 4.11
      - None
      - Sony
+
+CT1730 and CT1740 identity
+~~~~~~~~~~~~~~~~~~~~~~~~~
+
+Creative's product catalog identifies CT1730 as Sound Blaster 16 and
+CT1740/CT1748 as Sound Blaster 16 CSP. Historical records identify the
+CT1740 PCB as the June 1992 launch design. Collector observations show
+CT1730-labelled cards using CT1740-marked PCBs with DSP 4.05. The exact
+retail chronology of the two model labels is unresolved. Keep the CT1730
+as a separate product profile, not an earlier hardware generation inferred
+from its number. Both share the documented jumper table. CT1730's previous
+4.04 default was not supported by equivalent sticker evidence; retain
+explicit 4.04 for existing configurations, but default to observed 4.05.
+A CT1740 with an operational ASP/CSP is not implemented.
+
+References:
+
+* https://support.creative.com/kb/ShowArticle.aspx?sid=10846
+* https://blog.purplepa.ws/the-legendary-sound-blaster/
+* https://www.vogons.org/viewtopic.php?t=49764
+* https://www.elhvb.com/mobokive/th99/i/C-D/53584.htm
+
+CT1745 mixer register behavior
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+The fixed-jumper profiles share the CT1745 register model. The legacy
+four-bit stereo volume registers 04h, 22h, 26h, 28h and 2Eh read and
+write the corresponding five-bit volume controls at 30h through 39h.
+Three-bit microphone register 0Ah shares the control at 3Ah. Compatibility
+writes clear the extra precision bits; this is a deterministic mapping
+convention, not a verified measurement of low-bit hardware behavior.
+Reset restores documented volume, routing, gain and tone register defaults
+without changing ISA resource assignments or IRQ state. This corrects
+guest register readback only; analog gain, filtering and routing are
+not implemented by these changes. The generic SB16 remains unchanged.
+
+Reference: Creative Sound Blaster Series Hardware Programming Guide,
+chapter 4, CT1745 mixer, pp. 4-12 through 4-17.
 
 These are experimental PCM/MIDI subsets, not complete boards. The reported
 DSP revisions do not yet reproduce revision-specific firmware behavior

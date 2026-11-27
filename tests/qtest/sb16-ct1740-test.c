@@ -135,8 +135,10 @@ typedef struct SB16BoardProbe {
 
 static const SB16BoardProbe board_probes[] = {
     { "sb16-ct1740", "", 5 },
-    { "sb16-ct1730", "", 4 },
-    { "sb16-ct1730", ",version=0x0405", 5 },
+    { "sb16-ct1740", ",version=0x0404", 4 },
+    { "sb16-ct1740", ",version=0x040b", 11 },
+    { "sb16-ct1730", "", 5 },
+    { "sb16-ct1730", ",version=0x0404", 4 },
     { "sb16-ct1750", "", 5 },
     { "sb16-ct1750", ",version=0x040b", 11 },
     { "sb16-ct1770", "", 5 },
@@ -164,6 +166,47 @@ static void test_sb16_legacy_board(gconstpointer data)
         g_assert_cmphex(qtest_inw(s, port), ==, 0xffff);
         g_assert_cmphex(qtest_inw(s, port + 2), ==, 0xffff);
     }
+    qtest_quit(s);
+}
+
+static void test_ct1745_mixer(gconstpointer data)
+{
+    const char *type = data;
+    static const uint8_t aliases[] = { 0x22, 0x04, 0x26, 0x28, 0x2e };
+    QTestState *s = qtest_initf("-M pc -nodefaults -audiodev none,id=snd "
+                               "-device %s,audiodev=snd", type);
+
+    for (size_t i = 0; i < G_N_ELEMENTS(aliases); i++) {
+        uint8_t left = 0x30 + i * 2;
+        uint8_t initial = i < 3 ? 0xc0 : 0;
+
+        g_assert_cmphex(mixer_read(s, 0x220, left), ==, initial);
+        g_assert_cmphex(mixer_read(s, 0x220, left + 1), ==, initial);
+        g_assert_cmphex(mixer_read(s, 0x220, aliases[i]), ==,
+                        initial | (initial >> 4));
+        mixer_write(s, 0x220, aliases[i], 0xa5);
+        g_assert_cmphex(mixer_read(s, 0x220, left), ==, 0xa0);
+        g_assert_cmphex(mixer_read(s, 0x220, left + 1), ==, 0x50);
+        mixer_write(s, 0x220, left, 0xf9);
+        mixer_write(s, 0x220, left + 1, 0x3f);
+        g_assert_cmphex(mixer_read(s, 0x220, left), ==, 0xf8);
+        g_assert_cmphex(mixer_read(s, 0x220, left + 1), ==, 0x38);
+        g_assert_cmphex(mixer_read(s, 0x220, aliases[i]), ==, 0xf3);
+    }
+    mixer_write(s, 0x220, 0x0a, 5);
+    g_assert_cmphex(mixer_read(s, 0x220, 0x3a), ==, 0xa0);
+    mixer_write(s, 0x220, 0x3a, 0x78);
+    g_assert_cmphex(mixer_read(s, 0x220, 0x0a), ==, 3);
+    g_assert_cmphex(mixer_read(s, 0x220, 0x3c), ==, 0x1f);
+    g_assert_cmphex(mixer_read(s, 0x220, 0x3d), ==, 0x15);
+    g_assert_cmphex(mixer_read(s, 0x220, 0x3e), ==, 0x0b);
+    mixer_write(s, 0x220, 0x44, 0xff);
+    g_assert_cmphex(mixer_read(s, 0x220, 0x44), ==, 0xf0);
+    mixer_write(s, 0x220, 0, 0);
+    g_assert_cmphex(mixer_read(s, 0x220, 0x22), ==, 0xcc);
+    g_assert_cmphex(mixer_read(s, 0x220, 0x44), ==, 0x80);
+    g_assert_cmphex(mixer_read(s, 0x220, 0x80), ==, 2);
+    g_assert_cmphex(mixer_read(s, 0x220, 0x81), ==, 0x22);
     qtest_quit(s);
 }
 
@@ -235,6 +278,14 @@ int main(int argc, char **argv)
                             test_sb16_no_emu8000);
     }
     if (qtest_has_machine("pc")) {
+        if (qtest_has_device("sb16-ct1730")) {
+            qtest_add_data_func("/ct1730/ct1745-mixer", "sb16-ct1730",
+                                test_ct1745_mixer);
+        }
+        if (qtest_has_device("sb16-ct1740")) {
+            qtest_add_data_func("/ct1740/ct1745-mixer", "sb16-ct1740",
+                                test_ct1745_mixer);
+        }
         for (size_t i = 0; i < G_N_ELEMENTS(board_probes); i++) {
             if (qtest_has_device(board_probes[i].type)) {
                 g_autofree char *path = g_strdup_printf("/sb16/%s/dsp-%u",

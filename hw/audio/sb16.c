@@ -30,6 +30,7 @@
 #include "hw/input/isa-gameport.h"
 #include "hw/audio/mpu401-uart.h"
 #include "sb16-legacy.h"
+#include "ct1745-mixer.h"
 #include "hw/core/qdev-properties.h"
 #include "migration/vmstate.h"
 #include "qemu/timer.h"
@@ -1155,6 +1156,9 @@ static void reset_mixer (SB16State *s)
     for (i = 0x30; i < 0x48; i++) {
         s->mixer_regs[i] = 0x20;
     }
+    if (s->legacy_board) {
+        ct1745_reset(s->mixer_regs);
+    }
 }
 
 static void mixer_write_indexb(void *opaque, uint32_t nport, uint32_t val)
@@ -1182,6 +1186,11 @@ static void mixer_write_datab(void *opaque, uint32_t nport, uint32_t val)
             qemu_log_mask(LOG_UNIMP, "sb16: fixed-jumper profile does not support changing "
                           "IRQ/DMA after realization\n");
         }
+        return;
+    }
+
+    if (s->legacy_board &&
+        ct1745_write(s->mixer_regs, s->mixer_nreg, val)) {
         return;
     }
 

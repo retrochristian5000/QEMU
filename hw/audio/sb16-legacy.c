@@ -26,14 +26,15 @@ static const SB16LegacyBoard boards[] = {
         .model = "CT1740",
         .desc = "Creative Sound Blaster 16 CT1740 (experimental PCM and MIDI)",
         .fw_name = "creative-ct1740",
-        .versions = { 0x0405 },
+        .versions = { 0x0405, 0x0404, 0x040b },
         .vmstate = { .name = "creative-ct1740", .unmigratable = true },
     }, {
         .type = "sb16-ct1730",
         .model = "CT1730",
         .desc = "Creative Sound Blaster 16 CT1730 (experimental PCM and MIDI)",
         .fw_name = "creative-ct1730",
-        .versions = { 0x0404, 0x0405 },
+        /* CT1730-labelled specimens have been documented with V405. */
+        .versions = { 0x0405, 0x0404 },
         .vmstate = { .name = "creative-ct1730", .unmigratable = true },
     }, {
         .type = "sb16-ct1750",
