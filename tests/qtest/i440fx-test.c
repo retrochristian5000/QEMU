@@ -562,6 +562,76 @@ static void test_i440fx_dataport_3740_line(gconstpointer opaque)
     qtest_quit(qts);
 }
 
+/*
+ * The UART interrupt threshold is not its receive capacity. Enter
+ * loopback before reading to prevent the backend from refilling the
+ * FIFO and hiding a stall at the threshold.
+ */
+static void test_i440fx_dataport_3740_fifo(gconstpointer opaque)
+{
+    bool integrated = GPOINTER_TO_INT(opaque);
+    QTestState *qts = qtest_init(integrated ?
+        "-M pc -nodefaults -serial none "
+        "-device att-paradyne-3740,index=1" :
+        "-M pc -nodefaults -serial none "
+        "-chardev modem,id=m,model=att-paradyne-3740 "
+        "-device ns16550a,index=1,chardev=m");
+    static const char reply[] = "\r\nOK\r\n";
+    static const char probe[] = "AT\r";
+
+    qtest_outb(qts, 0x2fb, 0x83);
+    qtest_outb(qts, 0x2f8, 12);
+    qtest_outb(qts, 0x2f9, 0);
+    qtest_outb(qts, 0x2fb, 3);
+    qtest_outb(qts, 0x2fc, 0x0b);
+    modem_command(qts, "AT\r", "AT\r\r\nOK\r\n");
+    modem_command(qts, "AT\r", "AT\r\r\nOK\r\n");
+    modem_command(qts, "ATH\r", "OK");
+    modem_command(qts, "AT\r", "OK");
+    modem_command(qts, "ATEQV1\r", "OK");
+
+    for (unsigned trigger = 0; trigger < 4; trigger++) {
+        qtest_outb(qts, 0x2fa, 0x07 | (trigger << 6));
+        for (unsigned i = 0; i < sizeof(probe) - 1; i++) {
+            qtest_outb(qts, 0x2f8, probe[i]);
+        }
+        qtest_outb(qts, 0x2fc, 0x1b);
+        for (unsigned i = 0; i < sizeof(reply) - 1; i++) {
+            g_assert_cmphex(qtest_inb(qts, 0x2fd) & 0x03, ==, 1);
+            g_assert_cmphex(qtest_inb(qts, 0x2f8), ==, (uint8_t)reply[i]);
+        }
+        g_assert_cmphex(qtest_inb(qts, 0x2fd) & 1, ==, 0);
+        qtest_outb(qts, 0x2fc, 0x0b);
+    }
+
+    /* With a long reply, the remaining bytes must stay in the backend
+     * while loopback is active, then resume as soon as it ends. */
+    static const char ident[] = "ATI3\r";
+    GString *response = g_string_new(NULL);
+
+    for (unsigned i = 0; i < sizeof(ident) - 1; i++) {
+        qtest_outb(qts, 0x2f8, ident[i]);
+    }
+    qtest_outb(qts, 0x2fc, 0x1b);
+    for (unsigned i = 0; i < 16; i++) {
+        g_assert_cmphex(qtest_inb(qts, 0x2fd) & 0x03, ==, 1);
+        g_string_append_c(response, qtest_inb(qts, 0x2f8));
+    }
+    g_assert_cmphex(qtest_inb(qts, 0x2fd) & 1, ==, 0);
+    qtest_outb(qts, 0x2f8, 0x5a);
+    g_assert_cmphex(qtest_inb(qts, 0x2f8), ==, 0x5a);
+    qtest_outb(qts, 0x2fc, 0x0b);
+    while (qtest_inb(qts, 0x2fd) & 1) {
+        g_assert_cmpuint(response->len, <, 256);
+        g_string_append_c(response, qtest_inb(qts, 0x2f8));
+    }
+    g_assert_cmpstr(response->str, ==,
+                    "\r\nAT&T DataPort Express 3740 V.34 V.FC "
+                    "(QEMU emulation)\r\n\r\nOK\r\n");
+    g_string_free(response, true);
+    qtest_quit(qts);
+}
+
 static void test_i440fx_dataport_3740_scan(gconstpointer opaque)
 {
     bool integrated = GPOINTER_TO_INT(opaque);
@@ -796,6 +866,10 @@ int main(int argc, char **argv)
                             GINT_TO_POINTER(1), test_i440fx_dataport_3740_line);
         qtest_add_data_func("i440fx/isa/modem/3740-line-external",
                             GINT_TO_POINTER(0), test_i440fx_dataport_3740_line);
+        qtest_add_data_func("i440fx/isa/modem/3740-fifo-integrated",
+                            GINT_TO_POINTER(1), test_i440fx_dataport_3740_fifo);
+        qtest_add_data_func("i440fx/isa/modem/3740-fifo-external",
+                            GINT_TO_POINTER(0), test_i440fx_dataport_3740_fifo);
         qtest_add_data_func("i440fx/isa/modem/3740-scan-integrated",
                             GINT_TO_POINTER(1), test_i440fx_dataport_3740_scan);
         qtest_add_data_func("i440fx/isa/modem/3740-scan-external",

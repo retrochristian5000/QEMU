@@ -469,6 +469,10 @@ static void serial_ioport_write(void *opaque, hwaddr addr, uint64_t val,
                    from the device/computer at the other end of the serial line */
                 timer_mod(s->modem_status_poll, qemu_clock_get_ns(QEMU_CLOCK_VIRTUAL) + s->char_transmit_time);
             }
+            if (old_mcr & UART_MCR_LOOP) {
+                /* Resume external reception after leaving diagnostic loopback. */
+                qemu_chr_fe_accept_input(&s->chr);
+            }
         }
         break;
     case 5:
@@ -569,16 +573,21 @@ static uint64_t serial_ioport_read(void *opaque, hwaddr addr, unsigned size)
 
 static int serial_can_receive(SerialState *s)
 {
-    if(s->fcr & UART_FCR_FE) {
+    /* The external receive input is disconnected during internal loopback. */
+    if (s->mcr & UART_MCR_LOOP) {
+        return 0;
+    }
+
+    if (s->fcr & UART_FCR_FE) {
         if (!fifo8_is_full(&s->recv_fifo)) {
             /*
              * Advertise (fifo.itl - fifo.count) bytes when count < ITL, and 1
-             * if above. If UART_FIFO_LENGTH - fifo.count is advertised the
+             * if at or above. If UART_FIFO_LENGTH - fifo.count is advertised the
              * effect will be to almost always fill the fifo completely before
              * the guest has a chance to respond, effectively overriding the ITL
              * that the guest has set.
              */
-            return (fifo8_num_used(&s->recv_fifo) <= s->recv_fifo_itl) ?
+            return (fifo8_num_used(&s->recv_fifo) < s->recv_fifo_itl) ?
                         s->recv_fifo_itl - fifo8_num_used(&s->recv_fifo) : 1;
         } else {
             return 0;

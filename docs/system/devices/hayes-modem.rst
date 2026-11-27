@@ -132,6 +132,18 @@ commands. The non-DataPort profiles retain ERROR for this command.
 Regression coverage checks spacing, case, profile preservation and
 return to online data mode after a help query.
 
+The ISA UART receive FIFO has 16 entries independently of its
+1/4/8/14-byte interrupt thresholds. At the threshold, the serial
+frontend must continue accepting bytes until the FIFO is full.
+Internal diagnostic loopback temporarily stops external reception;
+leaving loopback resumes queued backend data. The PC16550D data
+sheet sections 8.7 and 8.11 describe the hardware reference behavior.
+Register-level qtests exercise AOL's reported opening sequence,
+all four receive thresholds, and a queued identification reply
+across loopback entry and exit, on both integrated and separately
+attached 3740 profiles. These are byte-transport tests, not
+electrical framing or Windows/AOL detection verification.
+
 AOL 4.0's reported initial commands (AT twice, ATH, AT, ATEQV1)
 are covered by regression tests, with its separately observed &K3
 probe. The basic commands follow ITU-T V.25ter (August 1995):
