@@ -45,6 +45,7 @@
 #include "ui/pixel_ops.h"
 #include "vga_regs.h"
 #include "cirrus_vga_internal.h"
+#include "cirrus_vga_overlay.h"
 #include "qom/object.h"
 #include "ui/console.h"
 
@@ -208,6 +209,18 @@ static uint8_t rop_to_index[256];
 
 static void cirrus_bitblt_reset(CirrusVGAState *s);
 static void cirrus_update_memory_access(CirrusVGAState *s);
+
+static bool cirrus_overlay_enabled(const CirrusVGAState *s)
+{
+    return s->gd5446_revision == CIRRUS_GD5446_REV_B &&
+           (s->vga.cr[0x3e] & 1);
+}
+
+static void cirrus_update_shadow(CirrusVGAState *s)
+{
+    s->vga.force_shadow = (s->vga.sr[0x12] & CIRRUS_CURSOR_SHOW) ||
+                          cirrus_overlay_enabled(s);
+}
 static inline void invalidate_cursor1(CirrusVGAState *s);
 
 static bool cirrus_has_mmio(const CirrusVGAState *s)
@@ -1541,7 +1554,7 @@ static void cirrus_vga_write_sr(CirrusVGAState * s, uint32_t val)
         break;
     case 0x12:                  // Graphics Cursor Attribute
         s->vga.sr[0x12] = val;
-        s->vga.force_shadow = !!(val & CIRRUS_CURSOR_SHOW);
+        cirrus_update_shadow(s);
 #ifdef DEBUG_CIRRUS
         printf("cirrus: cursor ctl SR12=%02x (force shadow: %d)\n",
                val, s->vga.force_shadow);
@@ -1804,6 +1817,13 @@ cirrus_vga_write_gr(CirrusVGAState * s, unsigned reg_index, int reg_value)
 
 static int cirrus_vga_read_cr(CirrusVGAState * s, unsigned reg_index)
 {
+    if (s->gd5446_revision == CIRRUS_GD5446_REV_B) {
+        uint8_t mask = cirrus_overlay_reg_mask(reg_index);
+
+        if (mask) {
+            return s->vga.cr[reg_index] & mask;
+        }
+    }
     switch (reg_index) {
     case 0x00:                  // Standard VGA
     case 0x01:                  // Standard VGA
@@ -1853,6 +1873,26 @@ static int cirrus_vga_read_cr(CirrusVGAState * s, unsigned reg_index)
 
 static void cirrus_vga_write_cr(CirrusVGAState * s, int reg_value)
 {
+    if (s->gd5446_revision == CIRRUS_GD5446_REV_B) {
+        unsigned index = s->vga.cr_index;
+        uint8_t mask = cirrus_overlay_reg_mask(index);
+
+        if (mask) {
+            bool was_enabled = cirrus_overlay_enabled(s);
+            uint8_t value = reg_value & mask;
+
+            if (s->vga.cr[index] != value) {
+                s->vga.cr[index] = value;
+                cirrus_update_shadow(s);
+                /* Restore previously covered pixels when the window moves,
+                 * is disabled, or switches to an unsupported mode. */
+                if (was_enabled || cirrus_overlay_enabled(s)) {
+                    s->vga.graphic_mode = -1;
+                }
+            }
+            return;
+        }
+    }
     switch (s->vga.cr_index) {
     case 0x00:                  // Standard VGA
     case 0x01:                  // Standard VGA
@@ -2425,6 +2465,18 @@ static void cirrus_cursor_invalidate(VGACommonState *s1)
 {
     CirrusVGAState *s = container_of(s1, CirrusVGAState, vga);
     int size;
+    CirrusOverlay window;
+
+    /*
+     * Video source can be outside the primary dirty snapshot. Refresh
+     * only covered scanlines; the overlay never modifies guest VRAM.
+     */
+    if (cirrus_overlay_enabled(s) &&
+        ((s1->gr[VGA_GFX_MODE] >> 5) & 3) >= 2 &&
+        cirrus_overlay_decode(s1->cr, s1->last_depth, &window) &&
+        window.x < s1->last_scr_width) {
+        vga_invalidate_scanlines(s1, window.top, window.bottom + 1);
+    }
 
     if (!(s->vga.sr[0x12] & CIRRUS_CURSOR_SHOW)) {
         size = 0;
@@ -2491,6 +2543,14 @@ static void cirrus_cursor_draw_line(VGACommonState *s1, uint8_t *d1, int scr_y)
     unsigned int color0, color1;
     const uint8_t *palette, *src;
     uint32_t content;
+    CirrusOverlay window;
+
+    if (cirrus_overlay_enabled(s) &&
+        ((s1->gr[VGA_GFX_MODE] >> 5) & 3) >= 2 &&
+        cirrus_overlay_decode(s1->cr, s1->last_depth, &window)) {
+        cirrus_overlay_draw(&window, s1->vram_ptr, s->real_vram_size,
+                            (uint32_t *)d1, s1->last_scr_width, scr_y);
+    }
 
     if (!(s->vga.sr[0x12] & CIRRUS_CURSOR_SHOW))
         return;
@@ -3028,6 +3088,10 @@ static int cirrus_post_load(void *opaque, int version_id)
     if (s->vga.update_retrace_info == cirrus_gd5446_update_retrace_info) {
         s->vga.update_retrace_info(&s->vga);
     }
+    /* Derive compositor state from migrated registers. */
+    if (s->gd5446_revision == CIRRUS_GD5446_REV_B) {
+        cirrus_update_shadow(s);
+    }
     /* force refresh */
     s->vga.graphic_mode = -1;
 
@@ -3105,6 +3169,9 @@ static void cirrus_reset(void *opaque)
     s->cirrus_srcptr_end = s->cirrus_bltbuf;
     s->cirrus_srccounter = 0;
     vga_common_reset(&s->vga);
+    if (s->gd5446_revision == CIRRUS_GD5446_REV_B) {
+        cirrus_update_shadow(s);
+    }
     unmap_linear_vram(s);
     s->vga.sr[0x06] = 0x0f;
     if (s->device_id == CIRRUS_ID_CLGD5446) {
