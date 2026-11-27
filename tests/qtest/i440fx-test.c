@@ -629,6 +629,38 @@ static void test_i440fx_dataport_3740_fifo(gconstpointer opaque)
     g_assert_cmpstr(response->str, ==,
                     "\r\nAT&T DataPort Express 3740 V.34 V.FC "
                     "(QEMU emulation)\r\n\r\nOK\r\n");
+    /*
+     * Clearing or switching the receive FIFO discards bytes already in
+     * the UART, not the remainder of the modem's pending reply.
+     */
+    static const char full_reply[] =
+        "\r\nAT&T DataPort Express 3740 V.34 V.FC "
+        "(QEMU emulation)\r\n\r\nOK\r\n";
+    static const struct {
+        uint8_t initial_fcr;
+        uint8_t next_fcr;
+        unsigned discarded;
+    } cases[] = {
+        { 0x07, 0x03, 16 },
+        { 0x07, 0x00, 16 },
+        { 0x00, 0x01, 1 },
+    };
+
+    for (size_t n = 0; n < ARRAY_SIZE(cases); n++) {
+        qtest_outb(qts, 0x2fa, cases[n].initial_fcr);
+        for (unsigned i = 0; i < sizeof(ident) - 1; i++) {
+            qtest_outb(qts, 0x2f8, ident[i]);
+        }
+        g_assert_cmphex(qtest_inb(qts, 0x2fd) & 0x03, ==, 1);
+        qtest_outb(qts, 0x2fa, cases[n].next_fcr);
+        g_string_truncate(response, 0);
+        while (qtest_inb(qts, 0x2fd) & 1) {
+            g_assert_cmpuint(response->len, <, sizeof(full_reply));
+            g_string_append_c(response, qtest_inb(qts, 0x2f8));
+        }
+        g_assert_cmpstr(response->str, ==, full_reply + cases[n].discarded);
+    }
+
     g_string_free(response, true);
     qtest_quit(qts);
 }
