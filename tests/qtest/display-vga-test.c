@@ -579,6 +579,85 @@ static void test_cirrus_pci_legacy_decode(void)
     qtest_quit(qts);
 }
 
+static void test_gd5446_revision(gconstpointer opaque)
+{
+    bool rev_a = GPOINTER_TO_INT(opaque);
+    const char *model = rev_a ? "gd5446a-pci" : "gd5446b-pci";
+    const uint32_t config = 0x80002000U;
+    const uint32_t lfb = 0xe0000000U;
+    const uint32_t mmio = 0xe2000000U;
+    const uint32_t dst = lfb + 0x100;
+    const uint32_t source = rev_a ? 0xbc000 : lfb + 0x1000000;
+    QTestState *qts = qtest_initf("-M pc -device %s,addr=4,romfile=", model);
+
+    qtest_outl(qts, 0xcf8, config);
+    g_assert_cmphex(qtest_inl(qts, 0xcfc), ==, 0x00b81013);
+    cirrus_pci_command(qts, config, 0);
+
+    /* Both chips share the device ID, but expose different PCI resources. */
+    qtest_outl(qts, 0xcf8, config | 0x10);
+    qtest_outl(qts, 0xcfc, 0xffffffff);
+    g_assert_cmphex(qtest_inl(qts, 0xcfc), ==,
+                    rev_a ? 0xff000008 : 0xfe000008);
+    qtest_outl(qts, 0xcfc, lfb);
+    qtest_outl(qts, 0xcf8, config | 0x14);
+    qtest_outl(qts, 0xcfc, 0xffffffff);
+    g_assert_cmphex(qtest_inl(qts, 0xcfc), ==,
+                    rev_a ? 0 : 0xfffff000);
+    qtest_outl(qts, 0xcfc, mmio);
+    qtest_outl(qts, 0xcf8, config | 0x18);
+    qtest_outl(qts, 0xcfc, 0xffffffff);
+    g_assert_cmphex(qtest_inl(qts, 0xcfc), ==, 0);
+    if (rev_a) {
+        qtest_outl(qts, 0xcf8, config | 0x2c);
+        g_assert_cmphex(qtest_inl(qts, 0xcfc), ==, 0);
+    }
+
+    cirrus_pci_command(qts, config, 3);
+    qtest_outb(qts, VGA_MIS_W, VGA_MIS_COLOR | VGA_MIS_ENB_MEM_ACCESS);
+    vga_seq_write(qts, 0x06, 0x12);
+    g_assert_cmphex(vga_crtc_read(qts, 0x27), ==, 0xb8);
+    vga_seq_write(qts, 0x07, 1);
+    vga_gfx_write(qts, 0x0b, 0);
+    if (rev_a) {
+        /* A's optional legacy MMIO window aliases every 256 bytes. */
+        vga_seq_write(qts, 0x17, 4);
+        qtest_writeb(qts, 0xb8104, 0x77);
+        g_assert_cmphex(vga_gfx_read(qts, 1), ==, 0x77);
+        vga_seq_write(qts, 0x17, 0);
+    } else {
+        /* B exposes relocated VGA/DAC ports in BAR1. */
+        qtest_writeb(qts, mmio + 6, 0x5a);
+        g_assert_cmphex(qtest_inb(qts, VGA_PEL_MSK), ==, 0x5a);
+        qtest_outb(qts, VGA_PEL_MSK, 0xff);
+    }
+
+    /* 32-pixel color expansion, alternate source selected via GR31[6]. */
+    vga_gfx_write(qts, 0, 0x11);
+    vga_gfx_write(qts, 1, 0x77);
+    vga_gfx_write(qts, 0x20, 31);
+    vga_gfx_write(qts, 0x22, 0);
+    vga_gfx_write(qts, 0x24, 32);
+    vga_gfx_write(qts, 0x29, 1);
+    vga_gfx_write(qts, 0x30, 0x84);
+    vga_gfx_write(qts, 0x32, 0x0d);
+    vga_gfx_write(qts, 0x33, 1);
+    vga_gfx_write(qts, 0x31, 0x42);
+    g_assert_cmphex(vga_gfx_read(qts, 0x31) & 1, ==, 1);
+
+    /* Framebuffer writes must not be mistaken for the BitBLT source. */
+    qtest_writel(qts, lfb + 0x200, 0x5a5a5a5aU);
+    g_assert_cmphex(qtest_readb(qts, lfb + 0x200), ==, 0x5a);
+    g_assert_cmphex(vga_gfx_read(qts, 0x31) & 1, ==, 1);
+    qtest_writel(qts, source, 0xffffffffU);
+    g_assert_cmphex(vga_gfx_read(qts, 0x31) & 1, ==, 0);
+    for (unsigned i = 0; i < 32; i++) {
+        g_assert_cmphex(qtest_readb(qts, dst + i), ==, 0x77);
+    }
+
+    qtest_quit(qts);
+}
+
 static void test_cirrus_pci_dword_expand(void)
 {
     const uint32_t config = 0x80000000U | (5U << 11);
@@ -926,6 +1005,18 @@ int main(int argc, char **argv)
             qtest_add_data_func("/display/pci/cirrus-gd5430-1mb",
                                 GUINT_TO_POINTER(1),
                                 test_cirrus_named_pci_profile);
+        }
+        if (qtest_has_device("gd5446a-pci")) {
+            qtest_add_data_func("/display/pci/cirrus-gd5446a-revision",
+                                GINT_TO_POINTER(1), test_gd5446_revision);
+            qtest_add_data_func("/display/pci/cirrus-gd5446a-identity",
+                                "gd5446a-pci", test_cirrus_pci_identity);
+        }
+        if (qtest_has_device("gd5446b-pci")) {
+            qtest_add_data_func("/display/pci/cirrus-gd5446b-revision",
+                                GINT_TO_POINTER(0), test_gd5446_revision);
+            qtest_add_data_func("/display/pci/cirrus-gd5446b-identity",
+                                "gd5446b-pci", test_cirrus_pci_identity);
         }
         if (qtest_has_device("gd5446-pci")) {
             qtest_add_func("/display/pci/cirrus-gd5446-dac-sequence",
