@@ -370,7 +370,14 @@ BitBLT. While suspended, primary framebuffer writes bypass the host
 source FIFO and the status register reports the operation as suspended
 rather than busy. Clearing the pause bit resumes the existing transfer
 without discarding buffered source bytes. The alternate PCI source
-aperture does not consume source data while suspended. See TRM 5.10 and
+aperture does not consume source data while suspended. Revision B keeps
+host source writes together through each DWORD bus transaction: byte-packed
+color expansion carries remaining bytes into subsequent rows, but discards
+unused bytes after the last row rather than writing them to the framebuffer.
+Native, banked and swapped source paths use the same bounded byte feeder.
+Incomplete destination pixels in host color expansion are rejected until
+partial-pixel rendering is supported. The 8 KiB source line buffer is
+unchanged. See TRM 5.10, 9.4.5 and
 9.4.4.3. This supports concurrent framebuffer and accelerator access
 used by Windows display drivers. Buffered BitBLT commands, the GR2F
 source DWORD offset and hardware page-switch synchronization remain
