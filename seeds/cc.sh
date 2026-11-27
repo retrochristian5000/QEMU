@@ -23,6 +23,7 @@ while [ -L "$seed_entry" ]; do
 done
 seed_root=$(CDPATH= cd -P -- "${seed_entry%/*}/.." && pwd -P) || exit 1
 . "$seed_root/scripts/whp-build/compiler-seed-common.sh"
+. "$seed_root/scripts/whp-build/compiler-seed-session.sh"
 select_cc()
 {
     for value in "${WHP_CC_SEED:-}" "${CC_FOR_BUILD:-}"; do
@@ -66,8 +67,13 @@ select_cc()
     return 1
 }
 
+select_cc_for_build()
+{
+    whp_cc_session_lookup || select_cc
+}
+
 case "${1:-}" in
-    --print-cc|--print-seed) select_cc; exit $? ;;
+    --print-cc|--print-seed) select_cc_for_build; exit $? ;;
     --check)
         compiler=$(select_cc) || exit 1
         identity=$(whp_native_compiler_identity "$compiler" c)
@@ -75,7 +81,7 @@ case "${1:-}" in
         exit 0 ;;
     --print-cxx|--check-cxx|--cxx) echo "error: use cxx.sh for C++" >&2; exit 2 ;;
 esac
-compiler=$(select_cc)
+compiler=$(select_cc_for_build)
 # The compiler's real invocation must match the target-clean admission probe.
 whp_native_target_environment
 if [ "$(uname -s 2>/dev/null || true)" = Darwin ]; then
