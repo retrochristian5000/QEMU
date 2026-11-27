@@ -29,6 +29,7 @@
 #include "qemu/error-report.h"
 #include "qemu/option.h"
 #include "qemu/units.h"
+#include "qemu/datadir.h"
 #include "hw/core/sysbus.h"
 #include "hw/i386/x86.h"
 #include "hw/i386/pc.h"
