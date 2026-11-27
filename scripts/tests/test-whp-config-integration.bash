@@ -22,6 +22,8 @@ cp "$ROOT/scripts/whp-build/seed-bin/awk" \
    "$COPY/scripts/whp-build/seed-bin/awk"
 cp "$ROOT/scripts/whp-build/compiler-seed-common.sh" \
    "$COPY/scripts/whp-build/compiler-seed-common.sh"
+cp "$ROOT/scripts/whp-build/compiler-seed-session.sh" \
+   "$COPY/scripts/whp-build/compiler-seed-session.sh"
 cp "$ROOT/scripts/whp-build/macos-developer-tools.sh" \
    "$COPY/scripts/whp-build/macos-developer-tools.sh"
 cp "$ROOT/scripts/whp-build/gnu-make.bash" \
