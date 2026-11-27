@@ -35,7 +35,8 @@ grep -q 'llvm-objcopy' "$bootstrap"
 grep -q 'llvm-objdump' "$bootstrap"
 grep -q 'llvm-strip' "$bootstrap"
 grep -q -- '--version' "$bootstrap"
-grep -Fq -- 'BOOTSTRAP_SCHEMA=15' "$bootstrap"
+grep -Fq -- 'BOOTSTRAP_SCHEMA=16' "$bootstrap"
+grep -Fq -- 'COMPANION_TARGET=i586-none-elf' "$bootstrap"
 grep -Fq -- 'COMPILER_ABI=seabios-gcc-i386-v1' "$bootstrap"
 grep -Fq -- 'CC_COMPAT_HELPER=' "$bootstrap"
 grep -Fq -- 'cp "$CC_COMPAT_HELPER" "$bin/$TOOLCHAIN_TARGET-gcc"' "$bootstrap"
@@ -55,7 +56,7 @@ fi
 
 # A cached compiler must compile a real i386 translation unit before reuse.
 # This catches frontend/backend verifier skew that --version cannot expose.
-grep -Fq -- '"$prefix/llvm/bin/clang" --target="$TOOLCHAIN_TARGET"' "$bootstrap"
+grep -Fq -- '"$clang" --target="$TOOLCHAIN_TARGET"' "$bootstrap"
 grep -Fq -- '-x c -c - -o /dev/null' "$bootstrap"
 
 # Preserve the generated LLVM graph across ordinary rebuilds. CMake updates the
@@ -130,7 +131,8 @@ grep -Fq '[submodule "roms/seabios"]' "$gitmodules"
 grep -Fq 'url = https://github.com/retrochristian5000/X86-Firmware.git' "$gitmodules"
 
 grep -q 'SEABIOS_CROSS_PREFIX' "$rom_makefile"
-grep -q 'CPP=$(SEABIOS_CROSS_PREFIX)cpp' "$rom_makefile"
+grep -Fq 'CPP=$(SEABIOS_BUILD_CROSS_PREFIX)cpp' "$rom_makefile"
+grep -Fq 'SEABIOS_I586_CROSS_PREFIX' "$rom_makefile"
 grep -q 'SEABIOS_BUILD_ROOT' "$rom_makefile"
 if grep -q 'seabios/builds' "$rom_makefile"; then
     printf 'SeaBIOS build state must not be written inside the submodule\n' >&2
