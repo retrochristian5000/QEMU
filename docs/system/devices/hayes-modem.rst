@@ -111,6 +111,23 @@ The 3740 accepts ``%B28800``; the 3711 rejects that rate. Both accept
 ``\N7`` and reject ``\N8``. The generic Hayes and Rockwell profiles do
 not acquire these Paradyne-specific commands.
 
+At 300 bit/s, ATB0%B300 requests V.21 and ATB1%B300 requests Bell
+103. B0/B1 follow the related Rockwell RC288ACx reference manual 1048
+(section 3.2.1); B1 is the US reference default, not a verified 3740
+firmware default. The B setting is saved with the other profile fields.
+AT&V reports the requested 300 bit/s modulation, not an established
+physical link. Other B-command effects and S27 mapping are unverified.
+
+The separate modem-v21 module implements phase-continuous 300 bit/s
+binary FSK generation at 9600 PCM samples/s, and tone classification
+of already symbol-aligned windows. Channel 1 uses 980/1180 Hz
+(mark/space), and channel 2 uses 1650/1850 Hz. Reference: ITU-T V.21
+(1988), https://www.itu.int/rec/T-REC-V.21-198811-I and RFC 4734.
+It is not connected to the TCP byte transport, audio hardware or SIP.
+Carrier acquisition, timing recovery, call establishment, physical
+line levels and asynchronous framing remain unimplemented. Bell 103
+waveforms and T.30 fax framing are separate future work.
+
 The auto-reliable settings are included in AT&V and saved profiles.
 They are manufacturer-specific controls related to error correction,
 not AT commands defined by ITU-T V.42. The historical reference is

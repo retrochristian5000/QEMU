@@ -33,6 +33,7 @@ system_ss.add(files(
     'char-hmp-cmds.c',
     'modem.c',
     'modem-models.c',
+    'modem-v21.c',
     'msmouse.c',
     'wctablet.c',
     'testdev.c'))

@@ -7,6 +7,8 @@
  */
 
 #include "qemu/osdep.h"
+#include <math.h>
+#include "chardev/modem-v21.h"
 #include "qapi/error.h"
 #include "qemu/config-file.h"
 #include "qemu/module.h"
@@ -486,6 +488,73 @@ static void test_dataport_reliability_config(gconstpointer opaque)
     qemu_modem_hardware_reset(chr);
     assert_response_contains(modem_command(&fe, &out, "AT&V\r"),
                              "\\C2 %A0");
+    modem_frontend_cleanup(&fe, chr);
+}
+
+static void test_v21_signals(void)
+{
+    const unsigned frequencies[2][2] = { { 1180, 980 }, { 1850, 1650 } };
+    const bool bits[] = { 1, 0, 1, 1, 0, 0, 1 };
+    int16_t samples[MODEM_V21_SAMPLES_PER_BIT];
+
+    for (unsigned ch = 0; ch < 2; ch++) {
+        ModemV21Tx tx;
+        double phase = 0;
+
+        modem_v21_tx_init(&tx, ch);
+        for (unsigned b = 0; b < ARRAY_SIZE(bits); b++) {
+            double step = 2 * M_PI * frequencies[ch][bits[b]] / 9600;
+
+            modem_v21_tx_bit(&tx, bits[b], samples);
+            for (unsigned i = 0; i < ARRAY_SIZE(samples); i++) {
+                /* Independent reference waveform including phase continuity. */
+                int expected = lrint(12000 * sin(phase));
+
+                g_assert_cmpint(abs(samples[i] - expected), <=, 1);
+                phase += step;
+            }
+            g_assert_cmpint(modem_v21_rx_bit(ch, samples), ==, bits[b]);
+        }
+        for (unsigned bit = 0; bit < 2; bit++) {
+            for (unsigned shift = 0; shift < 8; shift++) {
+                for (unsigned i = 0; i < ARRAY_SIZE(samples); i++) {
+                    samples[i] = lrint(8000 * sin(shift * M_PI / 4 +
+                        2 * M_PI * frequencies[ch][bit] * i / 9600));
+                }
+                g_assert_cmpint(modem_v21_rx_bit(ch, samples), ==, bit);
+            }
+        }
+        memset(samples, 0, sizeof(samples));
+        g_assert_cmpint(modem_v21_rx_bit(ch, samples), ==, -1);
+    }
+}
+
+static void test_dataport_v21_selection(gconstpointer opaque)
+{
+    ModemOutput out = { 0 };
+    CharFrontend fe = { 0 };
+    Chardev *chr = modem_new("modem-v21-selection", opaque);
+
+    modem_frontend_init(&fe, &out, chr);
+    assert_response_contains(modem_command(&fe, &out, "ATB0%B300&W0\r"),
+                             "\r\nOK\r\n");
+    assert_response_contains(modem_command(&fe, &out, "AT&V\r"),
+                             "REQUESTED MODULATION: V.21");
+    assert_response_contains(modem_command(&fe, &out, "ATB2\r"),
+                             "\r\nERROR\r\n");
+    assert_response_contains(modem_command(&fe, &out, "AT&V\r"),
+                             "REQUESTED MODULATION: V.21");
+    assert_response_contains(modem_command(&fe, &out, "ATB1&W1&Y1\r"),
+                             "\r\nOK\r\n");
+    assert_response_contains(modem_command(&fe, &out, "AT&V\r"),
+                             "REQUESTED MODULATION: BELL 103");
+    assert_response_contains(modem_command(&fe, &out, "ATZ\r"),
+                             "\r\nOK\r\n");
+    assert_response_contains(modem_command(&fe, &out, "AT&V\r"),
+                             "REQUESTED MODULATION: V.21");
+    qemu_modem_hardware_reset(chr);
+    assert_response_contains(modem_command(&fe, &out, "AT&V\r"),
+                             "REQUESTED MODULATION: BELL 103");
     modem_frontend_cleanup(&fe, chr);
 }
 
@@ -1181,6 +1250,12 @@ int main(int argc, char **argv)
     g_test_add_data_func("/modem/paradyne/reliability-config-3740",
                          "att-paradyne-3740",
                          test_dataport_reliability_config);
+    g_test_add_func("/modem/v21/signals", test_v21_signals);
+    g_test_add_data_func("/modem/paradyne/v21-selection-3711",
+                         "att-paradyne-dataport-3711",
+                         test_dataport_v21_selection);
+    g_test_add_data_func("/modem/paradyne/v21-selection-3740",
+                         "att-paradyne-3740", test_dataport_v21_selection);
     g_test_add_data_func("/modem/paradyne/break-config-3711",
                          "att-paradyne-dataport-3711",
                          test_dataport_break_config);

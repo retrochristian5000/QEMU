@@ -87,6 +87,7 @@ typedef struct ModemStoredProfile {
     int x_mode;
     int w_mode;
     int reliable_mode;
+    bool bell_modulation;
     int auto_reliable_buffer;
     int auto_reliable_fallback;
     int flow_control_mode;
@@ -139,6 +140,7 @@ struct ModemChardev {
     int x_mode;
     int w_mode;
     int reliable_mode;
+    bool bell_modulation;
     int auto_reliable_buffer;
     int auto_reliable_fallback;
     int flow_control_mode;
@@ -476,6 +478,7 @@ static void modem_model_defaults(ModemChardev *modem)
     modem->w_mode = 1;
     /* These are requested settings; no analogue negotiation is simulated. */
     modem->reliable_mode = modem->model->paradyne_commands ? 6 : 0;
+    modem->bell_modulation = true; /* US Rockwell reference default. */
     modem->auto_reliable_buffer = 0;
     modem->auto_reliable_fallback = 19;
     modem->flow_control_mode = modem->model->paradyne_commands ? 3 : 0;
@@ -529,6 +532,7 @@ static void modem_store_profile(ModemChardev *modem, unsigned index)
     profile->x_mode = modem->x_mode;
     profile->w_mode = modem->w_mode;
     profile->reliable_mode = modem->reliable_mode;
+    profile->bell_modulation = modem->bell_modulation;
     profile->auto_reliable_buffer = modem->auto_reliable_buffer;
     profile->auto_reliable_fallback = modem->auto_reliable_fallback;
     profile->flow_control_mode = modem->flow_control_mode;
@@ -555,6 +559,7 @@ static void modem_restore_profile(ModemChardev *modem, unsigned index)
     modem->x_mode = profile->x_mode;
     modem->w_mode = profile->w_mode;
     modem->reliable_mode = profile->reliable_mode;
+    modem->bell_modulation = profile->bell_modulation;
     modem->auto_reliable_buffer = profile->auto_reliable_buffer;
     modem->auto_reliable_fallback = profile->auto_reliable_fallback;
     modem->flow_control_mode = profile->flow_control_mode;
@@ -686,6 +691,14 @@ static void modem_report_profile(ModemChardev *modem)
                                modem->auto_reliable_buffer,
                                modem->auto_reliable_fallback);
         modem_queue_line(modem, line);
+        g_clear_pointer(&line, g_free);
+        line = g_strdup_printf("B%d", modem->bell_modulation);
+        modem_queue_line(modem, line);
+        if (modem->connect_speed == 300) {
+            modem_queue_line(modem, modem->bell_modulation ?
+                             "REQUESTED MODULATION: BELL 103" :
+                             "REQUESTED MODULATION: V.21");
+        }
         if (modem->model->dataport_3740_line) {
             g_clear_pointer(&line, g_free);
             line = g_strdup_printf("%%M%d %%B%s%d S76:%03d S78:%03d",
@@ -1302,6 +1315,15 @@ static void modem_execute_command(ModemChardev *modem, const char *input)
             }
             return;
         case 'B':
+            value = modem_parse_number(&p, 0);
+            if (modem->model->paradyne_commands) {
+                if (value > 1) {
+                    modem_result(modem, MODEM_RESULT_ERROR);
+                    return;
+                }
+                modem->bell_modulation = value == 1;
+            }
+            break;
         case 'L':
         case 'M':
         case 'N':

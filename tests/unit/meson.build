@@ -210,6 +210,7 @@ if have_system
           'test-modem-voice': [
             meson.project_source_root() / 'chardev/modem.c',
             meson.project_source_root() / 'chardev/modem-models.c',
+            meson.project_source_root() / 'chardev/modem-v21.c',
             qom,
             io,
             chardev,
