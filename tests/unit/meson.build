@@ -30,6 +30,7 @@ tests = {
   'test-isa-dma-transfer': [],
   'test-mcs51': [meson.project_source_root() / 'hw/cpu/mcs51.c'],
   'test-ct1745-pcm': [meson.project_source_root() / 'hw/audio/ct1745-mixer.c'],
+  'test-ct1741-dac': [meson.project_source_root() / 'hw/audio/ct1741-dsp.c'],
   'test-modem-v42bis': [meson.project_source_root() / 'chardev/modem-v42bis.c'],
   'test-div128': [],
   'test-shift128': [],

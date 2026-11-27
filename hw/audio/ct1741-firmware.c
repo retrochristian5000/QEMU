@@ -17,6 +17,8 @@ struct CT1741Firmware {
     bool reset;
     bool fault;
     bool input_ready;
+    bool completion_enabled;
+    bool processing;
     bool output_full;
     uint8_t input;
     uint8_t output;
@@ -40,6 +42,7 @@ static uint8_t xread(void *opaque, uint16_t addr)
 
     if (addr == 0 && s->input_ready) {
         s->input_ready = false;
+        s->processing = s->completion_enabled;
         return s->input;
     }
     return 0xff;
@@ -52,6 +55,12 @@ static void xwrite(void *opaque, uint16_t addr, uint8_t value)
     if (addr == 0 && !s->output_full) {
         s->output = value;
         s->output_full = true;
+    } else if (addr == 0x0105) {
+        if (value == 0xa5) {
+            s->completion_enabled = true;
+        } else if (value == 0 && s->completion_enabled) {
+            s->processing = false;
+        }
     } else if (addr >= 0x0101 && addr <= 0x0104) {
         unsigned int index = addr - 0x0101;
 
@@ -160,6 +169,8 @@ void ct1741_fw_reset(CT1741Firmware *s, bool asserted)
         s->input = 0;
         s->output = 0xff;
         s->fault = false;
+        s->completion_enabled = false;
+        s->processing = false;
         s->args_written = 0;
         memset(s->args, 0, sizeof(s->args));
     } else if (s->reset) {
@@ -188,7 +199,7 @@ uint8_t ct1741_fw_read(CT1741Firmware *s)
 
 bool ct1741_fw_busy(CT1741Firmware *s)
 {
-    return s->reset || s->fault || s->input_ready;
+    return s->reset || s->fault || s->input_ready || s->processing;
 }
 
 bool ct1741_fw_ready(CT1741Firmware *s)

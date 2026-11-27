@@ -17,6 +17,7 @@ enum {
     CT1741_ACTION_SPEAKER,
     CT1741_ACTION_IRQ,
     CT1741_ACTION_DMA_ID,
+    CT1741_ACTION_DIRECT_DAC,
 };
 typedef void (*CT1741Action)(void *opaque, uint8_t action,
                              const uint8_t args[4]);

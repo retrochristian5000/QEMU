@@ -78,6 +78,8 @@ struct SB16State {
     char *dsp_firmware;
     char *dsp_cpu;
     CT1741Firmware *firmware;
+    CT1741DAC direct_dac;
+    bool direct_active;
     IsaDma *isa_dma;
     IsaDma *isa_hdma;
 
@@ -325,8 +327,49 @@ static void ct1741_compat_dma_id(SB16State *s, uint8_t challenge)
     ct1741_request_dma_id(s, s->dma_id_value);
 }
 
+static void ct1741_stop_direct(SB16State *s)
+{
+    if (s->direct_active) {
+        s->direct_active = false;
+        audio_be_set_active_out(s->audio_be, s->voice, false);
+        ct1741_dac_reset(&s->direct_dac, 0, 0x80);
+    }
+}
+
+static void ct1741_direct_write(SB16State *s, uint8_t sample)
+{
+    int64_t now = qemu_clock_get_ns(QEMU_CLOCK_VIRTUAL);
+    struct audsettings as = {
+        .freq = CT1741_DAC_RATE,
+        .nchannels = 2,
+        .fmt = AUDIO_FORMAT_S16,
+        .big_endian = false,
+    };
+
+    if (s->dma_running || s->dma_paused || s->dma_id_pending) {
+        qemu_log_mask(LOG_GUEST_ERROR,
+                      "sb16: direct DAC requires idle DMA\n");
+        return;
+    }
+    if (!s->direct_active) {
+        s->voice = audio_be_open_out(s->audio_be, s->voice, "sb16",
+                                     s, SB_audio_callback, &as);
+        if (!s->voice) {
+            qemu_log_mask(LOG_GUEST_ERROR,
+                          "sb16: unable to open direct DAC voice\n");
+            return;
+        }
+        ct1741_dac_reset(&s->direct_dac, now, sample);
+        s->direct_active = true;
+        audio_be_set_active_out(s->audio_be, s->voice, true);
+    } else {
+        ct1741_dac_write(&s->direct_dac, now, sample);
+    }
+}
+
 static void ct1741_stop_previous_dma(SB16State *s)
 {
+    ct1741_stop_direct(s);
     ct1741_cancel_dma_id(s);
     if (s->dma_running) {
         control(s, 0);
@@ -616,6 +659,9 @@ static void sb16_firmware_action(void *opaque, uint8_t action,
             return;
         }
         break;
+    case CT1741_ACTION_DIRECT_DAC:
+        ct1741_direct_write(s, cmd);
+        return;
     case CT1741_ACTION_DMA_ID:
         ct1741_request_dma_id(s, cmd);
         return;
@@ -708,6 +754,9 @@ static void command (SB16State *s, uint8_t cmd)
 
         case 0x10:
             s->needed_bytes = 1;
+            if (s->legacy_board) {
+                break;
+            }
             goto warn;
 
         case 0x14:
@@ -1027,7 +1076,11 @@ static void complete (SB16State *s)
 
         case 0x10:
             d0 = dsp_get_data (s);
-            warn_report("sb16: cmd 0x10 d0=0x%x", d0);
+            if (s->legacy_board) {
+                ct1741_direct_write(s, d0);
+            } else {
+                warn_report("sb16: cmd 0x10 d0=0x%x", d0);
+            }
             break;
 
         case 0x14:
@@ -1177,6 +1230,7 @@ static void legacy_reset (SB16State *s)
 static void reset (SB16State *s)
 {
     if (s->legacy_board) {
+        ct1741_stop_direct(s);
         ct1741_cancel_dma_id(s);
         s->dma_id_value = 0xaa;
         s->dma_id_mask = 0x96;
@@ -1699,6 +1753,31 @@ static int SB_read_DMA (void *opaque, int nchan, int dma_pos, int dma_len)
 static void SB_audio_callback (void *opaque, int free)
 {
     SB16State *s = opaque;
+
+    if (s->direct_active) {
+        uint8_t rendered[4096];
+        size_t credit = MAX(free, 0) / 4;
+
+        ct1741_dac_advance(&s->direct_dac,
+                          qemu_clock_get_ns(QEMU_CLOCK_VIRTUAL));
+        while (credit && s->direct_dac.count) {
+            const uint8_t *samples;
+            size_t frames = ct1741_dac_peek(&s->direct_dac, &samples);
+            size_t bytes, written;
+
+            frames = MIN(MIN(frames, credit), sizeof(rendered) / 4);
+            bytes = ct1745_pcm_render(s->mixer_regs, samples, frames,
+                                      false, false, false, rendered);
+            written = MIN(audio_be_write(s->audio_be, s->voice,
+                                         rendered, bytes), bytes) / 4;
+            ct1741_dac_consume(&s->direct_dac, written);
+            credit -= written;
+            if (written < frames) {
+                break;
+            }
+        }
+        return;
+    }
     if (s->legacy_board) {
         /* Backend credit is in stereo S16 bytes, not ISA DMA bytes. */
         s->audio_free = MAX(0, free) / 4 * (s->align + 1);
@@ -1936,6 +2015,7 @@ static void sb16_unrealize(DeviceState *dev)
 {
     SB16State *s = SB16(dev);
 
+    ct1741_stop_direct(s);
     ct1741_cancel_dma_id(s);
     ct1741_fw_free(s->firmware);
     s->firmware = NULL;
