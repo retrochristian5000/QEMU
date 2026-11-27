@@ -731,10 +731,10 @@ static int ps2_mouse_send_packet(PS2MouseState *s)
         s->mouse_dw = 0;
         break;
     case 3:
-        if (dz1 > 127) {
-            dz1 = 127;
-        } else if (dz1 < -127) {
-            dz1 = -127;
+        if (s->profile == PS2_MOUSE_PROFILE_INTELLIMOUSE) {
+            dz1 = CLAMP(dz1, -8, 7);
+        } else {
+            dz1 = CLAMP(dz1, -127, 127);
         }
         ps2_queue_noirq(ps2, dz1 & 0xff);
         s->mouse_dz -= dz1;
@@ -923,7 +923,11 @@ void ps2_write_mouse(PS2MouseState *s, int val)
         case AUX_GET_SCALE:
             ps2_queue_4(ps2,
                 AUX_ACK,
-                s->mouse_status,
+                s->mouse_status |
+                (s->profile != PS2_MOUSE_PROFILE_GENERIC ?
+                 ((s->mouse_buttons & PS2_MOUSE_BUTTON_LEFT) << 2) |
+                 ((s->mouse_buttons & PS2_MOUSE_BUTTON_MIDDLE) >> 1) |
+                 ((s->mouse_buttons & PS2_MOUSE_BUTTON_RIGHT) >> 1) : 0),
                 s->mouse_resolution,
                 s->mouse_sample_rate);
             break;
@@ -943,6 +947,9 @@ void ps2_write_mouse(PS2MouseState *s, int val)
             s->mouse_sample_rate = 100;
             s->mouse_resolution = 2;
             s->mouse_status = 0;
+            if (s->profile != PS2_MOUSE_PROFILE_GENERIC) {
+                s->mouse_detect_state = 0;
+            }
             ps2_queue(ps2, AUX_ACK);
             break;
         case AUX_RESET:
@@ -971,7 +978,20 @@ void ps2_write_mouse(PS2MouseState *s, int val)
         }
         break;
     case AUX_SET_SAMPLE:
+        if (s->profile != PS2_MOUSE_PROFILE_GENERIC &&
+            val != 10 && val != 20 && val != 40 && val != 60 &&
+            val != 80 && val != 100 && val != 200) {
+            ps2_queue(ps2, AUX_RESEND);
+            s->mouse_detect_state = 0;
+            break;
+        }
         s->mouse_sample_rate = val;
+        if (s->profile == PS2_MOUSE_PROFILE_MICROSOFT) {
+            s->mouse_detect_state = 0;
+            ps2_queue(ps2, AUX_ACK);
+            ps2->write_cmd = -1;
+            break;
+        }
         /* detect IMPS/2 or IMEX */
         switch (s->mouse_detect_state) {
         default:
@@ -996,7 +1016,7 @@ void ps2_write_mouse(PS2MouseState *s, int val)
             s->mouse_detect_state = 0;
             break;
         case 3:
-            if (val == 80) {
+            if (val == 80 && s->profile == PS2_MOUSE_PROFILE_GENERIC) {
                 s->mouse_type = 4; /* IMEX */
             }
             s->mouse_detect_state = 0;
@@ -1006,6 +1026,10 @@ void ps2_write_mouse(PS2MouseState *s, int val)
         ps2->write_cmd = -1;
         break;
     case AUX_SET_RES:
+        if (s->profile != PS2_MOUSE_PROFILE_GENERIC && (val < 0 || val > 3)) {
+            ps2_queue(ps2, AUX_RESEND);
+            break;
+        }
         s->mouse_resolution = val;
         ps2_queue(ps2, AUX_ACK);
         ps2->write_cmd = -1;
@@ -1083,8 +1107,8 @@ static void ps2_mouse_reset_hold(Object *obj, ResetType type)
     }
 
     s->mouse_status = 0;
-    s->mouse_resolution = 0;
-    s->mouse_sample_rate = 0;
+    s->mouse_resolution = s->profile == PS2_MOUSE_PROFILE_GENERIC ? 0 : 2;
+    s->mouse_sample_rate = s->profile == PS2_MOUSE_PROFILE_GENERIC ? 0 : 100;
     s->mouse_wrap = 0;
     s->mouse_type = 0;
     s->mouse_detect_state = 0;
@@ -1210,6 +1234,11 @@ static int ps2_mouse_post_load(void *opaque, int version_id)
     PS2MouseState *s = (PS2MouseState *)opaque;
     PS2State *ps2 = PS2_DEVICE(s);
 
+    if ((s->profile == PS2_MOUSE_PROFILE_MICROSOFT && s->mouse_type != 0) ||
+        (s->profile == PS2_MOUSE_PROFILE_INTELLIMOUSE &&
+         s->mouse_type != 0 && s->mouse_type != 3)) {
+        return -EINVAL;
+    }
     ps2_common_post_load(ps2);
 
     return 0;

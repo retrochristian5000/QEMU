@@ -80,9 +80,16 @@ struct PS2KbdState {
 #define TYPE_PS2_KBD_DEVICE "ps2-kbd"
 OBJECT_DECLARE_SIMPLE_TYPE(PS2KbdState, PS2_KBD_DEVICE)
 
+typedef enum PS2MouseProfile {
+    PS2_MOUSE_PROFILE_GENERIC = 0,
+    PS2_MOUSE_PROFILE_MICROSOFT,
+    PS2_MOUSE_PROFILE_INTELLIMOUSE,
+} PS2MouseProfile;
+
 struct PS2MouseState {
     PS2State parent_obj;
 
+    PS2MouseProfile profile; /* Fixed configuration, not guest state. */
     uint8_t mouse_status;
     uint8_t mouse_resolution;
     uint8_t mouse_sample_rate;

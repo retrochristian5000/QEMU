@@ -873,6 +873,18 @@ static void i8042_realizefn(DeviceState *dev, Error **errp)
         return;
     }
 
+    if (!isa_s->mouse_model || !strcmp(isa_s->mouse_model, "generic")) {
+        s->ps2mouse.profile = PS2_MOUSE_PROFILE_GENERIC;
+    } else if (!strcmp(isa_s->mouse_model, "microsoft-ps2")) {
+        s->ps2mouse.profile = PS2_MOUSE_PROFILE_MICROSOFT;
+    } else if (!strcmp(isa_s->mouse_model, "intellimouse")) {
+        s->ps2mouse.profile = PS2_MOUSE_PROFILE_INTELLIMOUSE;
+    } else {
+        error_setg(errp, "i8042: mouse-model must be generic, microsoft-ps2 "
+                   "or intellimouse");
+        return;
+    }
+
     isa_connect_gpio_out(isadev, I8042_KBD_IRQ, isa_s->kbd_irq);
     isa_connect_gpio_out(isadev, I8042_MOUSE_IRQ, isa_s->mouse_irq);
 
@@ -925,7 +937,14 @@ static void i8042_build_aml(AcpiDevAmlIf *adev, Aml *scope)
     aml_append(crs, aml_irq_no_flags(isa_s->mouse_irq));
 
     mou = aml_device("MOU");
-    aml_append(mou, aml_name_decl("_HID", aml_eisaid("PNP0F13")));
+    if (isa_s->kbd.ps2mouse.profile == PS2_MOUSE_PROFILE_MICROSOFT) {
+        aml_append(mou, aml_name_decl("_HID", aml_eisaid("PNP0F03")));
+        aml_append(mou, aml_name_decl("_CID", aml_eisaid("PNP0F13")));
+    } else {
+        /* Keep the established port identity for the generic and wheel
+         * profiles. Wheel support is detected by the actual mouse protocol. */
+        aml_append(mou, aml_name_decl("_HID", aml_eisaid("PNP0F13")));
+    }
     aml_append(mou, aml_name_decl("_STA", aml_int(0xf)));
     aml_append(mou, aml_name_decl("_CRS", crs));
 
@@ -938,6 +957,7 @@ static const Property i8042_properties[] = {
     DEFINE_PROP_BOOL("kbd-throttle", ISAKBDState, kbd_throttle, false),
     DEFINE_PROP_UINT8("kbd-irq", ISAKBDState, kbd_irq, 1),
     DEFINE_PROP_UINT8("mouse-irq", ISAKBDState, mouse_irq, 12),
+    DEFINE_PROP_STRING("mouse-model", ISAKBDState, mouse_model),
 };
 
 static void i8042_class_initfn(ObjectClass *klass, const void *data)

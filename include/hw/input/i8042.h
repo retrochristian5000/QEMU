@@ -58,6 +58,7 @@ struct ISAKBDState {
 
     KBDState kbd;
     bool kbd_throttle;
+    char *mouse_model;
     MemoryRegion io[2];
     uint8_t kbd_irq;
     uint8_t mouse_irq;

@@ -127,3 +127,42 @@ in that table can be summarized in this table:
 Not all dip switch values have a corresponding language code and both "be" and
 "nl-be" correspond to the same dip switch value. By default, if no value is
 given to escc.chnA-sunkbd-layout 0x21 (en-us) will be used.
+
+
+PC PS/2 mouse profiles
+---------------------
+
+The PC motherboard's i8042 auxiliary port accepts a fixed configuration
+property ``mouse-model``. It selects the protocol capabilities of the
+existing child rather than creating a second mouse or IRQ. For example::
+
+    -global i8042.mouse-model=microsoft-ps2
+
+* ``generic`` (default): preserves PNP0F13 and existing QEMU wheel/Explorer
+  negotiation and migration behavior.
+* ``microsoft-ps2``: experimental three-byte Microsoft PS/2 protocol
+  profile, with ACPI HID PNP0F03 and CID PNP0F13 on the same MOU device.
+  Wheel and Explorer negotiation do not change the device ID from zero.
+* ``intellimouse``: starts with device ID zero, negotiates ID 3 using
+  sample rates 200, 100, 80, and does not negotiate ID 4. Uses signed
+  four-bit wheel movement sign-extended to one byte. Retains the port
+  HID PNP0F13 because a specific IntelliMouse ACPI ID is not established.
+
+Both explicit profiles validate sample-rate and resolution parameters and
+report default settings on machine reset. Status requests include button
+state. They preserve the motherboard I/O addresses and IRQ assignments.
+Use identical profile settings at both ends of a migration; the profile
+is configuration, not a new field in the existing VMState format.
+These are protocol profiles, not cycle-accurate mouse firmware. Physical
+sample-rate pacing, resolution conversion, scaling of movement and resend
+history still require work. A Logitech PS/2++ identity is not implemented.
+The Microsoft-specific HID is opt-in because changing it in an installed
+guest may cause a new enumeration; the actual Windows 98 INF match and
+Device Manager label need guest verification. With ACPI disabled only
+protocol behavior changes. No SeaBIOS node is added.
+
+References:
+
+* https://sources.debian.org/src/pcmcia-cs/3.2.5-10/debug-tools/pnp.ids/
+* https://www.scs.stanford.edu/23wi-cs212/pintos/specs/kbd/scancodes-12.html
+* https://www.betaarchive.com/wiki/index.php?title=Microsoft_KB_Archive%2F132867

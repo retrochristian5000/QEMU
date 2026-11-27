@@ -523,11 +523,132 @@ static void test_serial_cid(gconstpointer opaque)
     qtest_quit(s);
 }
 
+typedef struct MouseProfileCase {
+    const char *model;
+    uint8_t wheel_id;
+    uint8_t explorer_id;
+    bool microsoft;
+} MouseProfileCase;
+
+static const MouseProfileCase mouse_profiles[] = {
+    { "generic", 3, 4, false },
+    { "microsoft-ps2", 0, 0, true },
+    { "intellimouse", 3, 3, false },
+};
+
+static void mouse_send(QTestState *s, uint8_t value)
+{
+    qtest_outb(s, 0x64, 0xd4);
+    qtest_outb(s, 0x60, value);
+}
+
+static uint8_t mouse_read(QTestState *s)
+{
+    g_assert_cmphex(qtest_inb(s, 0x64) & 0x21, ==, 0x21);
+    return qtest_inb(s, 0x60);
+}
+
+static void mouse_ack(QTestState *s, uint8_t value)
+{
+    mouse_send(s, value);
+    g_assert_cmphex(mouse_read(s), ==, 0xfa);
+}
+
+static void mouse_rate(QTestState *s, uint8_t value)
+{
+    mouse_ack(s, 0xf3);
+    mouse_ack(s, value);
+}
+
+static void test_mouse_profile(gconstpointer opaque)
+{
+    const MouseProfileCase *test = opaque;
+    QTestState *s = qtest_initf("-M pc,acpi=on,vmport=off -nodefaults "
+                               "-global i8042.mouse-model=%s", test->model);
+    QFWCFG *fw_cfg = pc_fw_cfg_init(s);
+    uint8_t first;
+    size_t len = qfw_cfg_get_file(fw_cfg, "etc/acpi/tables", &first, 1);
+    g_autofree uint8_t *tables = NULL;
+    const uint8_t identity[] = {
+        'M', 'O', 'U', '_', 0x08, '_', 'H', 'I', 'D', 0x0c,
+        0x41, 0xd0, 0x0f, test->microsoft ? 0x03 : 0x13,
+    };
+    const uint8_t cid[] = {
+        0x08, '_', 'C', 'I', 'D', 0x0c, 0x41, 0xd0, 0x0f, 0x13,
+    };
+    const uint8_t sta[] = { 0x08, '_', 'S', 'T', 'A' };
+    unsigned int matches = 0;
+
+    g_assert_cmpuint(len, >, sizeof(identity) + sizeof(cid) + sizeof(sta));
+    g_assert_cmpuint(len, <=, 16 * MiB);
+    tables = g_malloc(len);
+    g_assert_cmpuint(qfw_cfg_get_file(fw_cfg, "etc/acpi/tables",
+                                     tables, len), ==, len);
+    for (size_t j = 0; j + sizeof(identity) <= len; j++) {
+        size_t next;
+
+        if (memcmp(tables + j, identity, sizeof(identity))) {
+            continue;
+        }
+        matches++;
+        next = j + sizeof(identity);
+        if (test->microsoft) {
+            g_assert_cmpuint(len - next, >=, sizeof(cid));
+            g_assert_cmpmem(tables + next, sizeof(cid), cid, sizeof(cid));
+            next += sizeof(cid);
+        }
+        g_assert_cmpuint(len - next, >=, sizeof(sta));
+        g_assert_cmpmem(tables + next, sizeof(sta), sta, sizeof(sta));
+    }
+    g_assert_cmpuint(matches, ==, 1);
+    pc_fw_cfg_uninit(fw_cfg);
+
+    qtest_outb(s, 0x64, 0xa8);
+    mouse_ack(s, 0xff);
+    g_assert_cmphex(mouse_read(s), ==, 0xaa);
+    g_assert_cmphex(mouse_read(s), ==, 0);
+    mouse_rate(s, 200);
+    mouse_rate(s, 100);
+    mouse_rate(s, 80);
+    mouse_ack(s, 0xf2);
+    g_assert_cmphex(mouse_read(s), ==, test->wheel_id);
+    mouse_rate(s, 200);
+    mouse_rate(s, 200);
+    mouse_rate(s, 80);
+    mouse_ack(s, 0xf2);
+    g_assert_cmphex(mouse_read(s), ==, test->explorer_id);
+    if (strcmp(test->model, "generic")) {
+        mouse_ack(s, 0xf3);
+        mouse_send(s, 99);
+        g_assert_cmphex(mouse_read(s), ==, 0xfe);
+        mouse_ack(s, 100);
+        mouse_ack(s, 0xe8);
+        mouse_send(s, 4);
+        g_assert_cmphex(mouse_read(s), ==, 0xfe);
+        mouse_ack(s, 2);
+        mouse_ack(s, 0xe9);
+        g_assert_cmphex(mouse_read(s), ==, 0);
+        g_assert_cmphex(mouse_read(s), ==, 2);
+        g_assert_cmphex(mouse_read(s), ==, 100);
+    }
+    mouse_ack(s, 0xff);
+    g_assert_cmphex(mouse_read(s), ==, 0xaa);
+    g_assert_cmphex(mouse_read(s), ==, 0);
+    qtest_quit(s);
+}
+
 int main(int argc, char **argv)
 {
     g_test_init(&argc, &argv, NULL);
 
     qtest_add_func("fw_cfg/signature", test_fw_cfg_signature);
+    if (qtest_has_machine("pc") && qtest_has_device("i8042")) {
+        for (size_t j = 0; j < G_N_ELEMENTS(mouse_profiles); j++) {
+            g_autofree char *name = g_strdup_printf("fw_cfg/ps2-mouse/%s",
+                                                    mouse_profiles[j].model);
+            qtest_add_data_func(name, &mouse_profiles[j], test_mouse_profile);
+        }
+    }
     for (size_t i = 0; i < G_N_ELEMENTS(serial_cid_cases); i++) {
         const SerialCidCase *test = &serial_cid_cases[i];
 
