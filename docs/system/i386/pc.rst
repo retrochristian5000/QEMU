@@ -365,6 +365,19 @@ not constitute PC97 certification. Loading subsystem IDs from a physical
 board ROM, DAC shadowing and display power management are not implemented
 by this profile.
 
+Revision B provides a DDC2B monitor through SR8[6,1:0], with pin
+readback on SR8[7,2] as described in TRM section 8.3 and Appendix B8.
+The virtual analog VGA monitor at I2C address 0x50 uses the shared
+QEMU EDID generator (800x600 preferred at 60 Hz, maximum advertised
+resolution 1280x1024). Its single 128-byte EDID block is read by the
+Cirrus SeaVGABIOS at initialization; VBE 4F15h reports DDC2B and
+returns that validated block. EEPROM mode remains disconnected.
+No host monitor data is read. DDC1, E-DDC extension blocks, physical
+bus timing and hotplug refresh of the firmware's cached EDID are
+not implemented. Earlier Cirrus profiles keep their prior SR8
+behavior. The new monitor and bitbang migration state require
+cross-version migration testing before compatibility can be claimed.
+
 Revision B honors GR31[5] to suspend an in-progress system-to-screen
 BitBLT. While suspended, primary framebuffer writes bypass the host
 source FIFO and the status register reports the operation as suspended
