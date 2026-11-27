@@ -1228,7 +1228,7 @@ void pc_basic_device_init(struct PCMachineState *pcms,
 
         hpet = qdev_try_new(TYPE_HPET);
         if (!hpet) {
-            error_report("couldn't create HPET device");
+            error_report("HPET enabled but HPET support is unavailable");
             exit(1);
         }
         /*
@@ -1710,7 +1710,7 @@ static void pc_machine_set_hpet_mode(Object *obj, int value, Error **errp)
     pcms->hpet_enabled = value == ON_OFF_AUTO_ON ||
                          (value == ON_OFF_AUTO_AUTO &&
                           !PC_MACHINE_GET_CLASS(pcms)->laptop &&
-                         module_object_class_by_name(TYPE_HPET));
+                          module_object_class_by_name(TYPE_HPET));
 }
 
 static bool pc_machine_get_i8042(Object *obj, Error **errp)

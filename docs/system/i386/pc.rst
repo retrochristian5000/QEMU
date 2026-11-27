@@ -136,8 +136,8 @@ different socket configuration, disable automatic creation first::
 
 The floppy controller and HPET are off by default on the laptop.
 Explicit ``fdc=on`` restores the Intel 82078 controller; automatic
-mode also enables it when a legacy floppy drive is explicitly supplied. ``hpet=on`` restores the timer if built. The host
-battery remains opt-in and is never a prerequisite for running the
+mode also enables it when a legacy floppy drive is explicitly supplied.
+``hpet=on`` restores the timer if built. The host battery remains opt-in and is never a prerequisite for running the
 laptop profile on a desktop host::
 
     -machine laptop-pc,fdc=on -fda disk.img

@@ -1079,16 +1079,40 @@ static void test_pc_laptop_profile(gconstpointer opaque)
     qtest_quit(qts);
 }
 
+typedef struct PCHpetModeTest {
+    const char *machine;
+    const char *mode;
+    bool enabled;
+} PCHpetModeTest;
+
 static void test_pc_hpet_mode(gconstpointer opaque)
 {
-    const char *machine = opaque;
-    QTestState *qts = qtest_initf("-M %s -nodefaults", machine);
+    const PCHpetModeTest *profile = opaque;
+    QTestState *qts = qtest_initf("-M %s,hpet-mode=%s -nodefaults",
+                                 profile->machine, profile->mode);
     QDict *reply = qtest_qmp(qts, "{'execute':'qom-get','arguments':"
                                   "{'path':'/machine','property':'hpet'}}");
-    bool enabled = strstr(machine, "hpet-mode=on") != NULL;
+    g_autofree char *tree = NULL;
 
-    g_assert_cmpint(qdict_get_bool(reply, "return"), ==, enabled);
+    g_assert_cmpint(qdict_get_bool(reply, "return"), ==, profile->enabled);
     qobject_unref(reply);
+    reply = qtest_qmp(qts, "{'execute':'qom-get','arguments':"
+                          "{'path':'/machine','property':'hpet-mode'}}");
+    g_assert_cmpstr(qdict_get_str(reply, "return"), ==, profile->mode);
+    qobject_unref(reply);
+    tree = qtest_hmp(qts, "info qtree");
+    g_assert_cmpint(!!strstr(tree, "dev: hpet,"), ==, profile->enabled);
+    qtest_quit(qts);
+}
+
+static void test_pc_fdc_auto_drive(void)
+{
+    QTestState *qts = qtest_init("-M laptop-pc,fdc-mode=auto -nodefaults "
+                                "-drive if=floppy,file=null-co://,"
+                                "file.read-zeroes=on,format=raw,size=1440k");
+    g_autofree char *tree = qtest_hmp(qts, "info qtree");
+
+    g_assert_nonnull(strstr(tree, "dev: i82078,"));
     qtest_quit(qts);
 }
 
@@ -1157,15 +1181,24 @@ int main(int argc, char **argv)
         { "-M laptop-pc,pcmcia-mode=auto -nodefaults", false, false },
     };
 
+    static const PCHpetModeTest hpet_modes[] = {
+        { "pc", "off", false },
+        { "pc", "auto", true },
+        { "laptop-pc", "auto", false },
+        { "laptop-pc", "on", true },
+    };
+
     data.num_cpus = 1;
 
     if (qtest_has_device("hpet")) {
-        qtest_add_data_func("i440fx/hpet/off", "pc,hpet-mode=off",
-                            test_pc_hpet_mode);
-        qtest_add_data_func("i440fx/hpet/laptop-auto", "laptop-pc,hpet-mode=auto",
-                            test_pc_hpet_mode);
-        qtest_add_data_func("i440fx/hpet/laptop-on", "laptop-pc,hpet-mode=on",
-                            test_pc_hpet_mode);
+        for (size_t i = 0; i < ARRAY_SIZE(hpet_modes); i++) {
+            g_autofree char *path = g_strdup_printf("i440fx/hpet/%zu", i);
+
+            qtest_add_data_func(path, &hpet_modes[i], test_pc_hpet_mode);
+        }
+    }
+    if (qtest_has_device("i82078")) {
+        qtest_add_func("i440fx/fdc/auto-drive", test_pc_fdc_auto_drive);
     }
 
     if (qtest_has_device("i82092aa") && qtest_has_device("i82078")) {
