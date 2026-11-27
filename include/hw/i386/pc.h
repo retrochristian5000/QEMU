@@ -36,6 +36,7 @@ typedef struct PCMachineState {
     PCIBus *pcibus;
     I2CBus *smbus;
     PFlashCFI01 *flash[2];
+    char *rom_chip;
     ISADevice *pcspk;
     DeviceState *iommu;
     BusState *idebus[MAX_IDE_BUS];
