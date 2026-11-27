@@ -211,6 +211,45 @@ static void pc_system_flash_map(PCMachineState *pcms,
     }
 }
 
+/* Explicit SST parallel flash, independent of the CFI firmware backends. */
+static void pc_sst_firmware_init(PCMachineState *pcms,
+                                 MemoryRegion *rom_memory)
+{
+    X86MachineState *x86ms = X86_MACHINE(pcms);
+    const char *name = MACHINE(pcms)->firmware ?: "bios.bin";
+    g_autofree char *filename = qemu_find_file(QEMU_FILE_TYPE_BIOS, name);
+    DeviceState *dev;
+    MemoryRegion *mem;
+    uint64_t size;
+
+    if (!filename) {
+        error_report("Could not find BIOS image '%s'", name);
+        exit(EXIT_FAILURE);
+    }
+    if (x86ms->igvm || MACHINE(pcms)->cgs ||
+        machine_require_guest_memfd(MACHINE(pcms))) {
+        error_report("SST system ROM chips do not support confidential guests");
+        exit(EXIT_FAILURE);
+    }
+    if (kvm_enabled() && !kvm_readonly_mem_enabled()) {
+        error_report("SST system ROM requires KVM readonly memory support");
+        exit(EXIT_FAILURE);
+    }
+    dev = qdev_new(pcms->rom_chip);
+    qdev_prop_set_string(dev, "image", filename);
+    object_property_add_child(OBJECT(pcms), "system.sst-rom", OBJECT(dev));
+    sysbus_realize_and_unref(SYS_BUS_DEVICE(dev), &error_fatal);
+    mem = sysbus_mmio_get_region(SYS_BUS_DEVICE(dev), 0);
+    size = memory_region_size(mem);
+    if (size > pcms->max_fw_size) {
+        error_report("ROM chip '%s' exceeds maximum firmware size",
+                     pcms->rom_chip);
+        exit(EXIT_FAILURE);
+    }
+    memory_region_add_subregion(rom_memory, 0x100000000ULL - size, mem);
+    x86_isa_bios_init(&x86ms->isa_bios, rom_memory, mem, false);
+}
+
 void pc_system_firmware_init(PCMachineState *pcms,
                              MemoryRegion *rom_memory)
 {
@@ -219,6 +258,10 @@ void pc_system_firmware_init(PCMachineState *pcms,
     BlockBackend *pflash_blk[ARRAY_SIZE(pcms->flash)];
 
     if (!pcmc->pci_enabled) {
+        if (pcms->rom_chip) {
+            error_report("Explicit SST ROM chips require a PCI PC machine");
+            exit(EXIT_FAILURE);
+        }
         /*
          * If an IGVM file is specified then the firmware must be provided
          * in the IGVM file.
@@ -244,7 +287,13 @@ void pc_system_firmware_init(PCMachineState *pcms,
         }
     }
 
-    if (!pflash_blk[0]) {
+    if (pcms->rom_chip) {
+        if (pflash_blk[0]) {
+            error_report("rom-chip cannot be combined with pflash");
+            exit(EXIT_FAILURE);
+        }
+        pc_sst_firmware_init(pcms, rom_memory);
+    } else if (!pflash_blk[0]) {
         /*
          * Machine property pflash0 not set, use ROM mode unless using IGVM,
          * in which case the firmware must be provided by the IGVM file.
