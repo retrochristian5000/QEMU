@@ -144,6 +144,22 @@ across loopback entry and exit, on both integrated and separately
 attached 3740 profiles. These are byte-transport tests, not
 electrical framing or Windows/AOL detection verification.
 
+The logical RS-232 path also respects the UART's programmed 5/6/7/8
+data bits in each direction. Reset propagates its actual LCR and
+divisor to the backend (LCR=0 selects 5N1). The UART character-time
+calculation accounts for 1.5 stop bits in 5-bit mode; the existing
+integer-stop-bit backend ABI is unchanged. Diagnostic loopback
+deasserts external DTR/RTS, ignores incoming external BREAK events
+and uses the normal MSR delta latch and interrupt logic. RI's trailing
+edge remains latched until MSR is read, including across a later
+rising edge. Reference: National Semiconductor PC16550D data sheet,
+sections 8.1, 8.8 and 8.9. Register-level tests cover word lengths
+with and without FIFO, loopback status and interrupt transitions,
+and an AT probe after 1200-baud 7N1 and 115200-baud 8N1 programming.
+Actual analogue RS-232/422 signaling, stick parity at the backend,
+per-character transmission pacing, parity/framing mismatch errors
+and modem autobaud remain outside this byte-level implementation.
+
 AOL 4.0's reported initial commands (AT twice, ATH, AT, ATEQV1)
 are covered by regression tests, with its separately observed &K3
 probe. The basic commands follow ITU-T V.25ter (August 1995):

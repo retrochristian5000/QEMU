@@ -632,6 +632,63 @@ static void test_i440fx_dataport_3740_fifo(gconstpointer opaque)
     qtest_quit(qts);
 }
 
+static void test_i440fx_dataport_3740_rs232(gconstpointer opaque)
+{
+    bool integrated = GPOINTER_TO_INT(opaque);
+    QTestState *qts = qtest_init(integrated ?
+        "-M pc -nodefaults -serial none "
+        "-device att-paradyne-3740,index=1" :
+        "-M pc -nodefaults -serial none "
+        "-chardev modem,id=m,model=att-paradyne-3740 "
+        "-device ns16550a,index=1,chardev=m");
+
+    g_assert_cmphex(qtest_inb(qts, 0x2fb), ==, 0);
+    qtest_outb(qts, 0x2fb, 3);
+    qtest_outb(qts, 0x2fc, 0x0b);
+    g_assert_cmphex(qtest_inb(qts, 0x2fe) & 0xf0, ==, 0x30);
+    qtest_outb(qts, 0x2f9, 8); /* Modem-status interrupts only. */
+    qtest_outb(qts, 0x2fc, 0x10);
+    g_assert_cmphex(qtest_inb(qts, 0x2fa) & 0x0f, ==, 0);
+    g_assert_cmphex(qtest_inb(qts, 0x2fe), ==, 0x03);
+    g_assert_cmphex(qtest_inb(qts, 0x2fa) & 0x0f, ==, 1);
+    qtest_outb(qts, 0x2fc, 0x1f);
+    g_assert_cmphex(qtest_inb(qts, 0x2fe), ==, 0xfb);
+    /* RI falling then rising before MSR is read must retain TERI. */
+    qtest_outb(qts, 0x2fc, 0x1b);
+    qtest_outb(qts, 0x2fc, 0x1f);
+    qtest_outb(qts, 0x2fc, 0x17);
+    g_assert_cmphex(qtest_inb(qts, 0x2fe), ==, 0x7c);
+    g_assert_cmphex(qtest_inb(qts, 0x2fe), ==, 0x70);
+    qtest_outb(qts, 0x2f9, 0);
+
+    for (unsigned fifo = 0; fifo <= 1; fifo++) {
+        qtest_outb(qts, 0x2fa, fifo ? 7 : 0);
+        for (unsigned width = 5; width <= 8; width++) {
+            qtest_outb(qts, 0x2fb, width - 5);
+            qtest_outb(qts, 0x2f8, 0xff);
+            g_assert_cmphex(qtest_inb(qts, 0x2fd) & 3, ==, 1);
+            g_assert_cmphex(qtest_inb(qts, 0x2f8), ==, (1U << width) - 1);
+        }
+    }
+    qtest_outb(qts, 0x2fa, 0);
+    qtest_outb(qts, 0x2fc, 0x0b);
+    g_assert_cmphex(qtest_inb(qts, 0x2fe) & 0xf0, ==, 0x30);
+
+    /* At 7N1 the high bits of writes never reach the modem. */
+    qtest_outb(qts, 0x2fb, 0x82);
+    qtest_outb(qts, 0x2f8, 96);
+    qtest_outb(qts, 0x2f9, 0);
+    qtest_outb(qts, 0x2fb, 2);
+    modem_command(qts, "\xc1\xd4\x8d", "AT\r\r\nOK\r\n");
+    qtest_outb(qts, 0x2fb, 0x83);
+    qtest_outb(qts, 0x2f8, 1);
+    qtest_outb(qts, 0x2f9, 0);
+    qtest_outb(qts, 0x2fb, 3);
+    modem_command(qts, "ATE0Q0V1\r", "OK");
+    modem_command(qts, "ATI0\r", "28800");
+    qtest_quit(qts);
+}
+
 static void test_i440fx_dataport_3740_scan(gconstpointer opaque)
 {
     bool integrated = GPOINTER_TO_INT(opaque);
@@ -866,6 +923,10 @@ int main(int argc, char **argv)
                             GINT_TO_POINTER(1), test_i440fx_dataport_3740_line);
         qtest_add_data_func("i440fx/isa/modem/3740-line-external",
                             GINT_TO_POINTER(0), test_i440fx_dataport_3740_line);
+        qtest_add_data_func("i440fx/isa/modem/3740-rs232-integrated",
+                            GINT_TO_POINTER(1), test_i440fx_dataport_3740_rs232);
+        qtest_add_data_func("i440fx/isa/modem/3740-rs232-external",
+                            GINT_TO_POINTER(0), test_i440fx_dataport_3740_rs232);
         qtest_add_data_func("i440fx/isa/modem/3740-fifo-integrated",
                             GINT_TO_POINTER(1), test_i440fx_dataport_3740_fifo);
         qtest_add_data_func("i440fx/isa/modem/3740-fifo-external",
