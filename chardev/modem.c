@@ -44,6 +44,11 @@
 #define TYPE_CHARDEV_MODEM "chardev-modem"
 OBJECT_DECLARE_SIMPLE_TYPE(ModemChardev, CHARDEV_MODEM)
 
+/* DataPort auto-reliable fallback uses a seven-bit ASCII character. */
+#define MODEM_FALLBACK_DISABLED 0
+#define MODEM_FALLBACK_DEFAULT 19
+#define MODEM_FALLBACK_MAX 127
+
 #define MODEM_OUTBUF_SIZE 4096
 #define MODEM_NETBUF_SIZE 65536
 #define MODEM_COMMAND_SIZE 256
@@ -494,7 +499,7 @@ static void modem_model_defaults(ModemChardev *modem)
         MODEM_MODE_ASYNC_RELIABLE : MODEM_MODE_ASYNC_BUFFERED;
     modem->bell_modulation = true; /* US Rockwell reference default. */
     modem->auto_reliable_buffer = 0;
-    modem->auto_reliable_fallback = 19;
+    modem->auto_reliable_fallback = MODEM_FALLBACK_DEFAULT;
     modem->flow_control_mode = modem->model->paradyne_commands ? 3 : 0;
     modem->xon_xoff_passthrough = false;
     modem->dte_rx_paused = false;
@@ -791,6 +796,11 @@ static void modem_report_profile(ModemChardev *modem)
                                modem->auto_reliable_buffer,
                                modem->auto_reliable_fallback);
         modem_queue_line(modem, line);
+        modem_queue_line(modem,
+                         modem->auto_reliable_fallback ==
+                         MODEM_FALLBACK_DISABLED ?
+                         "FALLBACK CHARACTER: DISABLED" :
+                         "FALLBACK CHARACTER: CONFIGURED (NEGOTIATION ONLY)");
         g_clear_pointer(&line, g_free);
         line = g_strdup_printf("B%d", modem->bell_modulation);
         modem_queue_line(modem, line);
@@ -1634,11 +1644,16 @@ static void modem_execute_command(ModemChardev *modem, const char *input)
             switch (*p++) {
             case 'A':
                 value = modem_parse_number(&p, 0);
-                if (!modem->model->paradyne_commands || value > 127) {
+                if (!modem->model->paradyne_commands ||
+                    value > MODEM_FALLBACK_MAX) {
                     modem_result(modem, MODEM_RESULT_ERROR);
                     return;
                 }
-                /* Requested fallback character, not an active detector. */
+                /*
+                 * Zero disables character-triggered fallback. Nonzero
+                 * values are only meaningful during auto-reliable link
+                 * negotiation, never in established TCP data mode.
+                 */
                 modem->auto_reliable_fallback = value;
                 break;
             case 'B':

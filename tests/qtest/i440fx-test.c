@@ -735,6 +735,15 @@ static void test_i440fx_dataport_3740_scan(gconstpointer opaque)
     modem_command(qts, "AT+FDCC?\r", "0,5,0,2,0,0,0,0");
     modem_command(qts, "AT+FCLASS=0\r", "OK");
 
+    /* Actual AOL 4.0 setup observed by the user, CR terminated. */
+    modem_command(qts, "AT&F&D0X4\r", "\r\nOK\r\n");
+    modem_command(qts, "AT\r", "AT\r\r\nOK\r\n");
+    modem_command(qts, "ATE0Q0V1\r", "OK");
+    modem_command(qts, "AT%A20\r", "OK");
+    modem_command(qts, "AT%A128\r", "ERROR");
+    modem_command(qts, "AT%A0\r", "OK");
+    modem_command(qts, "ATI0\r", "28800");
+
     /* UART reset must drop DTR even on a separately attached backend. */
     qtest_system_reset(qts);
     g_assert_cmphex(qtest_inb(qts, 0x2fc) & 3, ==, 0);

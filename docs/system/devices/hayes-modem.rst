@@ -80,10 +80,14 @@ profile-scoped Paradyne configuration commands:
   mode. The external 3740 also accepts ``&M1`` through ``&M3`` and the
   equivalent ``&Q1`` through ``&Q3`` as synchronous configuration.
 * ``\C0`` through ``\C2``: record the auto-reliable buffering
-  policy (default 0); mode 2 requests a switch to buffering upon receipt
-  of the configured fallback character
+  policy (default 0); mode 0 discards incoming negotiation data, mode 1
+  buffers it, and mode 2 discards it until the configured fallback
+  character requests a transition to mode 1
 * ``%A0`` through ``%A127``: record the ASCII fallback character
-  (default 19; 0 disables character-based fallback)
+  (default 19; 0 disables character-based fallback). The default is
+  ASCII DC3 (XOFF), but this negotiation control is distinct from
+  online XON/XOFF flow control. AT&V explicitly reports whether the
+  fallback character is configured or disabled.
 * ``\Q0`` through ``\Q4``: record the configured flow-control mode
 * ``&K0`` (or bare &K), ``&K3`` and ``&K4`` select disabled,
   hardware and software flow control using the same state as
@@ -175,6 +179,20 @@ ERROR in this implementation. Bare K is not a synonym for either
 flow-control logic are reused; transmit-side CTS throttling is not
 implemented. No change is made to the separate \D CTS policy.
 AOL's complete scan and detection algorithm remain unknown.
+The user subsequently observed the actual AOL 4.0 setup string::
+
+  AT&F&D0X4
+
+It differs from the older DataPort PCX/RPI recommendation. The
+terminator is carriage return (0x0d), not literal caret-M.
+&F restores the emulated factory configuration including echo,
+\C0 and %A19, then &D0 overrides DTR disconnect policy, and X4
+requests extended result codes. The DTR policy remains separate
+from the \D1 CTS policy. The setup regression checks a local TCP
+connection survives DTR deassertion with RTS asserted and that
+ordinary online data is not consumed as a negotiation fallback
+character, with %A19 and %A0. No real error-control negotiation
+or dial-tone/busy detection is established by the setup string.
 
 The operating-mode mappings follow the related DataPort PCX User's
 Guide (October 1995, B-16/B-17) and Rockwell RC288ACx reference

@@ -660,6 +660,21 @@ static void test_dataport_reliability_config(gconstpointer opaque)
     g_assert_cmpstr(modem_command(&fe, &out, "AT\r"), ==, "\r\nOK\r\n");
     assert_response_contains(modem_command(&fe, &out, "AT&V\r"),
                              "\\C0 %A19");
+    assert_response_contains(out.buf,
+                             "FALLBACK CHARACTER: CONFIGURED");
+    for (unsigned i = 0; i <= 127; i++) {
+        g_autofree char *command = g_strdup_printf("AT%%A%u\r", i);
+        g_autofree char *setting = g_strdup_printf("%%A%u\r\n", i);
+
+        g_assert_cmpstr(modem_command(&fe, &out, command), ==, "\r\nOK\r\n");
+        assert_response_contains(modem_command(&fe, &out, "AT&V\r"), setting);
+        assert_response_contains(out.buf, i ?
+                                 "FALLBACK CHARACTER: CONFIGURED" :
+                                 "FALLBACK CHARACTER: DISABLED");
+    }
+    g_assert_cmpstr(modem_command(&fe, &out, "AT%A999999999999999999999\r"),
+                    ==, "\r\nERROR\r\n");
+    assert_response_contains(modem_command(&fe, &out, "AT&V\r"), "%A127\r\n");
 
     for (unsigned i = 0; i <= 7; i++) {
         g_autofree char *command = g_strdup_printf("AT\\N%u\r", i);
@@ -1223,6 +1238,98 @@ static void test_dataport_macppp_init(gconstpointer opaque)
     object_unref(OBJECT(peer));
 }
 
+/*
+ * User-observed AOL 4.0 setup, not the older PCX/RPI initialization.
+ * TCP is only a data transport: fallback bytes must not be consumed.
+ */
+static void test_dataport_aol_setup(void)
+{
+    SocketAddress address = {
+        .type = SOCKET_ADDRESS_TYPE_INET,
+        .u.inet = { .host = "127.0.0.1", .port = "0" },
+    };
+    QIOChannelSocket *listener = qio_channel_socket_new();
+    QIOChannel *peer;
+    SocketAddress *bound;
+    Error *err = NULL;
+    ModemOutput out = { 0 };
+    CharFrontend fe = { 0 };
+    Chardev *chr;
+    const char *reply;
+    int lines = CHR_TIOCM_DTR | CHR_TIOCM_RTS;
+    int status;
+    static const char payload[] = "\x13\x14\x7f" "end";
+
+    if (qio_channel_socket_listen_sync(listener, &address, 1, &err) < 0) {
+        g_test_skip(error_get_pretty(err));
+        error_free(err);
+        object_unref(OBJECT(listener));
+        return;
+    }
+    bound = qio_channel_socket_get_local_address(listener, &error_abort);
+    chr = modem_new_with_port("modem-aol-setup", "att-paradyne-3740",
+                              bound->u.inet.port);
+    qapi_free_SocketAddress(bound);
+    modem_frontend_init(&fe, &out, chr);
+    assert_response_contains(modem_command(&fe, &out, "ATE0Q0V1\r"),
+                             "\r\nOK\r\n");
+    assert_response_contains(modem_command(&fe, &out, "AT&D2X0\\C2%A20\r"),
+                             "\r\nOK\r\n");
+    g_assert_cmpstr(modem_command(&fe, &out, "AT&F&D0X4\r"), ==,
+                    "\r\nOK\r\n");
+    reply = modem_command(&fe, &out, "AT&V\r");
+    assert_response_contains(reply, "E1 Q0 V1 X4");
+    assert_response_contains(reply, "&C1 &D0 %C1");
+    assert_response_contains(reply, "\\C0 %A19");
+    assert_response_contains(reply, "\\D1");
+    assert_response_contains(modem_command(&fe, &out, "ATE0\\C2%A19\r"),
+                             "\r\nOK\r\n");
+    g_assert_cmpint(qemu_chr_fe_ioctl(&fe, CHR_IOCTL_SERIAL_SET_TIOCM,
+                                     &lines), ==, 0);
+    modem_command(&fe, &out, "ATD0\r");
+    modem_test_wait_output(&out, "CONNECT");
+    peer = QIO_CHANNEL(qio_channel_socket_accept(listener, &error_abort));
+    object_unref(OBJECT(listener));
+
+    lines &= ~CHR_TIOCM_DTR;
+    g_assert_cmpint(qemu_chr_fe_ioctl(&fe, CHR_IOCTL_SERIAL_SET_TIOCM,
+                                     &lines), ==, 0);
+    g_assert_cmpint(qemu_chr_fe_ioctl(&fe, CHR_IOCTL_SERIAL_GET_TIOCM,
+                                     &status), ==, 0);
+    g_assert_true(status & CHR_TIOCM_CAR);
+    g_assert_false(status & CHR_TIOCM_CTS);
+
+    /* In established data mode none of these ASCII values is a fallback. */
+    out.len = 0;
+    out.buf[0] = '\0';
+    g_assert_cmpint(qio_channel_write(peer, payload, sizeof(payload) - 1,
+                                      &error_abort), ==, sizeof(payload) - 1);
+    modem_test_wait_output(&out, "end");
+    g_assert_cmpmem(out.buf, out.len, payload, sizeof(payload) - 1);
+
+    lines |= CHR_TIOCM_DTR;
+    g_assert_cmpint(qemu_chr_fe_ioctl(&fe, CHR_IOCTL_SERIAL_SET_TIOCM,
+                                     &lines), ==, 0);
+    assert_response_contains(modem_command(&fe, &out, "+++"), "\r\nOK\r\n");
+    assert_response_contains(modem_command(&fe, &out, "AT&V\r"),
+                             "\\C2 %A19");
+    assert_response_contains(modem_command(&fe, &out, "AT%A0\r"),
+                             "\r\nOK\r\n");
+    assert_response_contains(modem_command(&fe, &out, "AT&V\r"),
+                             "FALLBACK CHARACTER: DISABLED");
+    assert_response_contains(modem_command(&fe, &out, "ATO\r"), "CONNECT");
+    out.len = 0;
+    out.buf[0] = '\0';
+    g_assert_cmpint(qio_channel_write(peer, payload, sizeof(payload) - 1,
+                                      &error_abort), ==, sizeof(payload) - 1);
+    modem_test_wait_output(&out, "end");
+    g_assert_cmpmem(out.buf, out.len, payload, sizeof(payload) - 1);
+    assert_response_contains(modem_command(&fe, &out, "+++"), "\r\nOK\r\n");
+    assert_response_contains(modem_command(&fe, &out, "ATH\r"), "\r\nOK\r\n");
+    modem_frontend_cleanup(&fe, chr);
+    object_unref(OBJECT(peer));
+}
+
 static void test_dataport_xon_xoff_transport(gconstpointer opaque)
 {
     int mode = GPOINTER_TO_INT(opaque);
@@ -1570,6 +1677,8 @@ int main(int argc, char **argv)
                          test_dataport_lapm_frame_config);
     g_test_add_data_func("/modem/paradyne/lapm-frame-3740",
                          "att-paradyne-3740", test_dataport_lapm_frame_config);
+    g_test_add_func("/modem/paradyne/aol-setup-3740",
+                    test_dataport_aol_setup);
     g_test_add_data_func("/modem/paradyne/aol-flow-control-3711",
                          "att-paradyne-dataport-3711",
                          test_dataport_aol_flow_control);
