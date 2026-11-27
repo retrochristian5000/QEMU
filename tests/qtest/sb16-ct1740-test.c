@@ -528,8 +528,9 @@ static void test_ct1740_dma_terminal_count(gconstpointer data)
 /* Optional end-to-end test: inspect audio emitted by the host WAV backend,
  * not merely the controller's terminal count. Requires a built provider ROM
  * and a QEMU build with the WAV backend. */
-static void test_ct1740_firmware_wave(void)
+static void test_ct1740_firmware_wave(gconstpointer data)
 {
+    bool direct = GPOINTER_TO_UINT(data);
     const char *rom = g_getenv("QTEST_CT1741_FIRMWARE");
     g_autofree char *directory = NULL;
     g_autofree char *path = NULL;
@@ -540,6 +541,7 @@ static void test_ct1740_firmware_wave(void)
     gsize len;
     uint8_t samples[1024];
     unsigned int left_peak = 0, right_peak = 0;
+    bool positive = false, negative = false;
     QTestState *s;
     unsigned int i;
     const uint8_t commands[] = {
@@ -571,33 +573,50 @@ static void test_ct1740_firmware_wave(void)
      * D3h must not physically mute a DSP 4.xx PCM stream. */
     mixer_write(s, 0x220, 0x30, 0xf8);
     mixer_write(s, 0x220, 0x32, 0xf8);
-    for (i = 0; i < ARRAY_SIZE(samples); i++) {
-        samples[i] = (i & 32) ? 0xc0 : 0x40;
-    }
-    qtest_memwrite(s, 0x1000, samples, sizeof(samples));
-    qtest_outb(s, 0x0a, 5);
-    qtest_outb(s, 0x0c, 0);
-    qtest_outb(s, 0x02, 0);
-    qtest_outb(s, 0x02, 0x10);
-    qtest_outb(s, 0x03, 0xff);
-    qtest_outb(s, 0x03, 3);
-    qtest_outb(s, 0x83, 0);
-    qtest_outb(s, 0x0b, 0x49);
-    qtest_outb(s, 0xd6, 0xc0);
-    qtest_outb(s, 0xd4, 0);
-    qtest_outb(s, 0x0a, 1);
-    for (i = 0; i < ARRAY_SIZE(commands); i++) {
-        firmware_write(s, commands[i]);
-    }
-    for (i = 0; i < 200; i++) {
-        qtest_clock_step(s, 10000000);
-        if (mixer_read(s, 0x220, 0x82) & 1) {
-            break;
+    if (direct) {
+        /* No DMA channel is programmed. Hold alternating values at
+         * host-controlled virtual time intervals, then return to center. */
+        qtest_inb(s, 0x08);
+        qtest_inb(s, 0xd0);
+        for (i = 0; i < 12; i++) {
+            firmware_write(s, 0x10);
+            firmware_write(s, i & 1 ? 0xc0 : 0x40);
+            qtest_clock_step(s, 20000000);
         }
+        firmware_write(s, 0x10);
+        firmware_write(s, 0x80);
+        g_assert_cmphex(qtest_inb(s, 0x08) & 0x22, ==, 0);
+        g_assert_cmphex(qtest_inb(s, 0xd0) & 0x22, ==, 0);
+        g_assert_cmphex(mixer_read(s, 0x220, 0x82) & 3, ==, 0);
+    } else {
+        for (i = 0; i < ARRAY_SIZE(samples); i++) {
+            samples[i] = (i & 32) ? 0xc0 : 0x40;
+        }
+        qtest_memwrite(s, 0x1000, samples, sizeof(samples));
+        qtest_outb(s, 0x0a, 5);
+        qtest_outb(s, 0x0c, 0);
+        qtest_outb(s, 0x02, 0);
+        qtest_outb(s, 0x02, 0x10);
+        qtest_outb(s, 0x03, 0xff);
+        qtest_outb(s, 0x03, 3);
+        qtest_outb(s, 0x83, 0);
+        qtest_outb(s, 0x0b, 0x49);
+        qtest_outb(s, 0xd6, 0xc0);
+        qtest_outb(s, 0xd4, 0);
+        qtest_outb(s, 0x0a, 1);
+        for (i = 0; i < ARRAY_SIZE(commands); i++) {
+            firmware_write(s, commands[i]);
+        }
+        for (i = 0; i < 200; i++) {
+            qtest_clock_step(s, 10000000);
+            if (mixer_read(s, 0x220, 0x82) & 1) {
+                break;
+            }
+        }
+        g_assert_cmpuint(i, <, 200);
+        g_assert_cmphex(qtest_inb(s, 0x08) & 2, ==, 2);
+        qtest_inb(s, 0x22e);
     }
-    g_assert_cmpuint(i, <, 200);
-    g_assert_cmphex(qtest_inb(s, 0x08) & 2, ==, 2);
-    qtest_inb(s, 0x22e);
     /* Let the backend drain the final queued samples. */
     for (i = 0; i < 50; i++) {
         qtest_clock_step(s, 10000000);
@@ -615,12 +634,18 @@ static void test_ct1740_firmware_wave(void)
         int l = (int16_t)lduw_le_p(contents + offset);
         int r = (int16_t)lduw_le_p(contents + offset + 2);
 
+        positive |= l > 1000;
+        negative |= l < -1000;
         left_peak = MAX(left_peak, (unsigned int)abs(l));
         right_peak = MAX(right_peak, (unsigned int)abs(r));
     }
     g_assert_cmpuint(left_peak, >, 1000);
     g_assert_cmpuint(right_peak, >, 0);
     g_assert_cmpuint(left_peak, >, right_peak * 4);
+    if (direct) {
+        g_assert_true(positive);
+        g_assert_true(negative);
+    }
     unlink(path);
     rmdir(directory);
 }
@@ -759,8 +784,10 @@ int main(int argc, char **argv)
                             test_ct1740_firmware);
         qtest_add_func("/ct1740/firmware/external",
                        test_ct1740_external_firmware);
-        qtest_add_func("/ct1740/firmware/wave-output",
-                       test_ct1740_firmware_wave);
+        qtest_add_data_func("/ct1740/firmware/wave-output",
+                            GUINT_TO_POINTER(0), test_ct1740_firmware_wave);
+        qtest_add_data_func("/ct1740/firmware/direct-dac-wave",
+                            GUINT_TO_POINTER(1), test_ct1740_firmware_wave);
         qtest_add_data_func("/ct1740/dma/identification", GUINT_TO_POINTER(0),
                             test_ct1740_dma_id);
         qtest_add_data_func("/ct1740/firmware/dma-identification",

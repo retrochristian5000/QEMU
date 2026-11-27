@@ -612,3 +612,9 @@ This does not simulate the analog reconstruction filter or exact MCU
 instruction timing. The optional firmware completion handshake at
 XDATA 0105h keeps host write status busy until processing finishes;
 old images that do not advertise it retain the previous behavior.
+
+The optional firmware ``direct-dac-wave`` QTest uses the same WAV fixture
+as ``wave-output`` but never programs DMA. It verifies positive and
+negative PCM output, channel attenuation, and absence of DMA/IRQ side
+effects. The direct-DAC unit tests cover held sample duration,
+fractional-frame accounting, queue wrapping and bounded catch-up.
