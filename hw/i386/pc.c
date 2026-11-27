@@ -38,6 +38,8 @@
 #include "hw/core/loader.h"
 #include "hw/rtc/mc146818rtc.h"
 #include "hw/intc/i8259.h"
+#include "hw/isa/i8259_internal.h"
+#include "hw/dma/i8257.h"
 #include "hw/timer/i8254.h"
 #include "hw/input/i8042.h"
 #include "hw/audio/pcspk.h"
@@ -531,7 +533,61 @@ void pc_acpi_smi_interrupt(void *opaque, int irq, int level)
 typedef struct PCISAIRQInfo {
     PCMachineState *pcms;
     bool piix;
+    bool pic_master;
+    bool pic_slave;
+    bool dma_low;
+    bool dma_high;
+    bool pit;
+    bool rtc;
 } PCISAIRQInfo;
+
+/*
+ * Version 1 of the fixed motherboard inventory exported to SeaBIOS.
+ * A bit is set only for a realized conventional PC/AT resource layout.
+ * This deliberately excludes ISA expansion cards and nonstandard layouts.
+ */
+static void pc_collect_isa_core(PCISAIRQInfo *info, Object *obj)
+{
+    if (object_dynamic_cast(obj, TYPE_PIC_COMMON)) {
+        PICCommonState *pic = PIC_COMMON(obj);
+
+        if (pic->master && pic->iobase == 0x20 && pic->elcr_addr == 0x4d0) {
+            info->pic_master = true;
+        } else if (!pic->master && pic->iobase == 0xa0 &&
+                   pic->elcr_addr == 0x4d1) {
+            info->pic_slave = true;
+        }
+    } else if (object_dynamic_cast(obj, TYPE_I8257)) {
+        I8257State *dma = I8257(obj);
+
+        if (dma->pageh_base == -1) {
+            if (dma->base == 0 && dma->page_base == 0x80 &&
+                dma->dshift == 0) {
+                info->dma_low = true;
+            } else if (dma->base == 0xc0 && dma->page_base == 0x88 &&
+                       dma->dshift == 1) {
+                info->dma_high = true;
+            }
+        }
+    } else if (object_dynamic_cast(obj, TYPE_PIT_COMMON)) {
+        if (object_property_get_uint(obj, "iobase", &error_abort) == 0x40) {
+            info->pit = true;
+        }
+    } else if (object_dynamic_cast(obj, TYPE_MC146818_RTC)) {
+        if (object_property_get_uint(obj, "iobase", &error_abort) == 0x70 &&
+            object_property_get_uint(obj, "irq", &error_abort) == 8) {
+            info->rtc = true;
+        }
+    }
+}
+
+static uint8_t pc_isa_core_mask(const PCISAIRQInfo *info)
+{
+    return (info->pic_master && info->pic_slave ? 1 : 0) |
+           (info->dma_low && info->dma_high ? 2 : 0) |
+           (info->pit ? 4 : 0) |
+           (info->rtc ? 8 : 0);
+}
 
 static int pc_collect_isa_irq(DeviceState *dev, void *opaque)
 {
@@ -554,6 +610,8 @@ static int pc_collect_isa_irq(DeviceState *dev, void *opaque)
         !object_dynamic_cast(OBJECT(bus->parent), "pci-piix")) {
         return 0;
     }
+
+    pc_collect_isa_core(info, obj);
 
     /*
      * Only collect devices whose IRQ property denotes a realized ISA
@@ -610,6 +668,11 @@ void pc_machine_done(Notifier *notifier, void *data)
         *mask = cpu_to_le16(pcms->isa_reserved_irq_mask);
         fw_cfg_add_file(x86ms->fw_cfg, "etc/isa-reserved-irq-mask",
                         mask, sizeof(*mask));
+
+        uint8_t *core = g_new(uint8_t, 1);
+        *core = pc_isa_core_mask(&irq_info);
+        fw_cfg_add_file(x86ms->fw_cfg, "etc/isa-pnp-core-v1",
+                        core, sizeof(*core));
     }
     if (x86ms->fw_cfg && pcms->isa_ne2000_irq_mask) {
         uint16_t *mask = g_new(uint16_t, 1);

@@ -405,6 +405,27 @@ static void test_isa_irq_mask_empty(void)
     qtest_quit(s);
 }
 
+static void test_isa_pnp_core(gconstpointer data)
+{
+    const char *machine = data;
+    QTestState *s = qtest_initf("-M %s -nodefaults", machine);
+    QFWCFG *fw_cfg = pc_fw_cfg_init(s);
+    uint8_t mask = 0xff;
+    uint8_t expected = 0x0f;
+
+    if (strstr(machine, "pic=off")) {
+        expected &= ~1;
+    }
+    if (strstr(machine, "pit=off")) {
+        expected &= ~4;
+    }
+    g_assert_cmpuint(qfw_cfg_get_file(fw_cfg, "etc/isa-pnp-core-v1",
+                                     &mask, sizeof(mask)), ==, sizeof(mask));
+    g_assert_cmphex(mask, ==, expected);
+    pc_fw_cfg_uninit(fw_cfg);
+    qtest_quit(s);
+}
+
 int main(int argc, char **argv)
 {
     g_test_init(&argc, &argv, NULL);
@@ -412,6 +433,14 @@ int main(int argc, char **argv)
     qtest_add_func("fw_cfg/signature", test_fw_cfg_signature);
     if (qtest_has_machine("pc") && qtest_has_device("PIIX4_PM")) {
         qtest_add_func("fw_cfg/isa-irq-mask/empty", test_isa_irq_mask_empty);
+        qtest_add_data_func("fw_cfg/isa-pnp-core/all", "pc,pic=on,pit=on",
+                            test_isa_pnp_core);
+        qtest_add_data_func("fw_cfg/isa-pnp-core/no-pic", "pc,pic=off,pit=on",
+                            test_isa_pnp_core);
+        qtest_add_data_func("fw_cfg/isa-pnp-core/no-pit", "pc,pic=on,pit=off",
+                            test_isa_pnp_core);
+        qtest_add_data_func("fw_cfg/isa-pnp-core/no-pic-pit",
+                            "pc,pic=off,pit=off", test_isa_pnp_core);
         if (qtest_has_device("ne2k_isa") &&
             qtest_has_device("isa-serial") &&
             qtest_has_device("isa-parallel")) {
