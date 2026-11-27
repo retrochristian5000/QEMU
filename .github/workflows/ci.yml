@@ -360,6 +360,28 @@ jobs:
         if: matrix.target == 'i386'
         run: python3 scripts/tests/test-i386-ati-seabios.py build-ci/qemu-system-i386
 
+      - name: Check Cirrus BAR relocation assertions
+        if: matrix.target == 'i386'
+        run: |
+          ninja -C build-ci tests/qtest/display-vga-test
+          QTEST_QEMU_BINARY="$GITHUB_WORKSPACE/build-ci/qemu-system-i386" \
+            build-ci/tests/qtest/display-vga-test -p /i386/display/pci/cirrus-bar-relocation
+
+      - name: Boot pinned SeaBIOS with Cirrus PCI profiles
+        if: matrix.target == 'i386'
+        run: |
+          sudo apt-get install -y --no-install-recommends nasm
+          git submodule update --init --depth 1 roms/seabios
+          test "$(git rev-parse HEAD:roms/seabios)" = "$(git -C roms/seabios rev-parse HEAD)"
+          root="$RUNNER_TEMP/whp-pci-firmware"
+          make -C roms build-seabios-config-seabios-256k seavgabios-cirrus \
+            SEABIOS_CROSS_PREFIX= "SEABIOS_BUILD_ROOT=$root" \
+            "SEABIOS_OUTPUT_DIR=$root/roms"
+          python3 scripts/tests/test-pci-seabios-post.py \
+            --qemu build-ci/qemu-system-i386 \
+            --bios "$root/seabios-256k/bios.bin" \
+            --vgabios "$root/roms/vgabios-cirrus.bin"
+
       - name: Test -hdc and -cdrom coexistence
         if: matrix.target == 'i386'
         run: bash scripts/tests/test-cdrom-hdc.bash build-ci/qemu-system-i386

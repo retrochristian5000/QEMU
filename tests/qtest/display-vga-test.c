@@ -580,6 +580,64 @@ static void test_cirrus_pci_legacy_decode(void)
     qtest_quit(qts);
 }
 
+/*
+ * Reproduce the firmware BAR transaction sequence with RAM and VGA
+ * present at the same time.  Never weaken memory-region assertions:
+ * an incorrect remove/reinsert must fail this test.
+ */
+static void test_cirrus_bar_relocation(void)
+{
+    const uint32_t config = 0x80002000U;
+    const uint32_t first = 0xe0000000U;
+    const uint32_t second = 0xe4000000U;
+    const uint32_t ram = 0x00f00000U;
+    QTestState *qts = qtest_init("-M pc -m 64M -vga none -nic none "
+                                "-device cirrus-vga-generic,addr=4,"
+                                "pci-legacy-decode=on,romfile=");
+
+    qtest_outl(qts, 0xcf8, config);
+    g_assert_cmphex(qtest_inl(qts, 0xcfc), ==, 0x00b81013);
+    qtest_writeb(qts, ram, 0x6d);
+    cirrus_pci_command(qts, config, 0);
+    qtest_outl(qts, 0xcf8, config | PCI_BASE_ADDRESS_0);
+    qtest_outl(qts, 0xcfc, UINT32_MAX);
+    g_assert_cmphex(qtest_inl(qts, 0xcfc), ==, 0xfe000008U);
+    qtest_outl(qts, 0xcfc, first);
+    cirrus_pci_command(qts, config, 3);
+
+    qtest_outb(qts, VGA_MIS_W, VGA_MIS_COLOR | VGA_MIS_ENB_MEM_ACCESS);
+    vga_seq_write(qts, 0x06, 0x12);
+    vga_seq_write(qts, 0x07, 1);
+    vga_gfx_write(qts, 0x0b, 0);
+    qtest_writeb(qts, first + 0x100, 0x5a);
+    g_assert_cmphex(qtest_readb(qts, first + 0x100), ==, 0x5a);
+
+    for (unsigned i = 0; i < 4; i++) {
+        uint32_t next = i & 1 ? first : second;
+        uint32_t previous = i & 1 ? second : first;
+
+        cirrus_pci_command(qts, config, 0);
+        qtest_outl(qts, 0xcf8, config | PCI_BASE_ADDRESS_0);
+        qtest_outl(qts, 0xcfc, UINT32_MAX);
+        g_assert_cmphex(qtest_inl(qts, 0xcfc), ==, 0xfe000008U);
+        qtest_outl(qts, 0xcfc, next);
+        cirrus_pci_command(qts, config, 3);
+        g_assert_cmphex(qtest_readb(qts, next + 0x100), ==, 0x5a);
+        /* Unassigned read values are not the device's contract. */
+        g_assert_cmphex(qtest_readb(qts, previous + 0x100), !=, 0x5a);
+        qtest_writeb(qts, previous + 0x100, 0xa5);
+        g_assert_cmphex(qtest_readb(qts, next + 0x100), ==, 0x5a);
+        g_assert_cmphex(qtest_readb(qts, ram), ==, 0x6d);
+
+        /* Repeated writes must not reinsert a region that is still mapped. */
+        qtest_outl(qts, 0xcf8, config | PCI_BASE_ADDRESS_0);
+        qtest_outl(qts, 0xcfc, next);
+        cirrus_pci_command(qts, config, 3);
+        g_assert_cmphex(qtest_readb(qts, next + 0x100), ==, 0x5a);
+    }
+    qtest_quit(qts);
+}
+
 static void test_gd5446_revision(gconstpointer opaque)
 {
     bool rev_a = GPOINTER_TO_INT(opaque);
@@ -1556,6 +1614,8 @@ int main(int argc, char **argv)
         if (qtest_has_machine("pc")) {
             qtest_add_func("/display/pci/cirrus-legacy-decode",
                            test_cirrus_pci_legacy_decode);
+            qtest_add_func("display/pci/cirrus-bar-relocation",
+                           test_cirrus_bar_relocation);
         }
         qtest_add_func("/display/pci/cirrus-gray-palette",
                        test_cirrus_gray_palette);
