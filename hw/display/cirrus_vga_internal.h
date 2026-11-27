@@ -27,6 +27,7 @@
 #define CIRRUS_VGA_INTERNAL_H
 
 #include "vga_int.h"
+#include "hw/i2c/bitbang_i2c.h"
 
 /* IDs */
 #define CIRRUS_ID_CLGD5422  (0x23 << 2)
@@ -71,6 +72,8 @@ typedef enum CirrusGD5446Revision {
 typedef struct CirrusVGAState {
     VGACommonState vga;
     CirrusDisplayTiming display_timing;
+    bitbang_i2c_interface ddc;
+    uint8_t ddc_saved_state; /* Migration encoding of bitbang state. */
 
     MemoryRegion cirrus_vga_io;
     MemoryRegion cirrus_linear_io;
