@@ -26,6 +26,7 @@
 #include "qemu/module.h"
 
 #include <sys/syscall.h>
+#include <sys/prctl.h>
 
 static void test_seccomp_helper(const char *args, bool killed,
                                 int errnum, int (*doit)(void))
@@ -192,6 +193,42 @@ static void test_seccomp_sched_off(void)
     test_seccomp_passed("off", doit_sched);
 }
 
+static void test_seccomp_invalid_options(void)
+{
+    if (g_test_subprocess()) {
+        static const char * const invalid[] = {
+            "on,obsolete=invalid",
+            "on,elevateprivileges=invalid",
+            "on,elevateprivileges=children,spawn=invalid",
+            "on,elevateprivileges=children,resourcecontrol=invalid",
+        };
+        int before = prctl(PR_GET_NO_NEW_PRIVS, 0L, 0L, 0L, 0L);
+        QemuOptsList *olist;
+
+        g_assert_cmpint(before, >=, 0);
+        module_call_init(MODULE_INIT_OPTS);
+        olist = qemu_find_opts("sandbox");
+        g_assert_nonnull(olist);
+
+        for (size_t i = 0; i < ARRAY_SIZE(invalid); i++) {
+            Error *err = NULL;
+            QemuOpts *opts = qemu_opts_parse_noisily(olist, invalid[i], true);
+
+            g_assert_nonnull(opts);
+            g_assert_cmpint(parse_sandbox(NULL, opts, &err), ==, -1);
+            g_assert_nonnull(err);
+            error_free(err);
+            qemu_opts_del(opts);
+            g_assert_cmpint(prctl(PR_GET_NO_NEW_PRIVS, 0L, 0L, 0L, 0L),
+                            ==, before);
+        }
+        _exit(0);
+    }
+
+    g_test_trap_subprocess(NULL, 0, 0);
+    g_test_trap_assert_passed();
+}
+
 static bool can_play_with_seccomp(void)
 {
     g_autofree char *status = NULL;
@@ -228,6 +265,8 @@ int main(int argc, char **argv)
 {
     g_test_init(&argc, &argv, NULL);
     if (can_play_with_seccomp()) {
+        g_test_add_func("/seccomp/config/invalid-options",
+                        test_seccomp_invalid_options);
 #ifdef SYS_fork
         g_test_add_func("/seccomp/sys-fork/on",
                         test_seccomp_sys_fork_on);
