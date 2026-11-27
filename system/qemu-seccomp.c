@@ -302,14 +302,14 @@ static uint32_t qemu_seccomp_update_action(uint32_t action)
 
 static int seccomp_start(uint32_t seccomp_opts, Error **errp)
 {
-    int rc = -1;
+    int rc;
     unsigned int i = 0;
     scmp_filter_ctx ctx;
 
     ctx = seccomp_init(SCMP_ACT_ALLOW);
     if (ctx == NULL) {
         error_setg(errp, "failed to initialize seccomp context");
-        goto seccomp_return;
+        return -1;
     }
 
 #if defined(CONFIG_SECCOMP_SYSRAWRC)
@@ -319,7 +319,7 @@ static int seccomp_start(uint32_t seccomp_opts, Error **errp)
      */
     rc = seccomp_attr_set(ctx, SCMP_FLTATR_API_SYSRAWRC, 1);
     if (rc != 0) {
-        error_setg_errno(errp, -rc,
+        error_setg_errno(errp, rc < 0 ? -rc : EIO,
                          "failed to set seccomp rawrc attribute");
         goto seccomp_return;
     }
@@ -327,7 +327,7 @@ static int seccomp_start(uint32_t seccomp_opts, Error **errp)
 
     rc = seccomp_attr_set(ctx, SCMP_FLTATR_CTL_TSYNC, 1);
     if (rc != 0) {
-        error_setg_errno(errp, -rc,
+        error_setg_errno(errp, rc < 0 ? -rc : EIO,
                          "failed to set seccomp thread synchronization");
         goto seccomp_return;
     }
@@ -341,22 +341,23 @@ static int seccomp_start(uint32_t seccomp_opts, Error **errp)
         action = qemu_seccomp_update_action(denylist[i].action);
         rc = seccomp_rule_add_array(ctx, action, denylist[i].num,
                                     denylist[i].narg, denylist[i].arg_cmp);
-        if (rc < 0) {
-            error_setg_errno(errp, -rc,
+        if (rc != 0) {
+            error_setg_errno(errp, rc < 0 ? -rc : EIO,
                              "failed to add seccomp denylist rules");
             goto seccomp_return;
         }
     }
 
     rc = seccomp_load(ctx);
-    if (rc < 0) {
-        error_setg_errno(errp, -rc,
-                         "failed to load seccomp syscall filter in kernel");
+    if (rc != 0) {
+        error_setg_errno(errp, rc < 0 ? -rc : EIO,
+                         "failed to load synchronized seccomp syscall filter");
     }
 
   seccomp_return:
     seccomp_release(ctx);
-    return rc < 0 ? -1 : 0;
+    /* Only an explicit success admits the VM to continue initialization. */
+    return rc == 0 ? 0 : -1;
 }
 
 int parse_sandbox(void *opaque, QemuOpts *opts, Error **errp)
@@ -365,6 +366,7 @@ int parse_sandbox(void *opaque, QemuOpts *opts, Error **errp)
         uint32_t seccomp_opts = QEMU_SECCOMP_SET_DEFAULT
                 | QEMU_SECCOMP_SET_OBSOLETE;
         const char *value = NULL;
+        bool no_new_privs = false;
 
         value = qemu_opt_get(opts, "obsolete");
         if (value) {
@@ -387,12 +389,7 @@ int parse_sandbox(void *opaque, QemuOpts *opts, Error **errp)
             } else if (g_str_equal(value, "children")) {
                 seccomp_opts |= QEMU_SECCOMP_SET_PRIVILEGED;
 
-                /* calling prctl directly because we're
-                 * not sure if host has CAP_SYS_ADMIN set*/
-                if (prctl(PR_SET_NO_NEW_PRIVS, 1)) {
-                    error_setg(errp, "failed to set no_new_privs aborting");
-                    return -1;
-                }
+                no_new_privs = true;
             } else if (g_str_equal(value, "allow")) {
                 /* default value */
             } else {
@@ -423,6 +420,16 @@ int parse_sandbox(void *opaque, QemuOpts *opts, Error **errp)
                 error_setg(errp, "invalid argument for resourcecontrol");
                 return -1;
             }
+        }
+
+        /*
+         * Validate the complete option set before irreversible changes to
+         * process security state. prctl is variadic; pass full-width values
+         * for all arguments, including the unused ones.
+         */
+        if (no_new_privs && prctl(PR_SET_NO_NEW_PRIVS, 1L, 0L, 0L, 0L) != 0) {
+            error_setg_errno(errp, errno, "failed to set no_new_privs");
+            return -1;
         }
 
         if (seccomp_start(seccomp_opts, errp) < 0) {
