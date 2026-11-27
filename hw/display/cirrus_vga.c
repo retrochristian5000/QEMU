@@ -185,6 +185,7 @@ struct PCICirrusVGAState {
     MemoryRegion legacy_io_hi;
     bool pci_legacy_decode;
     bool precise_timing;
+    uint32_t reset_subsystem_id;
 };
 
 #define TYPE_PCI_CIRRUS_VGA "cirrus-vga-generic"
@@ -1535,8 +1536,12 @@ static void cirrus_vga_write_sr(CirrusVGAState * s, uint32_t val)
 #endif
         break;
     case 0x17:                  // Configuration Readback and Extended Control
-        s->vga.sr[s->vga.sr_index] = (s->vga.sr[s->vga.sr_index] & 0x38)
-                                   | (val & 0xc7);
+        if (s->gd5446_revision == CIRRUS_GD5446_REV_B) {
+            /* TRM 8.13: bit 3 enables PCI2C writes; bits 5:4, 0 reserved. */
+            s->vga.sr[0x17] = val & 0xce;
+        } else {
+            s->vga.sr[0x17] = (s->vga.sr[0x17] & 0x38) | (val & 0xc7);
+        }
         cirrus_update_memory_access(s);
         break;
     default:
@@ -3091,7 +3096,16 @@ static void cirrus_reset(void *opaque)
         s->vga.sr[0x1F] = 0x2d;         // MemClock
         s->vga.gr[0x18] = 0x0f;             // fastest memory configuration
         s->vga.sr[0x0f] = 0x98;
-        s->vga.sr[0x17] = 0x20;
+        if (s->gd5446_revision == CIRRUS_GD5446_REV_B) {
+            PCICirrusVGAState *d = container_of(s, PCICirrusVGAState,
+                                               cirrus_vga);
+
+            s->vga.sr[0x17] = 0;
+            pci_set_long(d->dev.config + PCI_SUBSYSTEM_VENDOR_ID,
+                         d->reset_subsystem_id);
+        } else {
+            s->vga.sr[0x17] = 0x20;
+        }
         s->vga.sr[0x15] = 0x04; /* memory size, 3=2MB, 4=4MB */
     } else {
         s->vga.sr[0x1F] = 0x22;         // MemClock
@@ -3338,7 +3352,10 @@ static void pci_cirrus_vga_realize(PCIDevice *dev, Error **errp)
     /* memory #0 LFB */
     /* memory #1 memory-mapped I/O */
     /* XXX: s->vga.vram_size must be a power of two */
-    pci_register_bar(&d->dev, 0, PCI_BASE_ADDRESS_MEM_PREFETCH, &s->pci_bar);
+    /* TRM 7.4: PCI10[24:1] is reserved on revision B, including bit 3. */
+    pci_register_bar(&d->dev, 0,
+                     s->gd5446_revision == CIRRUS_GD5446_REV_B ? 0 :
+                     PCI_BASE_ADDRESS_MEM_PREFETCH, &s->pci_bar);
     if (high_aperture) {
         pci_register_bar(&d->dev, 1, 0, &s->cirrus_mmio_io);
     }
@@ -3346,6 +3363,14 @@ static void pci_cirrus_vga_realize(PCIDevice *dev, Error **errp)
         /* PCI2C is reserved on revision A, not a board identifier. */
         pci_set_word(dev->config + PCI_SUBSYSTEM_VENDOR_ID, 0);
         pci_set_word(dev->config + PCI_SUBSYSTEM_ID, 0);
+    } else if (s->gd5446_revision == CIRRUS_GD5446_REV_B) {
+        /* GPIO-disabled board: high subsystem byte is zero at reset.
+         * Retain the virtual board's remaining default ID bytes. */
+        d->reset_subsystem_id =
+            pci_get_long(dev->config + PCI_SUBSYSTEM_VENDOR_ID) & 0x00ffffff;
+        pci_set_long(dev->config + PCI_SUBSYSTEM_VENDOR_ID,
+                     d->reset_subsystem_id);
+        pci_set_word(dev->config + PCI_STATUS, PCI_STATUS_DEVSEL_MEDIUM);
     }
 }
 
@@ -3446,8 +3471,28 @@ static const TypeInfo cirrus_gd5446a_pci_info = {
     .class_init = cirrus_gd5446a_pci_class_init,
 };
 
+static void cirrus_gd5446b_write_config(PCIDevice *dev, uint32_t addr,
+                                       uint32_t val, int len)
+{
+    PCICirrusVGAState *d = PCI_CIRRUS_VGA(dev);
+
+    pci_default_write_config(dev, addr, val, len);
+    /* TRM 7.8: PCI2C is read-only unless SR17[3] is set. */
+    if (d->cirrus_vga.vga.sr[0x17] & 8) {
+        for (int i = 0; i < len; i++) {
+            if (addr + i >= PCI_SUBSYSTEM_VENDOR_ID &&
+                addr + i < PCI_SUBSYSTEM_VENDOR_ID + 4) {
+                dev->config[addr + i] = val >> (i * 8);
+            }
+        }
+    }
+}
+
 static void cirrus_gd5446b_pci_class_init(ObjectClass *klass, const void *data)
 {
+    PCIDeviceClass *k = PCI_DEVICE_CLASS(klass);
+
+    k->config_write = cirrus_gd5446b_write_config;
     DEVICE_CLASS(klass)->desc = "Cirrus Logic CL-GD5446 Revision B PCI VGA";
 }
 
