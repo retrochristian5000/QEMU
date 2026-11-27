@@ -108,56 +108,8 @@ static void pit_get_channel_info_programmed(PITCommonState *pit,
 
 static int pit_get_count(PITChannelState *s, bool is_8253)
 {
-    uint64_t d;
-    int counter;
-
-    d = muldiv64(qemu_clock_get_ns(QEMU_CLOCK_VIRTUAL) - s->count_load_time, PIT_FREQ,
-                 NANOSECONDS_PER_SECOND);
-    switch (pit_effective_mode(s)) {
-    case 0:
-    case 1:
-    case 4:
-    case 5:
-        counter = (s->count - d) & 0xffff;
-        break;
-    case 3: {
-        unsigned int phase = d % s->count;
-        unsigned int high_ticks = (s->count + 1) / 2;
-
-        /*
-         * Unlike the 8254, the 8253 reloads the full odd count at
-         * both edges. The first decrement is one while OUT is high
-         * and three while OUT is low; subsequent decrements are two.
-         */
-        if (is_8253 && (s->count & 1)) {
-            bool high = phase < high_ticks;
-
-            if (!high) {
-                phase -= high_ticks;
-            }
-            if (phase == 0) {
-                counter = s->count;
-            } else {
-                counter = s->count - 2 * phase + (high ? 1 : -1);
-            }
-            break;
-        }
-
-        /*
-         * The 8254 loads an even counting element in both half-cycles.
-         * For odd divisors, the high half includes one tick at zero.
-         */
-        if (phase >= high_ticks) {
-            phase -= high_ticks;
-        }
-        counter = (s->count & ~1) - 2 * phase;
-        break;
-    }
-    default:
-        counter = s->count - (d % s->count);
-        break;
-    }
-    return counter;
+    return pit_get_count_at(s, qemu_clock_get_ns(QEMU_CLOCK_VIRTUAL),
+                            is_8253);
 }
 
 /* val must be 0 or 1 */
