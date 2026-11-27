@@ -982,6 +982,86 @@ static void test_gd5446b_overlay_registers(void)
     qtest_quit(qts);
 }
 
+static void test_gd5446b_vport(void)
+{
+    const uint32_t config = 0x80002000U;
+    const uint32_t lfb = 0xe0000000U;
+    const uint32_t mmio = 0xe2000000U;
+    static const struct {
+        uint8_t index, mask;
+    } registers[] = {
+        { 0x50, 0xff }, { 0x51, 0x0f }, { 0x52, 0x07 },
+        { 0x53, 0x07 }, { 0x54, 0x1f }, { 0x56, 0x1f },
+        { 0x57, 0xff }, { 0x5c, 0xff },
+    };
+    QTestState *qts = qtest_init("-M pc -device gd5446b-pci,addr=4,romfile=,"
+                                "pci-legacy-decode=on");
+
+    qtest_outl(qts, 0xcf8, config | 0x10);
+    qtest_outl(qts, 0xcfc, lfb);
+    qtest_outl(qts, 0xcf8, config | 0x14);
+    qtest_outl(qts, 0xcfc, mmio);
+    cirrus_pci_command(qts, config, 3);
+    qtest_outb(qts, VGA_MIS_W, VGA_MIS_COLOR | VGA_MIS_ENB_MEM_ACCESS);
+    vga_seq_write(qts, 0x06, 0x12);
+    vga_seq_write(qts, 0x07, 1);
+    vga_gfx_write(qts, 0x0b, 0);
+
+    for (unsigned i = 0; i < ARRAY_SIZE(registers); i++) {
+        uint8_t index = registers[i].index;
+
+        g_assert_cmphex(vga_crtc_read(qts, index), ==, 0);
+        cirrus_crtc_write(qts, index, 0xff);
+        g_assert_cmphex(vga_crtc_read(qts, index), ==, registers[i].mask);
+        cirrus_crtc_write(qts, index, 0);
+    }
+
+    /* Capture-only registers cannot alias playback or the reserved CR55. */
+    cirrus_crtc_write(qts, 0x55, 0xa5);
+    g_assert_cmphex(vga_crtc_read(qts, 0x55), ==, 0xff);
+    cirrus_crtc_write(qts, 0x3e, 0x03);
+    cirrus_crtc_write(qts, 0x3d, 1);
+    cirrus_crtc_write(qts, 0x3b, 0);
+    cirrus_crtc_write(qts, 0x3a, 0x40);
+    cirrus_crtc_write(qts, 0x59, 0x80);
+    cirrus_crtc_write(qts, 0x5e, 0x20);
+    cirrus_crtc_write(qts, 0x50, 0x12);
+    cirrus_crtc_write(qts, 0x57, 1);
+    cirrus_crtc_write(qts, 0x3f, 0xff);
+    g_assert_cmphex(vga_crtc_read(qts, 0x3f), ==, 0x33);
+    vga_gfx_write(qts, 0x17, 0xff);
+    g_assert_cmphex(vga_gfx_read(qts, 0x17), ==, 0x6c);
+
+    /* Arm YUV-to-AccuPak capture through relocated CRTC ports. */
+    qtest_writeb(qts, mmio + 0x14, 0x51);
+    qtest_writeb(qts, mmio + 0x15, 0x0b);
+    g_assert_cmphex(vga_crtc_read(qts, 0x51), ==, 0x0b);
+    qtest_writel(qts, lfb + 0x100, 0x11223344);
+    qtest_writel(qts, lfb + 0x200, 0x55667788);
+    qtest_clock_step(qts, 100000000);
+    /* A disconnected V-Port cannot supply a field or complete a capture. */
+    g_assert_cmphex(vga_crtc_read(qts, 0x3f) & 0xc4, ==, 0);
+    g_assert_cmphex(vga_gfx_read(qts, 0x17) & 0x10, ==, 0);
+    g_assert_cmphex(vga_crtc_read(qts, 0x3e), ==, 0x03);
+    g_assert_cmphex(vga_crtc_read(qts, 0x5e), ==, 0x20);
+    g_assert_cmphex(qtest_readl(qts, lfb + 0x100), ==, 0x11223344);
+    g_assert_cmphex(qtest_readl(qts, lfb + 0x200), ==, 0x55667788);
+
+    cirrus_crtc_write(qts, 0x51, 0);
+    cirrus_crtc_write(qts, 0x3f, 0);
+    g_assert_cmphex(vga_gfx_read(qts, 0x17) & 0x10, ==, 0);
+
+    qtest_system_reset(qts);
+    cirrus_pci_command(qts, config, 3);
+    qtest_outb(qts, VGA_MIS_W, VGA_MIS_COLOR | VGA_MIS_ENB_MEM_ACCESS);
+    vga_seq_write(qts, 0x06, 0x12);
+    for (unsigned i = 0; i < ARRAY_SIZE(registers); i++) {
+        g_assert_cmphex(vga_crtc_read(qts, registers[i].index), ==, 0);
+    }
+    g_assert_cmphex(vga_gfx_read(qts, 0x17), ==, 0);
+    qtest_quit(qts);
+}
+
 static void test_cirrus_pci_timing(void)
 {
     QTestState *qts = qtest_init("-M pc -vga none -nodefaults "
@@ -1177,6 +1257,8 @@ int main(int argc, char **argv)
                            test_gd5446b_pc97);
             qtest_add_func("/display/pci/cirrus-gd5446b-overlay-registers",
                            test_gd5446b_overlay_registers);
+            qtest_add_func("/display/pci/cirrus-gd5446b-vport",
+                           test_gd5446b_vport);
             qtest_add_data_func("/display/pci/cirrus-gd5446b-pause-primary",
                                 GINT_TO_POINTER(0), test_gd5446b_blt_pause);
             qtest_add_data_func("/display/pci/cirrus-gd5446b-pause-alternate",
