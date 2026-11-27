@@ -6,6 +6,23 @@ if [ "${1:-}" = --whp-ln-adapter-probe ]; then
     printf '%s\n' whp-qemu-ln-seed-adapter
     exit 0
 fi
+# The parent has already exercised symbolic and hardlink semantics.
+# Avoid launching the full seed adapter for every locked link operation.
+if [ "${WHP_LN_LOCKED:-0}" = 1 ]; then
+    case "${WHP_LN_SEED:-}" in
+        ""|*/ln.sh|*/scripts/whp-build/seed-bin/ln)
+            printf '%s\n' 'error: locked ln has no independent seed' >&2
+            exit 1 ;;
+        /*) ;;
+        *) printf '%s\n' 'error: locked ln must be an absolute path' >&2
+           exit 1 ;;
+    esac
+    [ -f "$WHP_LN_SEED" ] && [ -x "$WHP_LN_SEED" ] || {
+        printf '%s\n' 'error: locked ln seed is not executable' >&2
+        exit 1
+    }
+    exec "$WHP_LN_SEED" "$@"
+fi
 case "$0" in
     */*) exec "${0%/*}/../../../seeds/ln.sh" "$@" ;;
     *) printf 'error: ln bridge must be invoked by path\n' >&2; exit 1 ;;
