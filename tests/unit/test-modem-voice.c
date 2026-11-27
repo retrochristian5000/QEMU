@@ -504,6 +504,60 @@ static void test_dataport_operating_mode(gconstpointer opaque)
     modem_frontend_cleanup(&fe, chr);
 }
 
+static void test_dataport_aol_flow_control(gconstpointer opaque)
+{
+    static const char *const probe[] = {
+        "AT\r", "AT\r", "ATH\r", "AT\r", "ATEQV1\r",
+    };
+    static const char *const rejected[] = {
+        "ATK3\r", "AT&K1\r", "AT&K2\r", "AT&K5\r",
+        "AT&K6\r", "AT&K999999999999999999999\r",
+    };
+    ModemOutput out = { 0 };
+    CharFrontend fe = { 0 };
+    Chardev *chr = modem_new("modem-aol-flow-control", opaque);
+    const char *reply;
+
+    modem_frontend_init(&fe, &out, chr);
+    for (unsigned i = 0; i < ARRAY_SIZE(probe); i++) {
+        assert_response_contains(modem_command(&fe, &out, probe[i]),
+                                 "\r\nOK\r\n");
+    }
+    g_assert_cmpstr(modem_command(&fe, &out, "AT\r"), ==, "\r\nOK\r\n");
+
+    /* Start from a different setting to detect an accepted no-op. */
+    g_assert_cmpstr(modem_command(&fe, &out, "AT\\Q0\\K2\r"), ==,
+                    "\r\nOK\r\n");
+    g_assert_cmpstr(modem_command(&fe, &out, "AT&K3\r"), ==, "\r\nOK\r\n");
+    reply = modem_command(&fe, &out, "AT&V\r");
+    assert_response_contains(reply, "\\Q3 ");
+    assert_response_contains(reply, "\\K2");
+
+    for (unsigned i = 0; i < ARRAY_SIZE(rejected); i++) {
+        g_assert_cmpstr(modem_command(&fe, &out, rejected[i]), ==,
+                        "\r\nERROR\r\n");
+        reply = modem_command(&fe, &out, "AT&V\r");
+        assert_response_contains(reply, "\\Q3 ");
+        assert_response_contains(reply, "\\K2");
+    }
+    assert_response_contains(modem_command(&fe, &out, "AT&K3&W0\r"),
+                             "\r\nOK\r\n");
+    assert_response_contains(modem_command(&fe, &out, "AT\\X1&K4&W1&Y1\r"),
+                             "\r\nOK\r\n");
+    reply = modem_command(&fe, &out, "AT&V\r");
+    assert_response_contains(reply, "\\Q1 ");
+    assert_response_contains(reply, "\\X0");
+    assert_response_contains(modem_command(&fe, &out, "AT&K\r"),
+                             "\r\nOK\r\n");
+    assert_response_contains(modem_command(&fe, &out, "AT&V\r"), "\\Q0 ");
+    assert_response_contains(modem_command(&fe, &out, "ATZ\r"),
+                             "\r\nOK\r\n");
+    assert_response_contains(modem_command(&fe, &out, "AT&V\r"), "\\Q3 ");
+    qemu_modem_hardware_reset(chr);
+    assert_response_contains(modem_command(&fe, &out, "AT&V\r"), "\\Q1 ");
+    modem_frontend_cleanup(&fe, chr);
+}
+
 static void test_dataport_reliability_config(gconstpointer opaque)
 {
     const char *model = opaque;
@@ -1125,8 +1179,9 @@ static void test_dataport_xon_xoff_transport(gconstpointer opaque)
     g_assert_cmpint(qemu_chr_fe_ioctl(&fe, CHR_IOCTL_SERIAL_SET_TIOCM,
                                      &lines), ==, 0);
     assert_response_contains(modem_command(&fe, &out, software ?
-                             (forward ? "AT\\Q1\\X1\r" : "AT\\Q1\\X0\r") :
-                             "AT\\Q3\\X0\r"), "\r\nOK\r\n");
+                             (forward ? "AT\\Q1\\X1\r" : "AT&K4\r") :
+                             (rts_test ? "AT\\Q0&K3\\X0\r" :
+                                         "AT\\Q3\\X0\r")), "\r\nOK\r\n");
     modem_command(&fe, &out, "ATD0\r");
     modem_test_wait_output(&out, "CONNECT");
     peer = QIO_CHANNEL(qio_channel_socket_accept(listener, &error_abort));
@@ -1419,6 +1474,11 @@ int main(int argc, char **argv)
                          test_dataport_operating_mode);
     g_test_add_data_func("/modem/paradyne/operating-mode-3740",
                          "att-paradyne-3740", test_dataport_operating_mode);
+    g_test_add_data_func("/modem/paradyne/aol-flow-control-3711",
+                         "att-paradyne-dataport-3711",
+                         test_dataport_aol_flow_control);
+    g_test_add_data_func("/modem/paradyne/aol-flow-control-3740",
+                         "att-paradyne-3740", test_dataport_aol_flow_control);
     g_test_add_data_func("/modem/paradyne/reliability-config-3711",
                          "att-paradyne-dataport-3711",
                          test_dataport_reliability_config);

@@ -85,6 +85,10 @@ profile-scoped Paradyne configuration commands:
 * ``%A0`` through ``%A127``: record the ASCII fallback character
   (default 19; 0 disables character-based fallback)
 * ``\Q0`` through ``\Q4``: record the configured flow-control mode
+* ``&K0`` (or bare &K), ``&K3`` and ``&K4`` select disabled,
+  hardware and software flow control using the same state as
+  ``\Q0``, ``\Q3`` and ``\Q1`` respectively. &K4 also selects
+  local XON/XOFF handling; these settings are stored in user profiles.
 * ``\K0`` through ``\K5``: record the requested DTE BREAK policy
   (factory default 5, bare command selects 0); reported by AT&V and
   included in stored profiles
@@ -115,6 +119,22 @@ Then send the following from the guest serial terminal::
 The 3740 accepts ``%B28800``; the 3711 rejects that rate. Both accept
 ``\N7`` and reject ``\N8``. The generic Hayes and Rockwell profiles do
 not acquire these Paradyne-specific commands.
+
+AOL 4.0's reported initial commands (AT twice, ATH, AT, ATEQV1)
+are covered by regression tests, with its separately observed &K3
+probe. The basic commands follow ITU-T V.25ter (August 1995):
+https://www.itu.int/rec/T-REC-V.25ter-199508-S/en.
+Both Express hardware tables show &K3 in a flow-control example.
+The related DataPort PCX User's Guide (October 1995, B-15) and
+Rockwell reference manual 1048 describe &K0, &K3 and &K4 semantics.
+The alias mapping is reference-based, not an original ROM comparison.
+The PCX also documents &K5 and &K6, but Express support and the
+corresponding transport behavior are unverified; these values return
+ERROR in this implementation. Bare K is not a synonym for either
+&K or \K. The existing 3740 receive-side RTS gate and software
+flow-control logic are reused; transmit-side CTS throttling is not
+implemented. No change is made to the separate \D CTS policy.
+AOL's complete scan and detection algorithm remain unknown.
 
 The operating-mode mappings follow the related DataPort PCX User's
 Guide (October 1995, B-16/B-17) and Rockwell RC288ACx reference
@@ -190,7 +210,7 @@ handling and whether to enter command mode. Only the configuration
 is implemented; serial BREAK delivery, buffer-discard effects and
 BREAK-triggered command-mode transitions are not yet emulated.
 No synthetic bytes are sent to the TCP peer. The separate &K command
-retains its existing behavior; \B (transmit BREAK) remains unsupported.
+controls flow rather than BREAK; \B (transmit BREAK) remains unsupported.
 
 Both user profiles initially contain factory defaults. Stored settings
 include the emulated writable S-registers, data reliability, compression,

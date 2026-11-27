@@ -1536,6 +1536,31 @@ static void modem_execute_command(ModemChardev *modem, const char *input)
                 break;
             }
             case 'K':
+                value = modem_parse_number(&p, 0);
+                if (modem->model->paradyne_commands) {
+                    /*
+                     * &K3 is attested for the Express; &K0 and &K4
+                     * follow the related PCX reference. Share the
+                     * existing flow-control state, not BREAK policy.
+                     */
+                    switch (value) {
+                    case 0:
+                        modem->flow_control_mode = 0;
+                        break;
+                    case 3:
+                        modem->flow_control_mode = 3;
+                        break;
+                    case 4:
+                        modem->flow_control_mode = 1;
+                        modem->xon_xoff_passthrough = false;
+                        break;
+                    default:
+                        modem_result(modem, MODEM_RESULT_ERROR);
+                        return;
+                    }
+                    modem->dte_rx_paused = false;
+                }
+                break;
             case 'T':
                 modem_parse_number(&p, 0);
                 break;
