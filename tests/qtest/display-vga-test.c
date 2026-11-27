@@ -10,6 +10,7 @@
 #include "qemu/osdep.h"
 #include "hw/display/vga_regs.h"
 #include "hw/pci/pci_ids.h"
+#include "hw/pci/pci_regs.h"
 #include "libqtest.h"
 #include "qobject/qdict.h"
 #include "qobject/qlist.h"
