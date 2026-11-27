@@ -1624,9 +1624,31 @@ static void gen_CLD(DisasContext *s, X86DecodedInsn *decode)
     tcg_gen_st_i32(tcg_constant_i32(1), tcg_env, offsetof(CPUX86State, df));
 }
 
+/*
+ * VME/PVI flag virtualization is a restricted CPL 3 operation.
+ * Consult CR4 at execution time rather than caching it in a TB.
+ */
+static bool gen_virtual_if(DisasContext *s, bool set)
+{
+    if (!PE(s) || CPL(s) <= IOPL(s)) {
+        return false;
+    }
+    if (CPL(s) != 3) {
+        gen_exception_gpf(s);
+        return true;
+    }
+
+    gen_update_cc_op(s);
+    gen_update_eip_cur(s);
+    gen_helper_vme_set_if(tcg_env, tcg_constant_i32(set));
+    return true;
+}
+
 static void gen_CLI(DisasContext *s, X86DecodedInsn *decode)
 {
-    gen_reset_eflags(s, IF_MASK);
+    if (!gen_virtual_if(s, false)) {
+        gen_reset_eflags(s, IF_MASK);
+    }
 }
 
 static void gen_CLTS(DisasContext *s, X86DecodedInsn *decode)
@@ -3063,6 +3085,22 @@ static void gen_POPF(DisasContext *s, X86DecodedInsn *decode)
     MemOp ot;
     int mask = TF_MASK | AC_MASK | ID_MASK | NT_MASK;
 
+    if (VM86(s) && IOPL(s) < 3) {
+        if (s->dflag != MO_16) {
+            gen_exception_gpf(s);
+            return;
+        }
+        gen_update_cc_op(s);
+        gen_update_eip_cur(s);
+        gen_helper_vme_check(tcg_env);
+        ot = gen_pop_T0(s);
+        gen_helper_vme_write_flags(tcg_env, s->T0);
+        gen_pop_update(s, ot);
+        set_cc_op(s, CC_OP_EFLAGS);
+        s->base.is_jmp = DISAS_EOB_NEXT;
+        return;
+    }
+
     if (CPL(s) == 0) {
         mask |= IF_MASK | IOPL_MASK;
     } else if (CPL(s) <= IOPL(s)) {
@@ -3238,8 +3276,19 @@ static void gen_PUSHA(DisasContext *s, X86DecodedInsn *decode)
 
 static void gen_PUSHF(DisasContext *s, X86DecodedInsn *decode)
 {
-    gen_update_cc_op(s);
-    gen_helper_read_eflags(s->T0, tcg_env);
+    if (VM86(s) && IOPL(s) < 3) {
+        if (s->dflag != MO_16) {
+            gen_exception_gpf(s);
+            return;
+        }
+        gen_update_cc_op(s);
+        gen_update_eip_cur(s);
+        gen_helper_vme_check(tcg_env);
+        gen_helper_vme_read_flags(s->T0, tcg_env);
+    } else {
+        gen_update_cc_op(s);
+        gen_helper_read_eflags(s->T0, tcg_env);
+    }
     gen_push_v(s, s->T0);
     assume_cc_op(s, CC_OP_EFLAGS);
 }
@@ -4084,6 +4133,13 @@ static void gen_STD(DisasContext *s, X86DecodedInsn *decode)
 
 static void gen_STI(DisasContext *s, X86DecodedInsn *decode)
 {
+    if (gen_virtual_if(s, true)) {
+        /* Setting VIF does not disable delivery of physical interrupts. */
+        if (s->base.is_jmp != DISAS_NORETURN) {
+            s->base.is_jmp = DISAS_EOB_NEXT;
+        }
+        return;
+    }
     gen_set_eflags(s, IF_MASK);
     s->base.is_jmp = DISAS_EOB_INHIBIT_IRQ;
 }
