@@ -203,6 +203,7 @@ static uint8_t rop_to_index[256];
 
 static void cirrus_bitblt_reset(CirrusVGAState *s);
 static void cirrus_update_memory_access(CirrusVGAState *s);
+static inline void invalidate_cursor1(CirrusVGAState *s);
 
 static bool cirrus_has_mmio(const CirrusVGAState *s)
 {
@@ -1273,6 +1274,9 @@ static int cirrus_get_bpp(VGACommonState *s1)
     CirrusVGAState * s = container_of(s1, CirrusVGAState, vga);
     uint32_t ret = 8;
 
+    if (cirrus_gd5446_double_clock_palette(s)) {
+        return 8;
+    }
     if ((s->vga.sr[0x07] & 0x01) != 0) {
         /* Cirrus SVGA */
         switch (s->vga.sr[0x07] & CIRRUS_SR7_BPP_MASK) {
@@ -1311,6 +1315,10 @@ static void cirrus_get_resolution(VGACommonState *s, int *pwidth, int *pheight)
     int width, height;
 
     width = (s->cr[0x01] + 1) * 8;
+    if (cirrus_gd5446_double_clock_palette(
+            container_of(s, CirrusVGAState, vga))) {
+        width *= 2;
+    }
     height = s->cr[0x12] |
         ((s->cr[0x07] & 0x02) << 7) |
         ((s->cr[0x07] & 0x40) << 3);
@@ -1505,7 +1513,8 @@ static void cirrus_vga_write_sr(CirrusVGAState * s, uint32_t val)
             cirrus_update_memory_access(s);
         }
         if (s->vga.update_retrace_info == cirrus_gd5446_update_retrace_info &&
-            ((s->vga.sr_index >= 0x0b && s->vga.sr_index <= 0x0e) ||
+            (s->vga.sr_index == 0x07 ||
+             (s->vga.sr_index >= 0x0b && s->vga.sr_index <= 0x0e) ||
              (s->vga.sr_index >= 0x1b && s->vga.sr_index <= 0x1e))) {
             s->vga.update_retrace_info(&s->vga);
         }
@@ -1554,6 +1563,9 @@ static void cirrus_write_hidden_dac(CirrusVGAState * s, int reg_value)
 {
     if (s->cirrus_hidden_dac_lockindex == 4) {
         s->cirrus_hidden_dac_data = reg_value;
+        if (s->vga.update_retrace_info == cirrus_gd5446_update_retrace_info) {
+            s->vga.update_retrace_info(&s->vga);
+        }
 #if defined(DEBUG_CIRRUS)
         printf("cirrus: outport hidden DAC, value %02x\n", reg_value);
 #endif
@@ -1593,12 +1605,19 @@ static void cirrus_vga_write_palette(CirrusVGAState * s, int reg_value)
     s->vga.dac_cache[s->vga.dac_sub_index] = reg_value;
     if (++s->vga.dac_sub_index == 3) {
         if ((s->vga.sr[0x12] & CIRRUS_CURSOR_HIDDENPEL)) {
-            memcpy(&s->cirrus_hidden_palette[(s->vga.dac_write_index & 0x0f) * 3],
-                   s->vga.dac_cache, 3);
+            unsigned index = s->vga.dac_write_index & 0x0f;
+            uint8_t *rgb = &s->cirrus_hidden_palette[index * 3];
+
+            if (memcmp(rgb, s->vga.dac_cache, 3) != 0) {
+                memcpy(rgb, s->vga.dac_cache, 3);
+                /* SR12: cursor colors are independent of the display LUT. */
+                if (index == 0 || index == 0x0f) {
+                    invalidate_cursor1(s);
+                }
+            }
         } else {
             memcpy(&s->vga.palette[s->vga.dac_write_index * 3], s->vga.dac_cache, 3);
         }
-        /* XXX update cursor */
         s->vga.dac_sub_index = 0;
         s->vga.dac_write_index++;
     }
