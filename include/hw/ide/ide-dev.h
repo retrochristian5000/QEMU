@@ -103,6 +103,10 @@ struct IDEState {
     bool atapi_cd_only; /* Immutable device profile, not migrated. */
     bool atapi_unswapped_model;
     const char *atapi_inquiry_product;
+    const char *atapi_inquiry_vendor;
+    uint16_t atapi_read_speed; /* Reported kB/s, zero uses legacy default. */
+    uint16_t atapi_buffer_kib; /* Reported cache, not the host I/O buffer. */
+    bool atapi_pio_only;
     struct unreported_events events;
     uint8_t sense_key;
     uint8_t asc;
@@ -160,6 +164,10 @@ struct IDEDeviceClass {
     bool atapi_unswapped_model;
     const char *atapi_default_model;
     const char *atapi_inquiry_product;
+    const char *atapi_inquiry_vendor;
+    uint16_t atapi_read_speed;
+    uint16_t atapi_buffer_kib;
+    bool atapi_pio_only;
 };
 
 struct IDEDevice {
