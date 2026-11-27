@@ -34,6 +34,8 @@ OBJECT_DECLARE_SIMPLE_TYPE(IDEBus, IDE_BUS)
 void ide_bus_init(IDEBus *idebus, size_t idebus_size, DeviceState *dev,
                   int bus_id, int max_units);
 IDEDevice *ide_bus_create_drive(IDEBus *bus, int unit, DriveInfo *drive);
+IDEDevice *ide_bus_create_drive_model(IDEBus *bus, int unit, DriveInfo *drive,
+                                     const char *model);
 
 int ide_get_geometry(BusState *bus, int unit,
                      int16_t *cyls, int8_t *heads, int8_t *secs);
