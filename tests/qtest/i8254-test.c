@@ -496,10 +496,38 @@ static void test_pc_periodic_cadence(gconstpointer opaque)
     qtest_quit(s);
 }
 
+static void test_reset_latches(void)
+{
+    QTestState *s = qtest_init("-M pc,hpet=off -nodefaults");
+
+    load_mode3(s, 0x1234);
+    qtest_outb(s, PIT_CONTROL, PIT_LATCH0);
+    qtest_outb(s, PIT_CONTROL, PIT_STATUS0);
+    qtest_system_reset(s);
+    /* Neither the status nor count latch may retain the old divisor. */
+    g_assert_cmphex(read_latched_count(s), ==, 0);
+    g_assert_cmphex(read_status(s, 0) & 0x7f, ==, 0x36);
+    qtest_quit(s);
+}
+
+static void test_constant_periodic_output(void)
+{
+    QTestState *s = qtest_init("-M pc,hpet=off -nodefaults");
+
+    qtest_irq_intercept_in(s, "ioapic");
+    load_mode3(s, 1);
+    check_output(s, true);
+    qtest_clock_step(s, NS_PER_SEC);
+    check_output(s, true);
+    qtest_quit(s);
+}
+
 int main(int argc, char **argv)
 {
     g_test_init(&argc, &argv, NULL);
     qtest_add_func("/i8254/mode2/output", test_mode2);
+    qtest_add_func("/i8254/reset/latches", test_reset_latches);
+    qtest_add_func("/i8254/mode3/constant-output", test_constant_periodic_output);
     qtest_add_func("/i8254/mode4/strobe", test_mode4_strobe);
     qtest_add_data_func("/i8254/speaker/compat", GINT_TO_POINTER(0),
                         test_pcspk_port61);
