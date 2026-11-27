@@ -2295,6 +2295,37 @@ static const VMStateDescription vmstate_acpi_build = {
     },
 };
 
+/*
+ * All x86 root bridges share PNP0A03 through _HID or _CID, including
+ * PCIe and CXL expanders. Keep established UIDs; reject collisions rather
+ * than renumbering bridges and changing persistent guest identities.
+ */
+static void acpi_validate_root_uids(PCMachineState *pcms)
+{
+    PCMachineClass *pcmc = PC_MACHINE_GET_CLASS(pcms);
+    g_autoptr(GHashTable) used = g_hash_table_new(g_direct_hash, g_direct_equal);
+    PCIBus *bus;
+
+    g_hash_table_add(used, GUINT_TO_POINTER(pcmc->pci_root_uid));
+    if (!pcms->pcibus) {
+        return;
+    }
+    QLIST_FOREACH(bus, &pcms->pcibus->child, sibling) {
+        uint32_t uid;
+
+        if (!pci_bus_is_root(bus)) {
+            continue;
+        }
+        uid = object_property_get_uint(OBJECT(bus), "acpi_uid", &error_fatal);
+        if (!g_hash_table_add(used, GUINT_TO_POINTER(uid))) {
+            error_report("ACPI: duplicate PCI root bridge _UID %u (bus %u); "
+                         "choose a different expander bus_nr",
+                         uid, (unsigned int)pci_bus_num(bus));
+            exit(EXIT_FAILURE);
+        }
+    }
+}
+
 void acpi_setup(void)
 {
     PCMachineState *pcms = PC_MACHINE(qdev_get_machine());
@@ -2322,6 +2353,7 @@ void acpi_setup(void)
         return;
     }
 
+    acpi_validate_root_uids(pcms);
     build_state = g_malloc0(sizeof *build_state);
 
     acpi_build_tables_init(&tables);

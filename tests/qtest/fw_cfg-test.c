@@ -426,11 +426,44 @@ static void test_isa_pnp_core(gconstpointer data)
     qtest_quit(s);
 }
 
+static void test_acpi_root_uid_collision(void)
+{
+    if (g_test_subprocess()) {
+        QTestState *s = qtest_init("-M pc-i440fx-5.1,acpi=on -nodefaults "
+                                  "-device pxb,id=expander,bus_nr=1");
+        qtest_quit(s);
+        return;
+    }
+
+    g_test_trap_subprocess(NULL, 10 * G_USEC_PER_SEC, 0);
+    g_test_trap_assert_failed();
+    g_test_trap_assert_stderr("*ACPI: duplicate PCI root bridge _UID 1*");
+}
+
+static void test_acpi_root_uid_distinct(void)
+{
+    QTestState *s = qtest_init("-M pc-i440fx-5.1,acpi=on -nodefaults "
+                              "-device pxb,id=expander,bus_nr=2");
+    QFWCFG *fw_cfg = pc_fw_cfg_init(s);
+    uint8_t first;
+
+    g_assert_cmpuint(qfw_cfg_get_file(fw_cfg, "etc/acpi/tables",
+                                     &first, sizeof(first)), >, 0);
+    pc_fw_cfg_uninit(fw_cfg);
+    qtest_quit(s);
+}
+
 int main(int argc, char **argv)
 {
     g_test_init(&argc, &argv, NULL);
 
     qtest_add_func("fw_cfg/signature", test_fw_cfg_signature);
+    if (qtest_has_machine("pc-i440fx-5.1") && qtest_has_device("pxb")) {
+        qtest_add_func("fw_cfg/acpi-root-uid/collision",
+                       test_acpi_root_uid_collision);
+        qtest_add_func("fw_cfg/acpi-root-uid/distinct",
+                       test_acpi_root_uid_distinct);
+    }
     if (qtest_has_machine("pc") && qtest_has_device("PIIX4_PM")) {
         qtest_add_func("fw_cfg/isa-irq-mask/empty", test_isa_irq_mask_empty);
         qtest_add_data_func("fw_cfg/isa-pnp-core/all", "pc,pic=on,pit=on",

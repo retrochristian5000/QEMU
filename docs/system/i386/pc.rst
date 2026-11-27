@@ -796,3 +796,19 @@ References: Seagate Medalist 1640 and 2140 Product Manual, January 1996,
 sections 1.1 and 3.2 (https://www.seagate.com/support/disc/manuals/ata/36314-21.pdf);
 IBM DTTA-3xxxxx OEM specifications, sections 1 and 3.2
 (https://www.manualowl.com/m/IBM/DTTA-351010/Manual/335209).
+
+ACPI root bridge identities
+---------------------------
+
+PCI, PCIe and CXL root bridges share the PNP0A03 hardware or compatible
+ID in the x86 ACPI namespace. Their persistent ``_UID`` values must be
+distinct. The primary PCI root retains its machine-version-specific UID;
+expander bridges retain their bus-number-based UIDs. QEMU rejects an
+ACPI-enabled configuration that would publish a duplicate root UID,
+rather than silently renumbering a bridge. For example, machine types
+5.1 and older use primary UID 1; choose an unused expander ``bus_nr``
+other than 1. Existing valid configurations and ACPI-disabled guests
+are unchanged. This does not alter the identities of ISA devices.
+
+See ACPI Specification 6.4, section 6.1.12 (_UID):
+https://uefi.org/htmlspecs/ACPI_Spec_6_4_html/06_Device_Configuration/Device_Configuration.html
