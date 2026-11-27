@@ -46,6 +46,7 @@
 #include "vga_regs.h"
 #include "cirrus_vga_internal.h"
 #include "cirrus_vga_overlay.h"
+#include "cirrus_vga_vport.h"
 #include "qom/object.h"
 #include "ui/console.h"
 
@@ -1664,6 +1665,10 @@ static void cirrus_vga_write_palette(CirrusVGAState * s, int reg_value)
 
 static int cirrus_vga_read_gr(CirrusVGAState * s, unsigned reg_index)
 {
+    if (s->gd5446_revision == CIRRUS_GD5446_REV_B && reg_index == 0x17) {
+        /* No external video source or active-line counter is modeled. */
+        return s->vga.gr[reg_index] & CIRRUS_VPORT_GR17_CONTROL_MASK;
+    }
     if (reg_index == 0x23) {
         return s->vga.gr[reg_index] & cirrus_blt_height_hi_mask(s);
     }
@@ -1709,6 +1714,10 @@ static void
 cirrus_vga_write_gr(CirrusVGAState * s, unsigned reg_index, int reg_value)
 {
     trace_vga_cirrus_write_gr(reg_index, reg_value);
+    if (s->gd5446_revision == CIRRUS_GD5446_REV_B && reg_index == 0x17) {
+        s->vga.gr[reg_index] = reg_value & CIRRUS_VPORT_GR17_CONTROL_MASK;
+        return;
+    }
     if (s->device_id == CIRRUS_ID_CLGD5430) {
         if (reg_index >= 0x12 && reg_index <= 0x15) {
             return;
@@ -1818,8 +1827,11 @@ cirrus_vga_write_gr(CirrusVGAState * s, unsigned reg_index, int reg_value)
 static int cirrus_vga_read_cr(CirrusVGAState * s, unsigned reg_index)
 {
     if (s->gd5446_revision == CIRRUS_GD5446_REV_B) {
-        uint8_t mask = cirrus_overlay_reg_mask(reg_index);
+        uint8_t mask = cirrus_vport_reg_mask(reg_index);
 
+        if (!mask) {
+            mask = cirrus_overlay_reg_mask(reg_index);
+        }
         if (mask) {
             return s->vga.cr[reg_index] & mask;
         }
@@ -1875,14 +1887,30 @@ static void cirrus_vga_write_cr(CirrusVGAState * s, int reg_value)
 {
     if (s->gd5446_revision == CIRRUS_GD5446_REV_B) {
         unsigned index = s->vga.cr_index;
-        uint8_t mask = cirrus_overlay_reg_mask(index);
+        uint8_t mask = cirrus_vport_reg_mask(index);
 
+        if (mask) {
+            /* Capture is armed by CR51[3], but no VREF or input clock
+             * arrives on this disconnected port. Do not write VRAM,
+             * switch buffers, or synthesize a completion interrupt. */
+            s->vga.cr[index] = reg_value & mask;
+            return;
+        }
+        mask = cirrus_overlay_reg_mask(index);
         if (mask) {
             bool was_enabled = cirrus_overlay_enabled(s);
             uint8_t value = reg_value & mask;
 
             if (s->vga.cr[index] != value) {
+                uint8_t changed = s->vga.cr[index] ^ value;
+
                 s->vga.cr[index] = value;
+                /* CR58[6:5] are capture-only; CR3F[5,1] are interrupt
+                 * controls. Neither changes the current display window. */
+                if ((index == 0x58 && !(changed & 0x0f)) ||
+                    (index == 0x3f && !(changed & 0x11))) {
+                    return;
+                }
                 cirrus_update_shadow(s);
                 /* Restore previously covered pixels when the window moves,
                  * is disabled, or switches to an unsupported mode. */
