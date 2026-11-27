@@ -234,6 +234,8 @@ static const struct {
     { .driver = "gd5430-pci",           .flag = &default_vga       },
     { .driver = "gd5430-vlb",           .flag = &default_vga       },
     { .driver = "gd5446-pci",           .flag = &default_vga       },
+    { .driver = "gd5446a-pci",          .flag = &default_vga       },
+    { .driver = "gd5446b-pci",          .flag = &default_vga       },
     { .driver = "vmware-svga",          .flag = &default_vga       },
     { .driver = "qxl-vga",              .flag = &default_vga       },
     { .driver = "virtio-vga",           .flag = &default_vga       },
