@@ -769,6 +769,61 @@ static void test_gd5446b_blt_pause(gconstpointer opaque)
     qtest_quit(qts);
 }
 
+static void test_gd5446b_swapped_apertures(void)
+{
+    const uint32_t config = 0x80002000U;
+    const uint32_t lfb = 0xe0000000U;
+    const uint32_t word = lfb + 0x400000;
+    const uint32_t dword = lfb + 0x800000;
+    const uint32_t blt_word = lfb + 0x1400000;
+    const uint32_t blt_dword = lfb + 0x1800000;
+    QTestState *qts = qtest_init("-M pc -device gd5446b-pci,addr=4,romfile=");
+
+    cirrus_pci_command(qts, config, 0);
+    qtest_outl(qts, 0xcf8, config | 0x10);
+    qtest_outl(qts, 0xcfc, lfb);
+    cirrus_pci_command(qts, config, 3);
+    qtest_outb(qts, VGA_MIS_W, VGA_MIS_COLOR | VGA_MIS_ENB_MEM_ACCESS);
+    vga_seq_write(qts, 0x06, 0x12);
+    vga_seq_write(qts, 0x07, 0x11);
+    vga_gfx_write(qts, 0x0b, 0);
+
+    /* Table 9-6: all three views address the same four physical bytes. */
+    qtest_writel(qts, lfb, 0x44332211);
+    g_assert_cmphex(qtest_readl(qts, word), ==, 0x33441122);
+    g_assert_cmphex(qtest_readl(qts, dword), ==, 0x11223344);
+    qtest_writel(qts, word, 0x88776655);
+    g_assert_cmphex(qtest_readl(qts, lfb), ==, 0x77885566);
+    qtest_writel(qts, dword, 0x04030201);
+    g_assert_cmphex(qtest_readl(qts, lfb), ==, 0x01020304);
+    qtest_writeb(qts, word + 1, 0xaa);
+    g_assert_cmphex(qtest_readb(qts, lfb), ==, 0xaa);
+    qtest_writew(qts, dword + 2, 0xbbcc);
+    g_assert_cmphex(qtest_readw(qts, lfb), ==, 0xccbb);
+
+    /* Last DWORD of each framebuffer aperture must remain in bounds. */
+    qtest_writel(qts, dword + 0x3ffffc, 0x12345678);
+    g_assert_cmphex(qtest_readl(qts, lfb + 0x3ffffc), ==, 0x78563412);
+
+    /* Dedicated swapped source apertures are independent of VRAM. */
+    vga_gfx_write(qts, 0x20, 7);
+    vga_gfx_write(qts, 0x22, 0);
+    vga_gfx_write(qts, 0x24, 8);
+    vga_gfx_write(qts, 0x29, 1);
+    vga_gfx_write(qts, 0x30, 4);
+    vga_gfx_write(qts, 0x32, 0x0d);
+    vga_gfx_write(qts, 0x31, 0x42);
+    qtest_writel(qts, blt_word, 0x44332211);
+    g_assert_cmphex(vga_gfx_read(qts, 0x31) & 1, ==, 1);
+    qtest_writel(qts, lfb + 0x200, 0xaabbccdd);
+    qtest_writel(qts, blt_dword, 0x88776655);
+    g_assert_cmphex(vga_gfx_read(qts, 0x31) & 1, ==, 0);
+    g_assert_cmphex(qtest_readl(qts, lfb + 0x100), ==, 0x33441122);
+    g_assert_cmphex(qtest_readl(qts, lfb + 0x104), ==, 0x55667788);
+    g_assert_cmphex(qtest_readl(qts, lfb + 0x200), ==, 0xaabbccdd);
+    qtest_quit(qts);
+}
+
 static void test_cirrus_pci_dword_expand(void)
 {
     const uint32_t config = 0x80000000U | (5U << 11);
@@ -1255,6 +1310,8 @@ int main(int argc, char **argv)
         if (qtest_has_device("gd5446b-pci")) {
             qtest_add_func("/display/pci/cirrus-gd5446b-pc97",
                            test_gd5446b_pc97);
+            qtest_add_func("/display/pci/cirrus-gd5446b-swapped-apertures",
+                           test_gd5446b_swapped_apertures);
             qtest_add_func("/display/pci/cirrus-gd5446b-overlay-registers",
                            test_gd5446b_overlay_registers);
             qtest_add_func("/display/pci/cirrus-gd5446b-vport",
