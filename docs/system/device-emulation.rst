@@ -105,9 +105,10 @@ identities, resource defaults, firmware path names and migration section
 names are retained; cross-version migration has not been validated.
 
 Cirrus Logic chipset types use the short chip name, with a bus suffix
-where appropriate. The ``gd5428`` and ``gd5446-pci`` profiles currently
-share their respective generic implementations; selecting them does not
-imply additional board-specific accuracy. The GD5422, GD5426 and GD5430
+where appropriate. The ``gd5428`` and ``gd5446-pci`` profiles retain their
+historical generic implementations. The explicit ``gd5446a-pci`` and
+``gd5446b-pci`` profiles distinguish the silicon revisions' PCI resource
+layouts and alternate host BitBLT source paths while sharing the DAC. The GD5422, GD5426 and GD5430
 profiles retain their existing behavior. These are registered device
 types, not aliases. The previous names ``isa-cirrus-vga-generic``,
 ``isa-cirrus-gd5422``, ``isa-cirrus-gd5426``, ``isa-cirrus-gd5428``,
