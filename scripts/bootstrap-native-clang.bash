@@ -470,6 +470,8 @@ if [[ -n "$compiler_cache_cmd" ]]; then
     WHP_COMPILER_CACHE_ROOT="${WHP_COMPILER_CACHE_ROOT:-$(dirname -- "$cache_build_dir")/.whp-compiler-cache}"
     cache_tag="$host_kernel-$host_arch"
     cache_base="${compiler_cache_cmd##*/}"
+    source "$SCRIPT_DIR/whp-build/compiler-cache-policy.sh"
+    whp_compiler_cache_budget "$cache_base" || exit 1
     case "$cache_base" in
         ccache)
             CCACHE_DIR="${CCACHE_DIR:-$WHP_COMPILER_CACHE_ROOT/ccache-$cache_tag}"
