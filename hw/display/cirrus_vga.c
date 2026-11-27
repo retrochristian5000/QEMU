@@ -112,6 +112,7 @@
 #define CIRRUS_BLT_START                0x02
 #define CIRRUS_BLT_RESET                0x04
 #define CIRRUS_BLT_FIFOUSED             0x10
+#define CIRRUS_BLT_SYSTEM_SOURCE        0x40
 #define CIRRUS_BLT_AUTOSTART            0x80
 
 // control 0x32
@@ -2214,8 +2215,10 @@ static uint64_t cirrus_vga_mem_read(void *opaque,
             val = *(s->vga.vram_ptr + bank_offset);
         } else
             val = 0xff;
-    } else if (addr >= 0x18000 && addr < 0x18100) {
-        /* memory-mapped I/O */
+    } else if (addr >= 0x18000 &&
+               addr < (s->gd5446_revision == CIRRUS_GD5446_REV_A ?
+                       0x1c000 : 0x18100)) {
+        /* Revision A aliases the 256-byte MMIO block through B8000-BBFFF. */
         val = 0xff;
         if (cirrus_has_mmio(s) &&
             (s->vga.sr[0x17] & 0x44) == 0x04) {
@@ -2227,6 +2230,17 @@ static uint64_t cirrus_vga_mem_read(void *opaque,
                       "cirrus: mem_readb 0x" HWADDR_FMT_plx "\n", addr);
     }
     return val;
+}
+
+/* TRM 5.10: GR31[6] selects different host source paths on A and B. */
+static bool cirrus_blt_alternate_source(const CirrusVGAState *s)
+{
+    if (!(s->vga.gr[0x31] & CIRRUS_BLT_SYSTEM_SOURCE)) {
+        return false;
+    }
+    return s->gd5446_revision == CIRRUS_GD5446_REV_B ||
+           (s->gd5446_revision == CIRRUS_GD5446_REV_A &&
+            (s->cirrus_blt_mode & CIRRUS_BLTMODE_COLOREXPAND));
 }
 
 static void cirrus_vga_mem_write(void *opaque,
@@ -2244,8 +2258,22 @@ static void cirrus_vga_mem_write(void *opaque,
         return;
     }
 
-    if (addr < 0x10000) {
+    if (s->gd5446_revision == CIRRUS_GD5446_REV_A &&
+        cirrus_blt_alternate_source(s) && addr >= 0x1c000 &&
+        addr < 0x20000) {
+        /* Revision A alternate host color expansion window: BC000-BFFFF. */
         if (s->cirrus_srcptr != s->cirrus_srcptr_end) {
+            *s->cirrus_srcptr++ = (uint8_t)mem_value;
+            if (s->cirrus_srcptr >= s->cirrus_srcptr_end) {
+                cirrus_bitblt_cputovideo_next(s);
+            }
+        }
+        return;
+    }
+
+    if (addr < 0x10000) {
+        if (s->cirrus_srcptr != s->cirrus_srcptr_end &&
+            !cirrus_blt_alternate_source(s)) {
             /* bitblt */
             *s->cirrus_srcptr++ = (uint8_t) mem_value;
             if (s->cirrus_srcptr >= s->cirrus_srcptr_end) {
@@ -2281,7 +2309,9 @@ static void cirrus_vga_mem_write(void *opaque,
                 }
             }
         }
-    } else if (addr >= 0x18000 && addr < 0x18100) {
+    } else if (addr >= 0x18000 &&
+               addr < (s->gd5446_revision == CIRRUS_GD5446_REV_A ?
+                       0x1c000 : 0x18100)) {
         /* memory-mapped I/O */
         if (cirrus_has_mmio(s) &&
             (s->vga.sr[0x17] & 0x44) == 0x04) {
@@ -2544,7 +2574,8 @@ static void cirrus_linear_write(void *opaque, hwaddr addr,
         ((addr & s->linear_mmio_mask) ==  s->linear_mmio_mask)) {
         /* memory-mapped I/O */
         cirrus_mmio_blt_write(s, addr & 0xff, val);
-    } else if (s->cirrus_srcptr != s->cirrus_srcptr_end) {
+    } else if (s->cirrus_srcptr != s->cirrus_srcptr_end &&
+               !cirrus_blt_alternate_source(s)) {
         /* bitblt */
         *s->cirrus_srcptr++ = (uint8_t) val;
         if (s->cirrus_srcptr >= s->cirrus_srcptr_end) {
@@ -2601,6 +2632,10 @@ static void cirrus_linear_bitblt_write(void *opaque,
 {
     CirrusVGAState *s = opaque;
 
+    if (s->gd5446_revision == CIRRUS_GD5446_REV_B &&
+        !cirrus_blt_alternate_source(s)) {
+        return;
+    }
     if (s->cirrus_srcptr != s->cirrus_srcptr_end) {
         /* bitblt */
         *s->cirrus_srcptr++ = (uint8_t) val;
