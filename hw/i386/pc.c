@@ -1925,6 +1925,8 @@ static void pc_machine_finalize(Object *obj)
     PCMachineState *pcms = PC_MACHINE(obj);
 
     g_free(pcms->rom_chip);
+    g_free(pcms->ide_hd_model);
+    g_free(pcms->ide_cd_model);
     if (pcms->pcspk && !qdev_is_realized(DEVICE(pcms->pcspk))) {
         object_unref(OBJECT(pcms->pcspk));
     }
