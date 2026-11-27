@@ -2625,7 +2625,7 @@ SRST
 ERST
 
 DEF("vga", HAS_ARG, QEMU_OPTION_vga,
-    "-vga [std|cirrus|vmware|qxl|xenfb|tcx|cg3|virtio|none]\n"
+    "-vga [std|cirrus|gd5446-pci|vmware|qxl|xenfb|tcx|cg3|virtio|none]\n"
     "                select video card type\n", QEMU_ARCH_ALL)
 SRST
 ``-vga type``
@@ -2638,12 +2638,18 @@ SRST
         profile. Guest driver compatibility depends on the selected
         interface; this option does not identify a physical board.
 
+    ``gd5446-pci``
+        Cirrus Logic CL-GD5446 PCI VGA, using the existing chipset
+        compatibility profile and its bundled Cirrus VGA BIOS. This is
+        the default for the fork's ``pc`` machine when available.
+        Requires a machine with a PCI bus that supports this selector.
+
     ``std``
         Standard VGA card with Bochs VBE extensions. If your guest OS
         supports the VESA 2.0 VBE extensions (e.g. Windows XP) and if
         you want to use high resolution modes (>= 1280x1024x16) then you
-        should use this option. (This card is the default since QEMU
-        2.2)
+        should use this option. This remains the default for
+        ``generic-pc`` and the versioned i440FX PC machines.
 
     ``vmware``
         VMware SVGA-II virtual graphics adapter for guests with a

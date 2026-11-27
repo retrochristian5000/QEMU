@@ -245,6 +245,9 @@ ISADevice *isa_vga_init(ISABus *bus)
     switch (vga_interface_type) {
     case VGA_CIRRUS:
         return isa_create_simple(bus, "cirrus-vga-generic-isa");
+    case VGA_GD5446:
+        error_report("gd5446-pci requires a PCI bus");
+        exit(EXIT_FAILURE);
     case VGA_QXL:
         error_report("%s: qxl: no PCI bus", __func__);
         return NULL;

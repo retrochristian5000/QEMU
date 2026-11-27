@@ -10,7 +10,8 @@ The fork provides two unversioned i440FX/PIIX machine profiles:
   named motherboard controller implementations where userspace emulation
   is available. Automatic COM ports use the NS16550A profile, and the
   PS/2 mouse uses the IntelliMouse wheel protocol profile. The synthetic
-  VMware backdoor and absolute mouse are disabled by default.
+  VMware backdoor and absolute mouse are disabled by default. The
+  default PCI video card is ``gd5446-pci`` when Cirrus support is built.
 * ``generic-pc`` (canonical type ``pc-generic``): the compatible controller
   configuration, using the previous default device selections.
 
@@ -18,9 +19,25 @@ Both profiles share the same machine initialization, PCI and ISA layout,
 firmware defaults, and configurable CPU, memory and expansion devices.
 Neither represents a specific retail motherboard. The generic machine
 still requires the i440FX/PIIX host and southbridge topology. The named
-UART and mouse are representative choices, not components claimed to
-be integrated into every PIIX board. VGA, NIC and storage defaults are
-unchanged.
+UART, mouse and VGA card are representative choices, not components
+claimed to be integrated into every PIIX board. NIC and storage defaults
+are unchanged.
+
+The CL-GD5446 uses the historical chipset compatibility implementation,
+with the bundled Cirrus VGA BIOS and 4 MiB default VRAM. Neither revision
+A nor revision B is implied. If the target build omits Cirrus support,
+``pc`` retains its standard VGA default when available. The generic and
+versioned machines retain standard VGA. Explicit display choices override
+the automatic card::
+
+    -machine pc -vga std
+    -machine pc -vga cirrus
+    -machine generic-pc -vga gd5446-pci
+    -machine pc -vga none -device gd5446b-pci
+
+Use a cold boot and allow the guest to redetect its graphics adapter
+when changing the primary VGA device. Existing snapshots require their
+original machine and graphics configuration.
 
 The IntelliMouse profile preserves standard PS/2 operation and wheel
 negotiation, but does not negotiate the five-button Explorer protocol.
@@ -362,8 +379,9 @@ Their guest-visible identities remain CL-GD5446 and CL-GD5428,
 respectively. The ``-device help`` descriptions identify the manufacturer,
 chipset and bus. Adjustable properties and implementation limitations
 are documented separately rather than encoded in device labels.
-The ``-vga help`` description identifies the generic selector rather
-than a specific physical board. The chipset-specific device names are:
+The ``-vga cirrus`` selector remains generic; ``-vga gd5446-pci``
+selects the named PCI compatibility profile and is the default on
+``pc`` when available. The chipset-specific device names are:
 
 * ``gd5422``: CL-GD5422 ISA.
 * ``gd5426``: CL-GD5426 ISA.

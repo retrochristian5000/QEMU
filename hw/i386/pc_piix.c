@@ -502,6 +502,13 @@ static void pc_hardware_machine_options(MachineClass *m)
     pc_i440fx_machine_11_1_options(m);
     pcmc->default_chipset_controllers = true;
     pcmc->default_serial_type = TYPE_NS16550A;
+    /*
+     * Prefer the named PCI card, but keep minimal builds usable when
+     * Cirrus emulation was omitted from the target configuration.
+     */
+    if (module_object_class_by_name("gd5446-pci")) {
+        m->default_display = "gd5446-pci";
+    }
     m->default_machine_opts = "firmware=bios-256k.bin,vmport=off";
     compat_props_add(m->compat_props, pc_hardware_defaults,
                      G_N_ELEMENTS(pc_hardware_defaults));

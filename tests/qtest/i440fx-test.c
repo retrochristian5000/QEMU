@@ -18,6 +18,7 @@
 #include "libqos/pci.h"
 #include "libqos/pci-pc.h"
 #include "hw/pci/pci_regs.h"
+#include "hw/pci/pci_ids.h"
 #include "qobject/qdict.h"
 
 #define BROKEN 1
@@ -963,6 +964,54 @@ static void test_pc_peripheral_profile(gconstpointer opaque)
     qtest_quit(qts);
 }
 
+typedef struct PCDisplayProfileTest {
+    const char *args;
+    const char *device;
+    uint32_t pci_id;
+} PCDisplayProfileTest;
+
+static void test_pc_display_profile(gconstpointer opaque)
+{
+    const PCDisplayProfileTest *profile = opaque;
+    QTestState *qts = qtest_initf("%s -nic none -serial none -parallel none",
+                                  profile->args);
+    QPCIBus *bus = qpci_new_pc(qts, NULL);
+    QDict *reply = qtest_qmp(qts,
+        "{'execute':'human-monitor-command','arguments':"
+        "{'command-line':'info qtree'}}");
+    const char *tree = qdict_get_str(reply, "return");
+    const char *const types[] = {
+        "VGA", "gd5446-pci", "cirrus-vga-generic", "gd5446a-pci",
+    };
+    unsigned count = 0;
+
+    for (size_t i = 0; i < ARRAY_SIZE(types); i++) {
+        g_autofree char *needle = g_strdup_printf("dev: %s,", types[i]);
+
+        if (profile->device && !strcmp(profile->device, types[i])) {
+            g_assert_nonnull(strstr(tree, needle));
+        } else {
+            g_assert_null(strstr(tree, needle));
+        }
+    }
+    qobject_unref(reply);
+
+    /* Inspect all PCI functions rather than assuming a VGA slot number. */
+    for (int devfn = 0; devfn < 256; devfn++) {
+        uint32_t id = bus->config_readl(bus, devfn, PCI_VENDOR_ID);
+        uint16_t class = bus->config_readw(bus, devfn, PCI_CLASS_DEVICE);
+
+        if (id != UINT32_MAX && class == PCI_CLASS_DISPLAY_VGA) {
+            g_assert_cmphex(id, ==, profile->pci_id);
+            count++;
+        }
+    }
+    g_assert_cmpuint(count, ==, profile->device ? 1 : 0);
+
+    qpci_free_pc(bus);
+    qtest_quit(qts);
+}
+
 int main(int argc, char **argv)
 {
     TestData data;
@@ -985,7 +1034,33 @@ int main(int argc, char **argv)
           "-global i8042.mouse-model=generic" },
     };
 
+    static const PCDisplayProfileTest displays[] = {
+        { "-M pc", "gd5446-pci", 0x00b81013 },
+        { "-M generic-pc", "VGA", 0x11111234 },
+        { "-M pc-i440fx-11.1", "VGA", 0x11111234 },
+        { "-M pc -vga std", "VGA", 0x11111234 },
+        { "-M pc -vga cirrus", "cirrus-vga-generic", 0x00b81013 },
+        { "-M generic-pc -vga gd5446-pci", "gd5446-pci", 0x00b81013 },
+        { "-M pc -device gd5446a-pci", "gd5446a-pci", 0x00b81013 },
+        { "-M pc -vga none", NULL, 0 },
+        { "-M pc -nodefaults", NULL, 0 },
+    };
+    static const PCDisplayProfileTest fallback = {
+        "-M pc", "VGA", 0x11111234,
+    };
+
     data.num_cpus = 1;
+
+    if (qtest_has_device("gd5446-pci") && qtest_has_device("VGA")) {
+        for (size_t i = 0; i < ARRAY_SIZE(displays); i++) {
+            g_autofree char *path = g_strdup_printf("i440fx/display/%zu", i);
+
+            qtest_add_data_func(path, &displays[i], test_pc_display_profile);
+        }
+    } else if (!qtest_has_device("gd5446-pci") && qtest_has_device("VGA")) {
+        qtest_add_data_func("i440fx/display/fallback", &fallback,
+                            test_pc_display_profile);
+    }
 
     for (size_t i = 0; i < ARRAY_SIZE(peripherals); i++) {
         g_autofree char *path = g_strdup_printf("i440fx/peripherals/%zu", i);

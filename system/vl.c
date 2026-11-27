@@ -989,6 +989,11 @@ static const VGAInterfaceInfo vga_interfaces[VGA_TYPE_MAX] = {
         .name = "Generic Cirrus Logic VGA (PCI or ISA)",
         .class_names = { "cirrus-vga-generic", "cirrus-vga-generic-isa" },
     },
+    [VGA_GD5446] = {
+        .opt_name = "gd5446-pci",
+        .name = "Cirrus Logic CL-GD5446 PCI VGA",
+        .class_names = { "gd5446-pci" },
+    },
     [VGA_VMWARE] = {
         .opt_name = "vmware",
         .name = "VMWare SVGA",
