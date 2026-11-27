@@ -112,6 +112,7 @@
 #define CIRRUS_BLT_START                0x02
 #define CIRRUS_BLT_RESET                0x04
 #define CIRRUS_BLT_FIFOUSED             0x10
+#define CIRRUS_BLT_PAUSE                0x20
 #define CIRRUS_BLT_SYSTEM_SOURCE        0x40
 #define CIRRUS_BLT_AUTOSTART            0x80
 
@@ -1177,6 +1178,17 @@ static void cirrus_bitblt_start(CirrusVGAState * s)
     cirrus_bitblt_reset(s);
 }
 
+/*
+ * TRM 5.10: a paused host transfer remains active internally, but
+ * ordinary display-memory writes must bypass its source FIFO.
+ */
+static bool cirrus_blt_host_paused(const CirrusVGAState *s)
+{
+    return s->gd5446_revision == CIRRUS_GD5446_REV_B &&
+           (s->vga.gr[0x31] & CIRRUS_BLT_PAUSE) &&
+           s->cirrus_srcptr != s->cirrus_srcptr_end;
+}
+
 static void cirrus_write_bitblt(CirrusVGAState * s, unsigned reg_value)
 {
     unsigned old_value;
@@ -1641,6 +1653,10 @@ static int cirrus_vga_read_gr(CirrusVGAState * s, unsigned reg_index)
 {
     if (reg_index == 0x23) {
         return s->vga.gr[reg_index] & cirrus_blt_height_hi_mask(s);
+    }
+    if (reg_index == 0x31 && cirrus_blt_host_paused(s)) {
+        /* A successfully suspended operation reports BUSY clear. */
+        return s->vga.gr[reg_index] & ~CIRRUS_BLT_BUSY;
     }
     if (reg_index == 0x33 && !cirrus_has_blt_modeext(s)) {
         return 0xff;
@@ -2278,7 +2294,7 @@ static void cirrus_vga_mem_write(void *opaque,
 
     if (addr < 0x10000) {
         if (s->cirrus_srcptr != s->cirrus_srcptr_end &&
-            !cirrus_blt_alternate_source(s)) {
+            !cirrus_blt_host_paused(s) && !cirrus_blt_alternate_source(s)) {
             /* bitblt */
             *s->cirrus_srcptr++ = (uint8_t) mem_value;
             if (s->cirrus_srcptr >= s->cirrus_srcptr_end) {
@@ -2580,7 +2596,7 @@ static void cirrus_linear_write(void *opaque, hwaddr addr,
         /* memory-mapped I/O */
         cirrus_mmio_blt_write(s, addr & 0xff, val);
     } else if (s->cirrus_srcptr != s->cirrus_srcptr_end &&
-               !cirrus_blt_alternate_source(s)) {
+               !cirrus_blt_host_paused(s) && !cirrus_blt_alternate_source(s)) {
         /* bitblt */
         *s->cirrus_srcptr++ = (uint8_t) val;
         if (s->cirrus_srcptr >= s->cirrus_srcptr_end) {
@@ -2638,7 +2654,7 @@ static void cirrus_linear_bitblt_write(void *opaque,
     CirrusVGAState *s = opaque;
 
     if (s->gd5446_revision == CIRRUS_GD5446_REV_B &&
-        !cirrus_blt_alternate_source(s)) {
+        (!cirrus_blt_alternate_source(s) || cirrus_blt_host_paused(s))) {
         return;
     }
     if (s->cirrus_srcptr != s->cirrus_srcptr_end) {
