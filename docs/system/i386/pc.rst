@@ -614,6 +614,25 @@ CPU, RAM, RTC, storage, display and NIC selections are unchanged. The option
 does not select a physical motherboard model or change Windows driver
 names by itself.
 
+PIIX3 PCI-to-ISA bridge configuration
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+The Intel 82371SB function 0 (8086:7000) uses the type-0
+multifunction header, class 060100h, and has no PCI BARs, subsystem
+IDs, expansion ROM or interrupt line. The Command register's I/O,
+memory and bus-master bits are hardwired to one. The Special Cycle
+Enable and SERR Enable bits are writable; the remaining bits are
+reserved or unimplemented. Status reports medium DEVSEL timing and
+implements the documented write-one-to-clear error bit mask.
+Special-cycle broadcasting and delayed-transaction error signaling
+are not implemented by these register changes.
+
+See Intel 82371FB/82371SB datasheet (May 1996), Table 2 and
+sections 2.2.3-2.2.7. PIIX4 and other PCI functions retain their
+existing header behavior. Older PIIX3 migration streams with
+generic header values are normalized on load; cross-version
+migration requires validation.
+
 PIIX DMA controller registers
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
