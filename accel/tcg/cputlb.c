@@ -93,6 +93,8 @@ QEMU_BUILD_BUG_ON(sizeof(vaddr) > sizeof(run_on_cpu_data));
 
 #define ALL_MMUIDX_BITS ((1 << NB_MMU_MODES) - 1)
 
+QEMU_BUILD_BUG_ON(CPU_VTLB_SIZE > UINT8_MAX + 1U);
+
 static inline size_t tlb_n_entries(CPUTLBDescFast *fast)
 {
     return (fast->mask >> CPU_TLB_ENTRY_BITS) + 1;
@@ -141,7 +143,7 @@ static inline CPUTLBEntry *tlb_entry(CPUState *cpu, uintptr_t mmu_idx,
 }
 
 static void tlb_window_reset(CPUTLBDesc *desc, int64_t ns,
-                             size_t max_entries)
+                             uint32_t max_entries)
 {
     desc->window_begin_ns = ns;
     desc->window_max_entries = max_entries;
@@ -212,18 +214,22 @@ static void tlb_mmu_resize_locked(CPUTLBDesc *desc, CPUTLBDescFast *fast,
     int64_t window_len_ns = window_len_ms * 1000 * 1000;
     bool window_expired = now > desc->window_begin_ns + window_len_ns;
 
+    /* A valid page has at least two bytes, so the 32-bit address-based
+     * dynamic bound always fits the 32-bit occupancy fields. */
+    assert(CPU_TLB_DYN_MAX_BITS < 32);
+    assert(old_size <= UINT32_MAX);
     assert(desc->n_used_entries <= old_size);
     if (desc->n_used_entries > desc->window_max_entries) {
         desc->window_max_entries = desc->n_used_entries;
     }
-    rate = desc->window_max_entries * 100 / old_size;
+    rate = (uint64_t)desc->window_max_entries * 100 / old_size;
 
     if (rate > 70) {
         new_size = MIN(old_size << 1, 1 << CPU_TLB_DYN_MAX_BITS);
     } else if (rate < 30 && window_expired) {
         size_t ceil = MAX(pow2ceil(desc->window_max_entries),
                           1 << CPU_TLB_DYN_MIN_BITS);
-        size_t expected_rate = desc->window_max_entries * 100 / ceil;
+        size_t expected_rate = (uint64_t)desc->window_max_entries * 100 / ceil;
 
         /*
          * Avoid undersizing when the max number of entries seen is just below
@@ -1147,7 +1153,7 @@ void tlb_set_page_full(CPUState *cpu, int mmu_idx,
      */
     bool was_used = !tlb_entry_is_empty(te);
     if (was_used && !tlb_hit_page_anyprot(te, addr_page)) {
-        unsigned vidx = desc->vindex++ % CPU_VTLB_SIZE;
+        unsigned vidx = tlb_victim_next(&desc->vindex, CPU_VTLB_SIZE);
         CPUTLBEntry *tv = &desc->vtable[vidx];
 
         /* Evict the old entry into the victim tlb.  */
