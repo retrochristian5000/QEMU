@@ -1112,3 +1112,29 @@ host resource contention may still delay guest execution.
 Reference: Apple Energy Efficiency Guide for Mac Apps, Prioritize Work
 at the App Level:
 https://developer.apple.com/library/archive/documentation/Performance/Conceptual/power_efficiency_guidelines_osx/PrioritizeWorkAtTheAppLevel.html
+
+
+SST parallel system ROM chips
+-----------------------------
+
+PCI PC machines can opt into one of three SST39SF parallel NOR devices::
+
+    qemu-system-i386 -M pc,rom-chip=sst39sf020a -bios bios-256k.bin
+
+The supported models are ``sst39sf010a`` (128 KiB), ``sst39sf020a``
+(256 KiB), and ``sst39sf040`` (512 KiB). Each has an 8-bit data bus,
+4 KiB erase sectors and its own JEDEC identification. The source is
+Microchip data sheet DS20005022F, sections 3 and 4.
+
+The image must fit the physical chip; shorter images are right-aligned
+with erased (0xff) padding, preserving the reset vector. The chip is
+mapped below 4 GiB and the top 128 KiB is aliased into the legacy BIOS
+window, subject to chipset PAM controls. Programming and erasure are
+volatile within the VM: the original BIOS file is never modified.
+Typical program and erase intervals are modeled using virtual time.
+Electrical behavior and flash wear are not modeled.
+
+The default ``rom-chip=auto`` retains the existing raw BIOS or pflash
+configuration. Explicit SST selection cannot be combined with pflash
+or confidential guests and is not available on ISA-only PC machines.
+A 128 KiB chip requires a BIOS image of at most 128 KiB.
