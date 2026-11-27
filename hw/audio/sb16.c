@@ -31,6 +31,7 @@
 #include "hw/audio/mpu401-uart.h"
 #include "sb16-legacy.h"
 #include "ct1745-mixer.h"
+#include "ct1741-dsp.h"
 #include "hw/core/qdev-properties.h"
 #include "migration/vmstate.h"
 #include "qemu/timer.h"
@@ -113,6 +114,7 @@ struct SB16State {
     int left_till_irq;
 
     int dma_running;
+    bool dma_paused; /* Named, currently unmigratable DSP profiles only. */
     int bytes_per_second;
     int align;
     int audio_free;
@@ -271,8 +273,24 @@ static inline int restrict_sampling_rate(int freq)
     }
 }
 
+static void ct1741_stop_previous_dma(SB16State *s)
+{
+    if (s->dma_running) {
+        control(s, 0);
+    }
+    s->dma_paused = false;
+}
+
 static void dma_cmd8 (SB16State *s, int mask, int dma_len)
 {
+    if (s->legacy_board) {
+        if (dma_len == -1 && s->block_size <= 0) {
+            qemu_log_mask(LOG_GUEST_ERROR, "sb16: DMA start without a valid "
+                          "block size\n");
+            return;
+        }
+        ct1741_stop_previous_dma(s);
+    }
     s->fmt = AUDIO_FORMAT_U8;
     s->use_hdma = 0;
     s->fmt_bits = 8;
@@ -289,7 +307,7 @@ static void dma_cmd8 (SB16State *s, int mask, int dma_len)
     s->freq = restrict_sampling_rate(s->freq);
 
     if (dma_len != -1) {
-        s->block_size = dma_len << s->fmt_stereo;
+        s->block_size = s->legacy_board ? dma_len : dma_len << s->fmt_stereo;
     }
     else {
         /* This is apparently the only way to make both Act1/PL
@@ -299,10 +317,15 @@ static void dma_cmd8 (SB16State *s, int mask, int dma_len)
            SR does the same with even number
            Both use stereo, and Creatives own documentation states that
            0x48 sets block size in bytes less one.. go figure */
-        s->block_size &= ~s->fmt_stereo;
+        if (!s->legacy_board) {
+            s->block_size &= ~s->fmt_stereo;
+        }
     }
 
     s->freq >>= s->fmt_stereo;
+    if (s->legacy_board && s->freq <= 0) {
+        s->freq = 11025;
+    }
     s->left_till_irq = s->block_size;
     s->bytes_per_second = (s->freq << s->fmt_stereo);
     /* s->highspeed = (mask & DMA8_HIGH) != 0; */
@@ -320,11 +343,16 @@ static void dma_cmd8 (SB16State *s, int mask, int dma_len)
             s->block_size, s->dma_auto, s->fifo, s->highspeed);
 
     continue_dma8 (s);
-    speaker (s, 1);
+    if (!s->legacy_board) {
+        speaker (s, 1);
+    }
 }
 
 static void dma_cmd (SB16State *s, uint8_t cmd, uint8_t d0, int dma_len)
 {
+    if (s->legacy_board) {
+        ct1741_stop_previous_dma(s);
+    }
     s->use_hdma = cmd < 0xc0;
     s->fifo = (cmd >> 1) & 1;
     s->dma_auto = (cmd >> 2) & 1;
@@ -352,9 +380,13 @@ static void dma_cmd (SB16State *s, uint8_t cmd, uint8_t d0, int dma_len)
         s->time_const = -1;
     }
 
-    s->block_size = dma_len + 1;
-    s->block_size <<= (s->fmt_bits == 16);
-    if (!s->dma_auto) {
+    if (s->legacy_board) {
+        s->freq = restrict_sampling_rate(s->freq > 0 ? s->freq : 11025);
+        s->block_size = ct1741_pcm_block_bytes(dma_len, s->use_hdma);
+    } else {
+        s->block_size = (dma_len + 1) << (s->fmt_bits == 16);
+    }
+    if (!s->legacy_board && !s->dma_auto) {
         /* It is clear that for DOOM and auto-init this value
            shouldn't take stereo into account, while Miles Sound Systems
            setsound.exe with single transfer mode wouldn't work without it
@@ -415,7 +447,9 @@ static void dma_cmd (SB16State *s, uint8_t cmd, uint8_t d0, int dma_len)
     }
 
     control (s, 1);
-    speaker (s, 1);
+    if (!s->legacy_board) {
+        speaker (s, 1);
+    }
 }
 
 static inline void dsp_out_data (SB16State *s, uint8_t val)
@@ -442,9 +476,64 @@ static inline uint8_t dsp_get_data (SB16State *s)
     qemu_log_mask(LOG_UNIMP, "%s (iobase=0x%x): DSP " fmt, \
                   object_get_typename(OBJECT(s)), (s)->port, ##__VA_ARGS__)
 
+static void ct1741_dma_command(SB16State *s, uint8_t cmd)
+{
+    bool wide = cmd == 0xd5 || cmd == 0xd6 || cmd == 0xd9;
+
+    if (!!s->use_hdma != wide) {
+        return;
+    }
+    switch (cmd) {
+    case 0xd0:
+    case 0xd5:
+        if (s->dma_running) {
+            control(s, 0);
+            s->dma_paused = true;
+        }
+        break;
+    case 0xd4:
+    case 0xd6:
+        if (s->dma_paused) {
+            s->dma_paused = false;
+            control(s, 1);
+        }
+        break;
+    case 0xd9:
+    case 0xda:
+        if (s->dma_running || s->dma_paused) {
+            s->dma_auto = 0;
+        }
+        break;
+    }
+}
+
 static void command (SB16State *s, uint8_t cmd)
 {
     ldebug("command 0x%x", cmd);
+
+    if (s->legacy_board) {
+        int count = ct1741_unimplemented_arg_count(cmd);
+
+        if (count >= 0) {
+            s->needed_bytes = count;
+            sb16_log_unimp(s, "command 0x%02x not implemented "
+                          "(expected parameter bytes=%d)\n", cmd, count);
+            goto exit;
+        }
+        switch (cmd) {
+        case 0xd0:
+        case 0xd4:
+        case 0xd5:
+        case 0xd6:
+        case 0xd9:
+        case 0xda:
+            ct1741_dma_command(s, cmd);
+            goto exit;
+        case 0xd8:
+            dsp_out_data(s, s->speaker ? 0xff : 0);
+            goto exit;
+        }
+    }
 
     if (cmd > 0xaf && cmd < 0xd0) {
         if (cmd & 8) {
@@ -499,7 +588,9 @@ static void command (SB16State *s, uint8_t cmd)
 
         case 0x14:
             s->needed_bytes = 2;
-            s->block_size = 0;
+            if (!s->legacy_board) {
+                s->block_size = 0;
+            }
             break;
 
         case 0x1c:              /* Auto-Initialize DMA DAC, 8-bit */
@@ -718,12 +809,19 @@ static void complete (SB16State *s)
     ldebug("complete command 0x%x, in_index %d, needed_bytes %d",
             s->cmd, s->in_index, s->needed_bytes);
 
+    if (s->legacy_board && ct1741_unimplemented_arg_count(s->cmd) >= 0) {
+        return; /* The caller discards the completed parameter frame. */
+    }
+
     if (s->cmd > 0xaf && s->cmd < 0xd0) {
         d2 = dsp_get_data (s);
         d1 = dsp_get_data (s);
         d0 = dsp_get_data (s);
 
-        if (s->cmd & 8) {
+        if (s->legacy_board && ((s->cmd & 1) || (d0 & ~0x30))) {
+            sb16_log_unimp(s, "invalid PCM command or mode 0x%02x/0x%02x\n",
+                          s->cmd, d0);
+        } else if (s->cmd & 8) {
             warn_report("sb16: ADC params cmd = 0x%x d0 = %d, d1 = %d, d2 = %d",
                    s->cmd, d0, d1, d2);
         }
@@ -975,6 +1073,16 @@ static void reset (SB16State *s)
     speaker (s, 0);
     control (s, 0);
     legacy_reset (s);
+    if (s->legacy_board) {
+        s->dma_paused = false;
+        s->use_hdma = 0;
+        s->time_const = -1;
+        s->fmt = AUDIO_FORMAT_U8;
+        s->fifo = 0;
+        s->align = 0;
+        s->audio_free = 0;
+        s->bytes_per_second = 11025;
+    }
 }
 
 static void dsp_write(void *opaque, uint32_t nport, uint32_t val)
@@ -1041,6 +1149,11 @@ static void dsp_write(void *opaque, uint32_t nport, uint32_t val)
                 if (s->in_index == s->needed_bytes) {
                     s->needed_bytes = 0;
                     complete (s);
+                    if (s->legacy_board) {
+                        /* Discard even unsupported completed frames. */
+                        s->in_index = 0;
+                        s->cmd = -1;
+                    }
 #if 0
                     log_dsp (s);
 #endif
@@ -1300,6 +1413,11 @@ static int SB_read_DMA (void *opaque, int nchan, int dma_pos, int dma_len)
     SB16State *s = opaque;
     int till, copy, written, free;
 
+    if (s->legacy_board &&
+        (!s->dma_running || nchan != (s->use_hdma ? s->hdma : s->dma) ||
+         dma_len <= 0)) {
+        return dma_pos;
+    }
     if (s->block_size <= 0) {
         qemu_log_mask(LOG_GUEST_ERROR, "invalid block size=%d nchan=%d"
                       " dma_pos=%d dma_len=%d\n", s->block_size, nchan,
@@ -1344,7 +1462,9 @@ static int SB_read_DMA (void *opaque, int nchan, int dma_pos, int dma_len)
         qemu_irq_raise (s->pic);
         if (s->dma_auto == 0) {
             control (s, 0);
-            speaker (s, 0);
+            if (!s->legacy_board) {
+                speaker (s, 0);
+            }
         }
     }
 

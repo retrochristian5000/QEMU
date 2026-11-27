@@ -210,6 +210,105 @@ static void test_ct1745_mixer(gconstpointer data)
     qtest_quit(s);
 }
 
+static uint8_t ct1741_response(QTestState *s, uint8_t cmd)
+{
+    qtest_outb(s, 0x22c, cmd);
+    g_assert_cmphex(qtest_inb(s, 0x22e) & 0x80, ==, 0x80);
+    return qtest_inb(s, 0x22a);
+}
+
+static void test_ct1741_commands(gconstpointer data)
+{
+    const char *type = data;
+    static const uint8_t two_args[] = { 0x16, 0x17, 0x24, 0x74,
+                                        0x75, 0x76, 0x77 };
+    QTestState *s = qtest_initf("-M pc -nodefaults -audiodev none,id=snd "
+                               "-device %s,audiodev=snd", type);
+
+    qtest_outb(s, 0x226, 1);
+    qtest_outb(s, 0x226, 0);
+    g_assert_cmphex(qtest_inb(s, 0x22a), ==, 0xaa);
+    g_assert_cmphex(ct1741_response(s, 0xd8), ==, 0);
+    qtest_outb(s, 0x22c, 0xd1);
+    g_assert_cmphex(ct1741_response(s, 0xd8), ==, 0xff);
+
+    /* Parameter bytes must not become speaker or IRQ commands. */
+    for (size_t i = 0; i < G_N_ELEMENTS(two_args); i++) {
+        qtest_outb(s, 0x22c, two_args[i]);
+        qtest_outb(s, 0x22c, 0xd3);
+        qtest_outb(s, 0x22c, 0xf2);
+        g_assert_cmphex(ct1741_response(s, 0xd8), ==, 0xff);
+        g_assert_cmphex(mixer_read(s, 0x220, 0x82) & 3, ==, 0);
+    }
+    qtest_outb(s, 0x22c, 0x38);
+    qtest_outb(s, 0x22c, 0xd3);
+    qtest_outb(s, 0x22c, 0xe2);
+    qtest_outb(s, 0x22c, 0x55);
+    g_assert_cmphex(ct1741_response(s, 0xd8), ==, 0xff);
+    qtest_outb(s, 0x22c, 0xe4);
+    qtest_outb(s, 0x22c, 0x69);
+    g_assert_cmphex(ct1741_response(s, 0xe8), ==, 0x69);
+
+    /* Reset during a partially received command discards its parameters. */
+    qtest_outb(s, 0x22c, 0x24);
+    qtest_outb(s, 0x22c, 0xf2);
+    qtest_outb(s, 0x226, 1);
+    qtest_outb(s, 0x226, 0);
+    g_assert_cmphex(qtest_inb(s, 0x22a), ==, 0xaa);
+    g_assert_cmphex(ct1741_response(s, 0xd8), ==, 0);
+    qtest_quit(s);
+}
+
+static void test_ct1741_dma_width(void)
+{
+    QTestState *s = qtest_init("-M pc -nodefaults -audiodev none,id=snd "
+                               "-device sb16-ct1730,audiodev=snd");
+
+    qtest_outb(s, 0x226, 1);
+    qtest_outb(s, 0x226, 0);
+    g_assert_cmphex(qtest_inb(s, 0x22a), ==, 0xaa);
+    /* Resume at idle must not raise DMA request. */
+    qtest_outb(s, 0x22c, 0xd4);
+    qtest_outb(s, 0x22c, 0xd6);
+    g_assert_cmphex(qtest_inb(s, 0x08) & 0x20, ==, 0);
+    g_assert_cmphex(qtest_inb(s, 0xd0) & 0x20, ==, 0);
+
+    /* Mask both DMA channels so DREQ can be observed without transfers. */
+    qtest_outb(s, 0x0a, 5);
+    qtest_outb(s, 0xd4, 5);
+    qtest_outb(s, 0x22c, 0xc4);
+    qtest_outb(s, 0x22c, 0);
+    qtest_outb(s, 0x22c, 0xff);
+    qtest_outb(s, 0x22c, 0);
+    g_assert_cmphex(qtest_inb(s, 0x08) & 0x20, ==, 0x20);
+    qtest_outb(s, 0x22c, 0xd5);
+    g_assert_cmphex(qtest_inb(s, 0x08) & 0x20, ==, 0x20);
+    qtest_outb(s, 0x22c, 0xd0);
+    g_assert_cmphex(qtest_inb(s, 0x08) & 0x20, ==, 0);
+    qtest_outb(s, 0x22c, 0xd6);
+    g_assert_cmphex(qtest_inb(s, 0x08) & 0x20, ==, 0);
+    qtest_outb(s, 0x22c, 0xd4);
+    g_assert_cmphex(qtest_inb(s, 0x08) & 0x20, ==, 0x20);
+
+    /* Starting a 16-bit transfer drops the old 8-bit request. */
+    qtest_outb(s, 0x22c, 0xb4);
+    qtest_outb(s, 0x22c, 0);
+    qtest_outb(s, 0x22c, 0xff);
+    qtest_outb(s, 0x22c, 0);
+    g_assert_cmphex(qtest_inb(s, 0x08) & 0x20, ==, 0);
+    g_assert_cmphex(qtest_inb(s, 0xd0) & 0x20, ==, 0x20);
+    qtest_outb(s, 0x22c, 0xd0);
+    g_assert_cmphex(qtest_inb(s, 0xd0) & 0x20, ==, 0x20);
+    qtest_outb(s, 0x22c, 0xd5);
+    g_assert_cmphex(qtest_inb(s, 0xd0) & 0x20, ==, 0);
+    qtest_outb(s, 0x22c, 0xd6);
+    g_assert_cmphex(qtest_inb(s, 0xd0) & 0x20, ==, 0x20);
+    qtest_outb(s, 0x226, 1);
+    qtest_outb(s, 0x226, 0);
+    g_assert_cmphex(qtest_inb(s, 0xd0) & 0x20, ==, 0);
+    qtest_quit(s);
+}
+
 static void test_ct1740_alias(void)
 {
     static const char *const names[] = { "sb16", "sb16-ct1740" };
@@ -281,10 +380,16 @@ int main(int argc, char **argv)
         if (qtest_has_device("sb16-ct1730")) {
             qtest_add_data_func("/ct1730/ct1745-mixer", "sb16-ct1730",
                                 test_ct1745_mixer);
+            qtest_add_data_func("/ct1730/ct1741-commands", "sb16-ct1730",
+                                test_ct1741_commands);
+            qtest_add_func("/ct1730/ct1741-dma-width",
+                           test_ct1741_dma_width);
         }
         if (qtest_has_device("sb16-ct1740")) {
             qtest_add_data_func("/ct1740/ct1745-mixer", "sb16-ct1740",
                                 test_ct1745_mixer);
+            qtest_add_data_func("/ct1740/ct1741-commands", "sb16-ct1740",
+                                test_ct1741_commands);
         }
         for (size_t i = 0; i < G_N_ELEMENTS(board_probes); i++) {
             if (qtest_has_device(board_probes[i].type)) {

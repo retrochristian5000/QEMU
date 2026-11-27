@@ -124,6 +124,31 @@ not implemented by these changes. The generic SB16 remains unchanged.
 Reference: Creative Sound Blaster Series Hardware Programming Guide,
 chapter 4, CT1745 mixer, pp. 4-12 through 4-17.
 
+CT1741 DSP command handling
+~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+The named fixed-jumper profiles implement DSP 4.xx speaker status (D8h)
+and keep the D1h/D3h flag independent of PCM playback. DMA pause, resume
+and auto-init exit commands apply to the current transfer width only;
+resume requires a paused transfer. Starting a new PCM transfer releases
+the old DMA request, and reset clears paused state and the time constant.
+Bxh/Cxh lengths count individual samples, not stereo frames, so single
+cycle and auto-init use the same sample-to-byte conversion.
+
+Unsupported ADPCM (16h/17h/1Fh), ADC (24h/2Ch) and DSP MIDI commands
+(30h/31h/34h-38h) are recognized for command framing only. Parameter
+bytes are consumed without starting playback, recording or UART mode.
+Incomplete commands are discarded on reset; unsupported ADPCM and E2h
+parameters cannot contaminate the following command. MPU-401 UART is
+still a separate interface. This change does not implement DSP MIDI,
+ADPCM decoding, ADC, DMA identification, independent capture timing,
+direct DAC playback, or cycle-accurate DSP firmware behavior.
+The generic SB16 retains the prior command semantics and migration state.
+
+Reference: Creative Sound Blaster Series Hardware Programming Guide,
+chapter 6 (DSP command descriptions, especially Bxh/Cxh and D0h-DAh),
+https://cecas.clemson.edu/~ahoover/ece468/labs/SoundBlasterProgrammingGuide.pdf
+
 These are experimental PCM/MIDI subsets, not complete boards. The reported
 DSP revisions do not yet reproduce revision-specific firmware behavior
 (including MIDI hanging-note bugs). The optional CSP, OPL3 and storage
