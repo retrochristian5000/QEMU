@@ -988,6 +988,10 @@ static int cirrus_bitblt_cputovideo(CirrusVGAState * s)
         s->cirrus_srccounter = s->cirrus_blt_srcpitch;
     } else {
         if (s->cirrus_blt_mode & CIRRUS_BLTMODE_COLOREXPAND) {
+            if (s->gd5446_revision == CIRRUS_GD5446_REV_B &&
+                s->cirrus_blt_width % s->cirrus_blt_pixelwidth) {
+                return 0;
+            }
             w = s->cirrus_blt_width / s->cirrus_blt_pixelwidth;
             if (s->cirrus_blt_modeext & CIRRUS_BLTMODEEXT_DWORDGRANULARITY)
                 /* GR33[0]: source rows are padded to a whole DWORD.
@@ -2323,6 +2327,23 @@ static uint64_t cirrus_vga_mem_read(void *opaque,
     return val;
 }
 
+/*
+ * TRM 9.4.5: byte-packed color expansion can span scanlines within a
+ * DWORD. After the final source byte, discard the rest of that cycle;
+ * do not reinterpret it as ordinary framebuffer data.
+ */
+static void cirrus_blt_source_write(CirrusVGAState *s, uint64_t value,
+                                    unsigned size, unsigned lane)
+{
+    for (unsigned i = 0; i < size &&
+         s->cirrus_srcptr != s->cirrus_srcptr_end; i++) {
+        *s->cirrus_srcptr++ = (uint8_t)(value >> (8 * (i ^ lane)));
+        if (s->cirrus_srcptr == s->cirrus_srcptr_end) {
+            cirrus_bitblt_cputovideo_next(s);
+        }
+    }
+}
+
 /* TRM 5.10: GR31[6] selects different host source paths on A and B. */
 static bool cirrus_blt_alternate_source(const CirrusVGAState *s)
 {
@@ -2414,6 +2435,40 @@ static void cirrus_vga_mem_write(void *opaque,
                       "value 0x%02" PRIx64 "\n", addr, mem_value);
     }
 }
+
+static uint64_t cirrus_gd5446b_mem_read(void *opaque, hwaddr addr,
+                                         unsigned size)
+{
+    uint64_t value = 0;
+
+    for (unsigned i = 0; i < size; i++) {
+        value |= (cirrus_vga_mem_read(opaque, addr + i, 1) & 0xff) << (8 * i);
+    }
+    return value;
+}
+
+static void cirrus_gd5446b_mem_write(void *opaque, hwaddr addr,
+                                     uint64_t value, unsigned size)
+{
+    CirrusVGAState *s = opaque;
+
+    if (addr < 0x10000 && (s->vga.sr[7] & 1) &&
+        s->cirrus_srcptr != s->cirrus_srcptr_end &&
+        !cirrus_blt_host_paused(s) && !cirrus_blt_alternate_source(s)) {
+        cirrus_blt_source_write(s, value, size, 0);
+        return;
+    }
+    for (unsigned i = 0; i < size; i++) {
+        cirrus_vga_mem_write(s, addr + i, (uint8_t)(value >> (8 * i)), 1);
+    }
+}
+
+static const MemoryRegionOps cirrus_gd5446b_mem_ops = {
+    .read = cirrus_gd5446b_mem_read,
+    .write = cirrus_gd5446b_mem_write,
+    .endianness = DEVICE_LITTLE_ENDIAN,
+    .impl = { .min_access_size = 1, .max_access_size = 4 },
+};
 
 static const MemoryRegionOps cirrus_vga_mem_ops = {
     .read = cirrus_vga_mem_read,
@@ -2756,6 +2811,23 @@ static void cirrus_linear_bitblt_write(void *opaque,
     }
 }
 
+static void cirrus_gd5446b_source_write(void *opaque, hwaddr addr,
+                                        uint64_t value, unsigned size)
+{
+    CirrusVGAState *s = opaque;
+
+    if (cirrus_blt_alternate_source(s) && !cirrus_blt_host_paused(s)) {
+        cirrus_blt_source_write(s, value, size, 0);
+    }
+}
+
+static const MemoryRegionOps cirrus_gd5446b_source_ops = {
+    .read = cirrus_linear_bitblt_read,
+    .write = cirrus_gd5446b_source_write,
+    .endianness = DEVICE_LITTLE_ENDIAN,
+    .impl = { .min_access_size = 1, .max_access_size = 4 },
+};
+
 static const MemoryRegionOps cirrus_linear_bitblt_io_ops = {
     .read = cirrus_linear_bitblt_read,
     .write = cirrus_linear_bitblt_write,
@@ -2800,13 +2872,7 @@ static void cirrus_swapped_source_write(CirrusVGAState *s, hwaddr addr,
         return;
     }
 
-    for (unsigned i = 0; i < 4 &&
-         s->cirrus_srcptr != s->cirrus_srcptr_end; i++) {
-        *s->cirrus_srcptr++ = value >> (8 * (i ^ lane));
-        if (s->cirrus_srcptr == s->cirrus_srcptr_end) {
-            cirrus_bitblt_cputovideo_next(s);
-        }
-    }
+    cirrus_blt_source_write(s, value, size, lane);
 }
 
 static void cirrus_swapped_fb_write(void *opaque, hwaddr addr,
@@ -3349,6 +3415,41 @@ static void cirrus_reset(void *opaque)
     }
 }
 
+static uint64_t cirrus_gd5446b_linear_read(void *opaque, hwaddr addr,
+                                            unsigned size)
+{
+    uint64_t value = 0;
+
+    for (unsigned i = 0; i < size; i++) {
+        value |= (cirrus_linear_read(opaque, addr + i, 1) & 0xff) << (8 * i);
+    }
+    return value;
+}
+
+static void cirrus_gd5446b_linear_write(void *opaque, hwaddr addr,
+                                        uint64_t value, unsigned size)
+{
+    CirrusVGAState *s = opaque;
+    bool mmio = (s->vga.sr[0x17] & 0x44) == 0x44 &&
+                ((addr & s->linear_mmio_mask) == s->linear_mmio_mask);
+
+    if (!mmio && s->cirrus_srcptr != s->cirrus_srcptr_end &&
+        !cirrus_blt_host_paused(s) && !cirrus_blt_alternate_source(s)) {
+        cirrus_blt_source_write(s, value, size, 0);
+        return;
+    }
+    for (unsigned i = 0; i < size; i++) {
+        cirrus_linear_write(s, addr + i, (uint8_t)(value >> (8 * i)), 1);
+    }
+}
+
+static const MemoryRegionOps cirrus_gd5446b_linear_ops = {
+    .read = cirrus_gd5446b_linear_read,
+    .write = cirrus_gd5446b_linear_write,
+    .endianness = DEVICE_LITTLE_ENDIAN,
+    .impl = { .min_access_size = 1, .max_access_size = 4 },
+};
+
 static const MemoryRegionOps cirrus_linear_io_ops = {
     .read = cirrus_linear_read,
     .write = cirrus_linear_write,
@@ -3417,7 +3518,9 @@ void cirrus_init_common(CirrusVGAState *s, Object *owner,
                        "cirrus-lowmem-container",
                        0x20000);
 
-    memory_region_init_io(&s->low_mem, owner, &cirrus_vga_mem_ops, s,
+    memory_region_init_io(&s->low_mem, owner,
+                          s->gd5446_revision == CIRRUS_GD5446_REV_B ?
+                          &cirrus_gd5446b_mem_ops : &cirrus_vga_mem_ops, s,
                           "cirrus-low-memory", 0x20000);
     memory_region_add_subregion(&s->low_mem_container, 0, &s->low_mem);
     for (i = 0; i < 2; ++i) {
@@ -3438,7 +3541,9 @@ void cirrus_init_common(CirrusVGAState *s, Object *owner,
     /* I/O handler for LFB */
     /* On the VLB interface A[21:2] selects a 4 MiB window. GD5430
      * physical VRAM is at most 2 MiB; the linear handler wraps accesses. */
-    memory_region_init_io(&s->cirrus_linear_io, owner, &cirrus_linear_io_ops, s,
+    memory_region_init_io(&s->cirrus_linear_io, owner,
+                          s->gd5446_revision == CIRRUS_GD5446_REV_B ?
+                          &cirrus_gd5446b_linear_ops : &cirrus_linear_io_ops, s,
                           "cirrus-linear-io",
                           (bustype == CIRRUS_BUSTYPE_VLBFAST ||
                            bustype == CIRRUS_BUSTYPE_VLBSLOW ||
@@ -3448,8 +3553,9 @@ void cirrus_init_common(CirrusVGAState *s, Object *owner,
 
     /* I/O handler for LFB */
     memory_region_init_io(&s->cirrus_linear_bitblt_io, owner,
-                          &cirrus_linear_bitblt_io_ops,
-                          s,
+                          s->gd5446_revision == CIRRUS_GD5446_REV_B ?
+                          &cirrus_gd5446b_source_ops :
+                          &cirrus_linear_bitblt_io_ops, s,
                           "cirrus-bitblt-mmio",
                           0x400000);
     memory_region_set_flush_coalesced(&s->cirrus_linear_bitblt_io);
