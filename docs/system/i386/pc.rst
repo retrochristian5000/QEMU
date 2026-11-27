@@ -1192,3 +1192,30 @@ behavior. These are compatibility profiles, not complete vendor firmware
 or mechanical timing emulations. An explicit ``-device`` still controls
 its own model independently. The ``generic-pc``, ``laptop-pc``, Q35 and
 versioned machine types retain their previous automatic drive behavior.
+
+
+CPU-specific SeaBIOS builds
+---------------------------
+
+The matching X86-Firmware fork supports explicit compiler CPU profiles
+without changing its calling conventions or ROM layout policy. With the
+updated firmware source selected, build optional 256 KiB images using::
+
+    make -C roms seabios-pentium
+    make -C roms seabios-pentium-mmx
+
+Each image uses a separate build directory and retains the same device
+configuration as the regular 256 KiB BIOS. Select the P55C image explicitly::
+
+    qemu-system-i386 -M pc -cpu pentium_mmx \\
+        -bios pc-bios/bios-pentium-mmx-256k.bin -smp 1
+
+The P54C image is named ``bios-pentium-256k.bin``. The firmware build
+uses the corresponding ``-march`` and ``-mtune`` while disabling automatic
+MMX/SSE generation to protect guest register state. The i386 baseline
+remains unchanged. These optional images are not yet Meson default
+outputs, bundled prebuilt blobs, or automatically selected by CPU model.
+Use the regular BIOS if the selected compiler cannot build the CPU
+profile. Compiler tuning does not model a CPU's cycle rate, implement
+VME, or guarantee faster TCG execution. Validate ROM size and cold boot
+before adopting a CPU-specific image as a machine default.
