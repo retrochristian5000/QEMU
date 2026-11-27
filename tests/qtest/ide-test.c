@@ -1214,6 +1214,24 @@ static void send_scsi_cdb_read10(QPCIDevice *dev, QPCIBar ide_bar,
     }
 }
 
+static void send_scsi_cdb_read_cd(QPCIDevice *dev, QPCIBar ide_bar,
+                                  uint64_t lba, int nblocks)
+{
+    uint8_t pkt[12] = { 0xbe, 0x08 };
+
+    g_assert_cmpuint(lba, <=, UINT32_MAX);
+    g_assert_cmpint(nblocks, >, 0);
+    g_assert_cmpint(nblocks, <=, 0xffffff);
+    stl_be_p(pkt + 2, lba);
+    pkt[6] = nblocks >> 16;
+    pkt[7] = nblocks >> 8;
+    pkt[8] = nblocks;
+    pkt[9] = 0xf8;
+    for (int i = 0; i < sizeof(pkt); i += 2) {
+        qpci_io_writew(dev, ide_bar, reg_data, lduw_le_p(pkt + i));
+    }
+}
+
 static void nsleep(QTestState *qts, int64_t nsecs)
 {
     const struct timespec val = { .tv_nsec = nsecs };
@@ -1737,6 +1755,65 @@ static void test_cdrom_dma(void)
     test_bmdma_teardown(qts);
 }
 
+/* Both reads cross the 128 KiB staging-buffer boundary. */
+static void test_cdrom_dma_batched(gconstpointer opaque)
+{
+    bool raw = GPOINTER_TO_INT(opaque);
+    const int nblocks = 70;
+    const int sector_size = raw ? 2352 : ATAPI_BLOCK_SIZE;
+    const size_t len = nblocks * sector_size;
+    const size_t payload_len = nblocks * ATAPI_BLOCK_SIZE;
+    g_autofree uint8_t *pattern = g_malloc(payload_len);
+    g_autofree uint8_t *rx = g_malloc0(len);
+    const size_t chunk = 4096;
+    const size_t entries = DIV_ROUND_UP(len, chunk);
+    g_autofree PrdtEntry *prdt = g_new0(PrdtEntry, entries);
+    g_autofree uintptr_t *buffers = g_new(uintptr_t, entries);
+    FILE *fh = fopen(tmp_path[0], "wb");
+    QTestState *qts;
+
+    g_assert_nonnull(fh);
+    generate_pattern((char *)pattern, payload_len, ATAPI_BLOCK_SIZE);
+    g_assert_cmpuint(fwrite(pattern, 1, payload_len, fh), ==, payload_len);
+    fclose(fh);
+    qts = ide_test_start(
+        "-drive if=none,file=%s,media=cdrom,format=raw,id=sr0,index=0 "
+        "-device ide-cd,drive=sr0,bus=ide.0", tmp_path[0]);
+    qtest_irq_intercept_in(qts, "ioapic");
+
+    for (size_t i = 0; i < entries; i++) {
+        size_t bytes = MIN(chunk, len - i * chunk);
+
+        buffers[i] = guest_alloc(&guest_malloc, chunk);
+        prdt[i].addr = cpu_to_le32(buffers[i]);
+        prdt[i].size = cpu_to_le32(bytes |
+                                  (i == entries - 1 ? PRDT_EOT : 0));
+    }
+    g_assert_cmphex(send_dma_request(qts, CMD_PACKET, 0, nblocks, prdt,
+                                    entries, raw ? send_scsi_cdb_read_cd :
+                                                   send_scsi_cdb_read10),
+                    ==, BM_STS_INTR);
+    for (size_t i = 0; i < entries; i++) {
+        qtest_memread(qts, buffers[i], rx + i * chunk,
+                      MIN(chunk, len - i * chunk));
+        guest_free(&guest_malloc, buffers[i]);
+    }
+    for (int i = 0; i < nblocks; i++) {
+        const uint8_t *sector = rx + i * sector_size;
+
+        if (raw) {
+            g_assert_cmphex(sector[0], ==, 0);
+            g_assert_cmphex(sector[1], ==, 0xff);
+            g_assert_cmphex(sector[11], ==, 0);
+            g_assert_cmphex(sector[15], ==, 1);
+            sector += 16;
+        }
+        g_assert_cmpmem(sector, ATAPI_BLOCK_SIZE,
+                        pattern + i * ATAPI_BLOCK_SIZE, ATAPI_BLOCK_SIZE);
+    }
+    test_bmdma_teardown(qts);
+}
+
 static void test_cdrom_dma_fault(bool no_busmaster)
 {
     QTestState *qts;
@@ -1983,6 +2060,10 @@ int main(int argc, char **argv)
     qtest_add_func("/ide/cdrom/pio", test_cdrom_pio);
     qtest_add_func("/ide/cdrom/pio_large", test_cdrom_pio_large);
     qtest_add_func("/ide/cdrom/dma", test_cdrom_dma);
+    qtest_add_data_func("/ide/cdrom/dma-batched-cooked", GINT_TO_POINTER(0),
+                        test_cdrom_dma_batched);
+    qtest_add_data_func("/ide/cdrom/dma-batched-raw", GINT_TO_POINTER(1),
+                        test_cdrom_dma_batched);
     qtest_add_func("/ide/cdrom/dma_no_busmaster",
                    test_cdrom_dma_no_busmaster);
     qtest_add_func("/ide/cdrom/dma_bad_buffer",
