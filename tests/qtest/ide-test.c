@@ -863,6 +863,52 @@ static void read_ata_identify(QPCIDevice *dev, QPCIBar bar, uint16_t *id)
     assert_bit_clear(qpci_io_readb(dev, bar, reg_status), BSY | DRQ | ERR);
 }
 
+/* Exercise the legacy drive attachment path, not explicit -device. */
+static void test_pc_legacy_hd_model(gconstpointer opaque)
+{
+    const AtaHdIdentity *profile = opaque;
+    g_autofree char *path = NULL;
+    int fd = g_file_open_tmp("qemu-ide-model-XXXXXX", &path, NULL);
+    int64_t bytes = TEST_IMAGE_SIZE;
+    const char *option = profile->type;
+    uint16_t id[256];
+    char expected[40];
+
+    g_assert_cmpint(fd, >=, 0);
+    if (g_str_equal(profile->type, "seagate-st31640a")) {
+        bytes = INT64_C(3175200) * 512;
+        option = "auto";
+    } else if (g_str_equal(profile->type, "seagate-st32140a")) {
+        bytes = INT64_C(4127760) * 512;
+        option = "auto";
+    } else if (g_str_equal(profile->type, "ibm-dtta-351010")) {
+        bytes = INT64_C(19807200) * 512;
+        option = "auto";
+    }
+    g_assert_cmpint(ftruncate(fd, bytes), ==, 0);
+    close(fd);
+    g_autofree char *quoted = g_shell_quote(path);
+    QTestState *qts = qtest_initf(
+        "-machine pc,ide-hd-model=%s -nodefaults "
+        "-drive if=ide,index=0,format=raw,file=%s", option, quoted);
+    unlink(path);
+    qtest_outb(qts, 0x1f6, 0xe0);
+    qtest_outb(qts, 0x1f7, CMD_IDENTIFY);
+    assert_bit_set(qtest_inb(qts, 0x1f7), DRDY | DRQ);
+    for (unsigned i = 0; i < ARRAY_SIZE(id); i++) {
+        id[i] = qtest_inw(qts, 0x1f0);
+    }
+    assert_bit_clear(qtest_inb(qts, 0x1f7), BSY | DRQ | ERR);
+    memset(expected, ' ', sizeof(expected));
+    memcpy(expected, profile->model, strlen(profile->model));
+    string_cpu_to_be16(&id[27], sizeof(expected));
+    g_assert_cmpmem(&id[27], sizeof(expected), expected, sizeof(expected));
+    g_assert_cmphex(id[80], ==, profile->major);
+    g_assert_cmpuint((uint32_t)id[60] | ((uint32_t)id[61] << 16),
+                     ==, bytes / 512);
+    qtest_quit(qts);
+}
+
 static void test_ata_hd_identity(gconstpointer opaque)
 {
     const AtaHdIdentity *profile = opaque;
@@ -2052,6 +2098,11 @@ int main(int argc, char **argv)
                                                 profile->type, i);
 
         qtest_add_data_func(name, profile, test_ata_hd_identity);
+        if (!profile->options[0] && qtest_has_machine("pc")) {
+            g_autofree char *legacy = g_strdup_printf(
+                "/ide/legacy-model/%s", profile->type);
+            qtest_add_data_func(legacy, profile, test_pc_legacy_hd_model);
+        }
     }
     if (qtest_has_machine("q35")) {
         if (qtest_has_device("piix4-ide")) {
