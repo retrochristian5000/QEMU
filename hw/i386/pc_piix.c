@@ -316,7 +316,10 @@ static void pc_init1(MachineState *machine, const char *host_type,
                                     (object_property_find(OBJECT(pcms),
                                                           "ide-hd-model")
                                      ? "auto" : NULL),
-                                    pcms->ide_cd_model);
+                                    pcms->ide_cd_model ?:
+                                    (object_property_find(OBJECT(pcms),
+                                                          "ide-cd-model")
+                                     ? "toshiba-xm-6202b" : NULL));
     pcms->idebus[0] = qdev_get_child_bus(dev, "ide.0");
     pcms->idebus[1] = qdev_get_child_bus(dev, "ide.1");
 
@@ -620,7 +623,7 @@ static void pc_set_ide_hd_model(Object *obj, const char *value, Error **errp)
 
 static char *pc_get_ide_cd_model(Object *obj, Error **errp)
 {
-    return g_strdup(PC_MACHINE(obj)->ide_cd_model ?: "ide-cd");
+    return g_strdup(PC_MACHINE(obj)->ide_cd_model ?: "toshiba-xm-6202b");
 }
 
 static void pc_set_ide_cd_model(Object *obj, const char *value, Error **errp)
@@ -628,7 +631,7 @@ static void pc_set_ide_cd_model(Object *obj, const char *value, Error **errp)
     PCMachineState *pcms = PC_MACHINE(obj);
 
     if (strcmp(value, "ide-cd") && strcmp(value, "oti-910") &&
-        strcmp(value, "oti-011")) {
+        strcmp(value, "oti-011") && strcmp(value, "toshiba-xm-6202b")) {
         error_setg(errp, "Unknown PC IDE optical drive model '%s'", value);
         return;
     }
@@ -642,7 +645,8 @@ static void pc_hardware_machine_options(MachineClass *m)
     ObjectClass *oc = OBJECT_CLASS(m);
 
     m->default_machine_opts =
-        "firmware=bios-256k.bin,vmport=off,ide-hd-model=auto";
+        "firmware=bios-256k.bin,vmport=off,ide-hd-model=auto,"
+        "ide-cd-model=toshiba-xm-6202b";
     object_class_property_add_str(oc, "ide-hd-model", pc_get_ide_hd_model,
                                   pc_set_ide_hd_model);
     object_class_property_set_description(oc, "ide-hd-model",
@@ -651,7 +655,8 @@ static void pc_hardware_machine_options(MachineClass *m)
     object_class_property_add_str(oc, "ide-cd-model", pc_get_ide_cd_model,
                                   pc_set_ide_cd_model);
     object_class_property_set_description(oc, "ide-cd-model",
-        "Legacy IDE optical profile (ide-cd, oti-910, oti-011)");
+        "Legacy IDE optical profile (toshiba-xm-6202b, ide-cd, "
+        "oti-910, oti-011)");
     m->desc = "PC (i440FX + PIIX, named hardware defaults)";
     m->alias = "pc";
     m->is_default = true;
