@@ -7,6 +7,7 @@ import os
 import shlex
 import subprocess
 import sys
+import tempfile
 
 def destdir_join(d1: str, d2: str) -> str:
     if not d1:
@@ -34,3 +35,11 @@ for source, dest in json.loads(out).items():
                       'without Administrator permission')
             print(f'error making symbolic link {dest}', file=sys.stderr)
             raise e
+        # Meson can change an installed file from a source blob to a
+        # generated artifact (or back) during reconfiguration. Existing
+        # bundle links must follow the new provider. Leave real files alone.
+        if os.path.islink(bundle_dest) and os.readlink(bundle_dest) != source:
+            with tempfile.TemporaryDirectory(prefix='.qemu-link-', dir=path) as tmp:
+                replacement = os.path.join(tmp, 'link')
+                os.symlink(source, replacement)
+                os.replace(replacement, bundle_dest)

@@ -89,6 +89,99 @@ class SeaBiosConfigTests(unittest.TestCase):
         self.assertIn('qemu_find_file(QEMU_FILE_TYPE_BIOS,', driver)
         self.assertIn('"seabios-ct1741.bin"', driver)
 
+    def test_vga_provider_publishes_all_variants_out_of_tree(self):
+        import shlex
+
+        variants = ('isavga', 'cirrus', 'stdvga', 'vmware', 'qxl',
+                    'virtio', 'ramfb', 'bochs-display', 'ati')
+        names = ['vgabios.bin'] + [f'vgabios-{v}.bin' for v in variants[1:]]
+        meson = (ROOT / 'pc-bios/meson.build').read_text()
+        self.assertIn("output: whp_seabios_vga_names", meson)
+        self.assertIn("alias_target('whp-seabios-vga'", meson)
+        self.assertIn("blobs += whp_seabios_vga_names", meson)
+        with tempfile.TemporaryDirectory(prefix='whp-seabios-vga-') as tmp:
+            root = pathlib.Path(tmp)
+            roms = root / 'roms'
+            roms.mkdir()
+            scripts = root / 'scripts'
+            scripts.mkdir()
+            source_blobs = root / 'pc-bios'
+            source_blobs.mkdir()
+            firmware = root / 'selected-firmware'
+            firmware.mkdir()
+            output = root / 'generated'
+            cache = root / 'cache'
+            for path in ('Makefile', 'seabios-toolchain-id.py'):
+                shutil.copyfile(ROOT / 'roms' / path, roms / path)
+            for variant in variants:
+                path = f'config.vga-{variant}'
+                shutil.copyfile(ROOT / 'roms' / path, roms / path)
+            builder = scripts / 'meson-build-seabios.bash'
+            shutil.copyfile(ROOT / 'scripts' / builder.name, builder)
+            for name in names:
+                (source_blobs / name).write_text('prebuilt ROM\n')
+            # Build only the requested video target, not the system BIOS.
+            (firmware / 'Makefile').write_text(
+                'all:\n\t@exit 1\n'
+                'oldnoconfig:\n\t@:\n'
+                '$(OUT)vgabios.bin:\n'
+                '\t@printf "%s\\n" "$(notdir $(patsubst %/,%,$(OUT)))" > "$@"\n')
+            config = root / 'firmware.env'
+            settings = {
+                'SEABIOS_DIR': str(firmware),
+                'SEABIOS_BUILD_ROOT': str(cache),
+                'SEABIOS_CROSS_COMPILE': 'test-',
+                'MAKE_CMD': shutil.which('make') or 'make',
+            }
+            config.write_text(''.join(f'{k}={shlex.quote(v)}\n'
+                                      for k, v in settings.items()))
+            command = ['bash', str(builder), str(config), '--vgabios',
+                       *(str(output / name) for name in names)]
+            result = subprocess.run(command, capture_output=True, text=True)
+            self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+            self.assertEqual(sorted(p.name for p in output.iterdir()),
+                             sorted(names))
+            for variant, name in zip(variants, names):
+                self.assertEqual((output / name).read_text(), f'vga-{variant}\n')
+                self.assertEqual((source_blobs / name).read_text(), 'prebuilt ROM\n')
+            before = [(output / name).stat().st_mtime_ns for name in names]
+            result = subprocess.run(command, capture_output=True, text=True)
+            self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+            self.assertEqual(before,
+                             [(output / name).stat().st_mtime_ns for name in names])
+
+    def test_firmware_bundle_links_follow_provider_switch(self):
+        import json
+        import os
+        import shlex
+        import sys
+
+        with tempfile.TemporaryDirectory(prefix='whp-firmware-links-') as tmp:
+            root = pathlib.Path(tmp)
+            prebuilt = root / 'prebuilt' / 'vgabios.bin'
+            generated = root / 'generated' / 'vgabios.bin'
+            dest = '/share/qemu/vgabios.bin'
+            manifest = root / 'installed.json'
+            introspect = root / 'introspect.py'
+            introspect.write_text(
+                'from pathlib import Path\n'
+                'print(Path("installed.json").read_text())\n')
+            env = dict(os.environ, MESONINTROSPECT=shlex.join(
+                [sys.executable, str(introspect)]))
+            script = ROOT / 'scripts/symlink-install-tree.py'
+            link = root / 'qemu-bundle/share/qemu/vgabios.bin'
+            for source in (prebuilt, generated, prebuilt):
+                manifest.write_text(json.dumps({str(source): dest}))
+                subprocess.run([sys.executable, str(script)], cwd=root,
+                               env=env, check=True, capture_output=True)
+                self.assertTrue(link.is_symlink())
+                self.assertEqual(os.readlink(link), str(source))
+                inode = link.lstat().st_ino
+                subprocess.run([sys.executable, str(script)], cwd=root,
+                               env=env, check=True, capture_output=True)
+                self.assertEqual(link.lstat().st_ino, inode)
+            self.assertEqual(list(link.parent.glob('.qemu-link-*')), [])
+
     def test_seabios_cross_toolchain_remains_i386_not_x86_64(self):
         build = (ROOT / 'scripts/whp-build/configure-seabios.bash').read_text(
             encoding='utf-8')

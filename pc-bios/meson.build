@@ -39,15 +39,6 @@ whp_seabios_hybrid_iso_enabled = fs.exists(whp_seabios_hybrid_iso_config)
 blobs = [
   'ast27x0_bootrom.bin',
   'qboot.rom',
-  'vgabios.bin',
-  'vgabios-cirrus.bin',
-  'vgabios-stdvga.bin',
-  'vgabios-vmware.bin',
-  'vgabios-qxl.bin',
-  'vgabios-virtio.bin',
-  'vgabios-ramfb.bin',
-  'vgabios-bochs-display.bin',
-  'vgabios-ati.bin',
   'openbios-sparc32',
   'openbios-sparc64',
   'QEMU,tcx.bin',
@@ -145,6 +136,20 @@ if whp_seabios_enabled or whp_seabios_grub_enabled
   ]
 endif
 
+# SeaVGABIOS belongs to the same selected firmware provider as the system ROM.
+# Keep the filenames and prebuilt-only mode unchanged.
+whp_seabios_vga_names = [
+  'vgabios.bin',
+  'vgabios-cirrus.bin',
+  'vgabios-stdvga.bin',
+  'vgabios-vmware.bin',
+  'vgabios-qxl.bin',
+  'vgabios-virtio.bin',
+  'vgabios-ramfb.bin',
+  'vgabios-bochs-display.bin',
+  'vgabios-ati.bin',
+]
+
 if whp_seabios_enabled
   whp_seabios_bash = find_program('bash')
   whp_seabios_script = meson.project_source_root() / 'scripts/meson-build-seabios.bash'
@@ -161,6 +166,21 @@ if whp_seabios_enabled
     install_dir: qemu_datadir)
   alias_target('whp-seabios-x86', whp_seabios_x86)
   roms += whp_seabios_x86
+
+  whp_seabios_vga = custom_target('whp-seabios-vga-output',
+    output: whp_seabios_vga_names,
+    command: whp_seabios_entry_env + [whp_seabios_bash, whp_seabios_script,
+              whp_seabios_config, '--vgabios',
+              '@OUTPUT0@', '@OUTPUT1@', '@OUTPUT2@',
+              '@OUTPUT3@', '@OUTPUT4@', '@OUTPUT5@',
+              '@OUTPUT6@', '@OUTPUT7@', '@OUTPUT8@'],
+    build_by_default: have_system,
+    build_always_stale: true,
+    console: true,
+    install: get_option('install_blobs'),
+    install_dir: qemu_datadir)
+  alias_target('whp-seabios-vga', whp_seabios_vga)
+  roms += whp_seabios_vga
 
   # Peripheral ROMs are outputs of the selected provider, never source blobs.
   # A missing MCU toolchain must not prevent the ordinary system BIOS build.
@@ -186,6 +206,7 @@ if whp_seabios_enabled
   endif
 else
   blobs += ['bios.bin', 'bios-256k.bin', 'bios-microvm.bin']
+  blobs += whp_seabios_vga_names
 endif
 
 if whp_seabios_grub_enabled

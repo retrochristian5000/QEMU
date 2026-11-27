@@ -2,7 +2,7 @@
 set -euo pipefail
 
 if (($# < 2)); then
-    printf 'usage: %s CONFIG_FILE [--grub | --ct1741 SDCC MAKEBIN] OUTPUT...\n' "$0" >&2
+    printf 'usage: %s CONFIG_FILE [--grub | --vgabios | --ct1741 SDCC MAKEBIN] OUTPUT...\n' "$0" >&2
     exit 2
 fi
 config_file="$1"
@@ -19,6 +19,9 @@ source "$config_file"
 mode=bios
 if [[ "${1:-}" == --grub ]]; then
     mode=grub
+    shift
+elif [[ "${1:-}" == --vgabios ]]; then
+    mode=vgabios
     shift
 elif [[ "${1:-}" == --ct1741 ]]; then
     mode=ct1741
@@ -48,6 +51,12 @@ SEABIOS_DIR="$(cd -- "$SEABIOS_DIR" && pwd -P)"
 }
 if [[ "$mode" == grub ]]; then
     expected=(seabios-grub.ELF)
+elif [[ "$mode" == vgabios ]]; then
+    expected=(
+        vgabios.bin vgabios-cirrus.bin vgabios-stdvga.bin
+        vgabios-vmware.bin vgabios-qxl.bin vgabios-virtio.bin
+        vgabios-ramfb.bin vgabios-bochs-display.bin vgabios-ati.bin
+    )
 elif [[ "$mode" == ct1741 ]]; then
     expected=(seabios-ct1741.bin)
 else
@@ -119,6 +128,8 @@ if [[ "$mode" == grub ]]; then
     if [[ -f "$legacy_elf" ]]; then
         mv -f "$legacy_elf" "$canonical_elf"
     fi
+elif [[ "$mode" == vgabios ]]; then
+    "$MAKE_CMD" "${make_args[@]}" vgabios
 else
     "$MAKE_CMD" "${make_args[@]}" bios
 fi

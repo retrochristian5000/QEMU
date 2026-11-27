@@ -145,13 +145,19 @@ seabios-grub: build-seabios-config-seabios-grub
 	mkdir -p $(SEABIOS_OUTPUT_DIR)
 	cp $(SEABIOS_BUILD_ROOT)/seabios-grub/bios.bin.elf $(SEABIOS_OUTPUT_DIR)/seabios-grub.elf
 
+.PHONY: vgabios seavgabios seavgabios-isavga
 vgabios seavgabios: $(patsubst %,seavgabios-%,$(vgabios_variants))
 
+# Publish into the caller's firmware directory, not the source checkout.
 seavgabios-isavga: build-seabios-config-vga-isavga
-	cp $(SEABIOS_BUILD_ROOT)/vga-isavga/vgabios.bin ../pc-bios/vgabios.bin
+	@mkdir -p "$(SEABIOS_OUTPUT_DIR)"
+	@cmp -s "$(SEABIOS_BUILD_ROOT)/vga-isavga/vgabios.bin" "$(SEABIOS_OUTPUT_DIR)/vgabios.bin" || \
+	    cp "$(SEABIOS_BUILD_ROOT)/vga-isavga/vgabios.bin" "$(SEABIOS_OUTPUT_DIR)/vgabios.bin"
 
 seavgabios-%: build-seabios-config-vga-%
-	cp $(SEABIOS_BUILD_ROOT)/vga-$*/vgabios.bin ../pc-bios/vgabios-$*.bin
+	@mkdir -p "$(SEABIOS_OUTPUT_DIR)"
+	@cmp -s "$(SEABIOS_BUILD_ROOT)/vga-$*/vgabios.bin" "$(SEABIOS_OUTPUT_DIR)/vgabios-$*.bin" || \
+	    cp "$(SEABIOS_BUILD_ROOT)/vga-$*/vgabios.bin" "$(SEABIOS_OUTPUT_DIR)/vgabios-$*.bin"
 
 # Clang -Os exceeds the 128 KiB isapc budget. Use -Oz only for 16-bit
 # and 32-bit segmented code; flat code remains -Os to avoid compiler-rt
@@ -243,7 +249,8 @@ build-seabios-config-%: config.%
 	fi
 	+$(seabios_make) \
 		ROM_LAYOUT_VARIANT=$(if $(filter seabios-256k-pentium seabios-256k-pentium-mmx,$*),seabios-256k,$(if $(filter seabios-%,$*),$*,auto)) \
-		ROM_LAYOUT_PACK=$(if $(filter seabios-128k seabios-microvm,$*),$(SEABIOS_LAYOUT_PACK),0) all
+		ROM_LAYOUT_PACK=$(if $(filter seabios-128k seabios-microvm,$*),$(SEABIOS_LAYOUT_PACK),0) \
+		"$(if $(filter vga-%,$*),$(SEABIOS_BUILD_ROOT)/$*/vgabios.bin,all)"
 
 
 .PHONY: skiboot qboot palcode-clipper
