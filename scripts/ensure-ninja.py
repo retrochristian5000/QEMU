@@ -234,6 +234,39 @@ def select_compiler_cache() -> str:
     return ''
 
 
+def compiler_cache_directory(cache_name: str, build_dir: pathlib.Path) -> pathlib.Path:
+    """Use the same local cache root and raw host tag as the shell wrappers."""
+    if cache_name == 'ccache':
+        requested = os.environ.get('CCACHE_DIR')
+    elif cache_name == 'sccache':
+        requested = os.environ.get('SCCACHE_DIR')
+    else:
+        raise RuntimeError(f'unsupported compiler cache provider: {cache_name}')
+    if requested:
+        return pathlib.Path(requested).expanduser().resolve()
+    root = pathlib.Path(os.environ.get('WHP_COMPILER_CACHE_ROOT') or
+                        str(build_dir.parent / '.whp-compiler-cache')).expanduser()
+    cache_tag = f'{platform.system()}-{platform.machine()}'
+    return root.resolve() / f'{cache_name}-{cache_tag}'
+
+
+def apply_compiler_cache_budget(env: dict[str, str], cache_name: str) -> None:
+    """Match whp-build/compiler-cache-policy.sh without launching a shell."""
+    budget = env.get('WHP_COMPILER_CACHE_SIZE', '')
+    if not budget:
+        return
+    magnitude = budget[:-1]
+    if (budget[-1] not in 'MG' or not 1 <= len(magnitude) <= 8 or
+            magnitude.startswith('0') or not magnitude.isascii() or
+            not magnitude.isdecimal()):
+        raise RuntimeError('WHP_COMPILER_CACHE_SIZE must be a positive integer '
+                           '(up to eight digits) followed by M or G')
+    if cache_name == 'ccache' and not env.get('CCACHE_CONFIGPATH'):
+        env.setdefault('CCACHE_MAXSIZE', budget)
+    elif cache_name == 'sccache' and not env.get('SCCACHE_CONF'):
+        env.setdefault('SCCACHE_CACHE_SIZE', budget)
+
+
 def compiler_version(command: str) -> str:
     argv = shlex.split(command)
     if not argv:
@@ -413,6 +446,7 @@ def bootstrap_environment(
         cache_name = pathlib.Path(compiler_cache).name
         if cache_name not in ('ccache', 'sccache'):
             raise RuntimeError(f'unsupported compiler cache command: {compiler_cache}')
+        apply_compiler_cache_budget(bootstrap_env, cache_name)
         bootstrap_env['CXX'] = f'{shlex.quote(compiler_cache)} {cxx}'
         if compiler_cache_dir is not None:
             if cache_name == 'ccache':
@@ -519,26 +553,10 @@ def ensure_bundled_ninja(qemu_build_dir: pathlib.Path) -> pathlib.Path:
 
     compiler_cache_dir = None
     if compiler_cache:
-        cache_name = pathlib.Path(compiler_cache).name
-        if cache_name == 'sccache':
-            # sccache has one local daemon. Align this cache with QEMU's
-            # builder.sh and native LLVM bootstrap, not Ninja's lowercase
-            # host tool installation tag. Preserve an explicit cache path.
-            requested = os.environ.get('SCCACHE_DIR')
-            if requested:
-                compiler_cache_dir = pathlib.Path(requested).expanduser().resolve()
-            else:
-                root = pathlib.Path(os.environ.get(
-                    'WHP_COMPILER_CACHE_ROOT',
-                    str(qemu_build_dir.parent / '.whp-compiler-cache'),
-                )).expanduser()
-                cache_tag = f'{platform.system()}-{platform.machine()}'
-                compiler_cache_dir = root / f'sccache-{cache_tag}'
-        else:
-            compiler_cache_dir = (
-                qemu_build_dir.parent / '.whp-compiler-cache' / f'{cache_name}-{host_tag}'
-            )
-        compiler_cache_dir.mkdir(parents=True, exist_ok=True)
+        compiler_cache_dir = compiler_cache_directory(
+            pathlib.Path(compiler_cache).name, qemu_build_dir,
+        )
+        compiler_cache_dir.mkdir(mode=0o700, parents=True, exist_ok=True)
     bootstrap_env = bootstrap_environment(
         cxx,
         sdkroot,
