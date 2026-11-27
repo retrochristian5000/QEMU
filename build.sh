@@ -49,6 +49,9 @@ SOURCE_DIR=$(CDPATH= cd -P -- "$whp_entry_dir" && pwd -P) || exit 1
 unset whp_entry whp_entry_dir whp_entry_depth whp_link
 
 . "$SOURCE_DIR/scripts/whp-build/shell-functions.sh"
+. "$SOURCE_DIR/scripts/whp-build/compiler-seed-session.sh"
+# A new launcher (including source-refresh re-exec) always admits anew.
+whp_cc_session_clear
 
 # Establish one POSIX AWK seed before source refresh, shell menuconfig, Python,
 # and later compiler/firmware bootstraps. Keep literal awk calls and $AWK on
@@ -408,6 +411,7 @@ case "$WHP_HOST_OS" in
         fi
         CC_FOR_BUILD=$("$SOURCE_DIR/seeds/cc.sh" --print-cc) || exit 1
         export CC_FOR_BUILD
+        whp_cc_session_begin
         printf 'QEMU seed cc: %s\n' "$CC_FOR_BUILD" >&2
         ;;
 esac
