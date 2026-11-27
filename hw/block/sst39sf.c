@@ -42,6 +42,7 @@ struct SST39SFState {
     bool toggle;
     uint8_t poll_data;
     int64_t busy_until;
+    QEMUTimer busy_timer;
 };
 
 static void sst_update_romd(SST39SFState *s)
@@ -50,12 +51,20 @@ static void sst_update_romd(SST39SFState *s)
                                       !s->identification && !s->busy_until);
 }
 
+static void sst_finish_busy(void *opaque)
+{
+    SST39SFState *s = opaque;
+
+    s->busy_until = 0;
+    sst_update_romd(s);
+}
+
 static bool sst_busy(SST39SFState *s)
 {
     if (s->busy_until &&
         qemu_clock_get_ns(QEMU_CLOCK_VIRTUAL) >= s->busy_until) {
-        s->busy_until = 0;
-        sst_update_romd(s);
+        timer_del(&s->busy_timer);
+        sst_finish_busy(s);
     }
     return s->busy_until != 0;
 }
@@ -68,6 +77,8 @@ static void sst_start_busy(SST39SFState *s, uint8_t data, int64_t duration)
     s->poll_data = data;
     s->busy_until = qemu_clock_get_ns(QEMU_CLOCK_VIRTUAL) + duration;
     sst_update_romd(s);
+    /* Restore direct ROM reads even if the guest does not poll the chip. */
+    timer_mod_ns(&s->busy_timer, s->busy_until);
 }
 
 static uint64_t sst_read(void *opaque, hwaddr addr, unsigned size)
@@ -195,6 +206,7 @@ static void sst_reset(DeviceState *dev)
 
     s->sequence = SST_IDLE;
     s->identification = false;
+    timer_del(&s->busy_timer);
     s->busy_until = 0;
     s->toggle = false;
     sst_update_romd(s);
@@ -206,6 +218,11 @@ static int sst_post_load(void *opaque, int version)
 
     if (s->sequence > SST_ERASE3 || s->busy_until < 0) {
         return -EINVAL;
+    }
+    /* Reconstruct the timer from the existing migrated virtual deadline. */
+    timer_del(&s->busy_timer);
+    if (sst_busy(s)) {
+        timer_mod_ns(&s->busy_timer, s->busy_until);
     }
     sst_update_romd(s);
     return 0;
@@ -263,7 +280,16 @@ static void sst_realize(DeviceState *dev, Error **errp)
         /* Right-align the firmware so the x86 reset vector stays at the top. */
         memcpy(s->storage + sc->capacity - size, image, size);
     }
+    timer_init_ns(&s->busy_timer, QEMU_CLOCK_VIRTUAL, sst_finish_busy, s);
     sysbus_init_mmio(SYS_BUS_DEVICE(dev), &s->mem);
+}
+
+static void sst_unrealize(DeviceState *dev)
+{
+    SST39SFState *s = SST39SF(dev);
+
+    timer_del(&s->busy_timer);
+    timer_deinit(&s->busy_timer);
 }
 
 static const Property sst_properties[] = {
@@ -275,6 +301,7 @@ static void sst_class_init(ObjectClass *oc, const void *data)
     DeviceClass *dc = DEVICE_CLASS(oc);
 
     dc->realize = sst_realize;
+    dc->unrealize = sst_unrealize;
     dc->vmsd = &vmstate_sst;
     dc->user_creatable = false;
     device_class_set_legacy_reset(dc, sst_reset);

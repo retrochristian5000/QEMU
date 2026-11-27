@@ -367,6 +367,18 @@ static void test_i440fx_firmware(FirmwareTestFixture *fixture,
                         firmware_pattern(size - isa_bios_size + i));
     }
 
+    /* Both firmware windows must still expose the same bytes after reset. */
+    qtest_system_reset(global_qtest);
+    memread(0x100000000ULL - size, buf, size);
+    for (i = 0; i < size; ++i) {
+        g_assert_cmphex(buf[i], ==, firmware_pattern(i));
+    }
+    memread(0x100000 - isa_bios_size, buf, isa_bios_size);
+    for (i = 0; i < isa_bios_size; ++i) {
+        g_assert_cmphex(buf[i], ==,
+                        firmware_pattern(size - isa_bios_size + i));
+    }
+
     g_free(buf);
     qtest_end();
 }
@@ -445,6 +457,14 @@ static void test_sst_rom(gconstpointer opaque)
     qtest_writeb(qts, base, 0xf0);
     g_assert_cmphex(qtest_readb(qts, base), ==, 0xff);
 
+    /* Reset must also leave identification mode and restore both aliases. */
+    sst_unlock(qts, base, 0x90);
+    g_assert_cmphex(qtest_readb(qts, base), ==, 0xbf);
+    qtest_system_reset(qts);
+    g_assert_cmphex(qtest_readb(qts, base), ==, 0xff);
+    g_assert_cmphex(qtest_readb(qts, last), ==, firmware_pattern(65535));
+    g_assert_cmphex(qtest_readb(qts, 0xfffff), ==, firmware_pattern(65535));
+
     /* Direct stores are ignored; a complete unlock permits byte program. */
     qtest_writeb(qts, base + 0x1000, 0);
     g_assert_cmphex(qtest_readb(qts, base + 0x1000), ==, 0xff);
@@ -462,6 +482,16 @@ static void test_sst_rom(gconstpointer opaque)
     qtest_writeb(qts, base + 0x2000, 0x34);
     qtest_clock_step(qts, 14000);
     g_assert_cmphex(qtest_readb(qts, base + 0x2000), ==, 0x34);
+
+    /* Complete programming without polling, then check both aliases. */
+    sst_unlock(qts, base, 0xa0);
+    qtest_writeb(qts, last - 0x100, 0x12);
+    qtest_clock_step(qts, 14000);
+    g_assert_cmphex(qtest_readb(qts, last - 0x100), ==, 0x12);
+    g_assert_cmphex(qtest_readb(qts, 0xffeff), ==, 0x12);
+    qtest_system_reset(qts);
+    g_assert_cmphex(qtest_readb(qts, 0xffeff), ==, 0x12);
+    g_assert_cmphex(qtest_readb(qts, last - 0x100), ==, 0x12);
 
     /* Erasing one sector must leave its neighbor and the BIOS untouched. */
     sst_unlock(qts, base, 0x80);
