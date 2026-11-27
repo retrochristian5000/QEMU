@@ -133,13 +133,17 @@ static void pit_set_channel_gate(PITCommonState *s, PITChannelState *sc,
         break;
     case 2:
     case 3:
-        if (sc->gate < val) {
-            /* restart counting on rising edge */
-            sc->count_load_time = qemu_clock_get_ns(QEMU_CLOCK_VIRTUAL);
-            pit_irq_timer_update(sc, sc->count_load_time);
+        if (sc->gate != val) {
+            int64_t now = qemu_clock_get_ns(QEMU_CLOCK_VIRTUAL);
+
+            if (val) {
+                /* Restart counting on the rising edge. */
+                sc->count_load_time = now;
+            }
+            sc->gate = val;
+            pit_irq_timer_update(sc, now);
         }
-        /* XXX: disable/enable counting */
-        break;
+        return;
     }
     sc->gate = val;
 }
