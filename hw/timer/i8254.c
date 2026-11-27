@@ -343,6 +343,11 @@ static void pit_irq_timer(void *opaque)
 {
     PITChannelState *s = opaque;
 
+    if (trace_event_get_state_backends(TRACE_PIT_IRQ_DEADLINE)) {
+        int64_t now = qemu_clock_get_ns(QEMU_CLOCK_VIRTUAL);
+        trace_pit_irq_deadline(s->next_transition_time, now,
+                               pit_effective_mode(s), s->count);
+    }
     pit_irq_timer_update(s, s->next_transition_time);
 }
 

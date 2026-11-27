@@ -28,8 +28,14 @@ STUBS = r"""
 typedef struct PITChannelState {
     int count;
     uint8_t mode;
+    uint8_t gate;
     int64_t count_load_time;
 } PITChannelState;
+
+static inline uint8_t pit_effective_mode(const PITChannelState *s)
+{
+    return s->mode >= 6 ? s->mode - 4 : s->mode;
+}
 
 static unsigned int muldiv_calls;
 static uint64_t muldiv64(uint64_t value, uint32_t mul, uint32_t div)
@@ -38,6 +44,12 @@ static uint64_t muldiv64(uint64_t value, uint32_t mul, uint32_t div)
     /* All test timestamps are below one second: multiplication fits. */
     assert(value <= 1000000000ULL);
     return value * mul / div;
+}
+static uint64_t muldiv64_round_up(uint64_t value, uint32_t mul, uint32_t div)
+{
+    muldiv_calls++;
+    assert(value <= 1000000000ULL);
+    return (value * mul + div - 1) / div;
 }
 """
 
@@ -74,7 +86,7 @@ int main(void)
         0, 1, 500, 1000, 10000, 100000,
         1000000, 10000000, 100000000, 750000000
     };
-    PITChannelState s = { 0 };
+    PITChannelState s = { .gate = 1 };
 
     for (unsigned mode = 0; mode < 6; ++mode) {
         for (unsigned c = 0; c < sizeof(counts) / sizeof(counts[0]); ++c) {
@@ -98,11 +110,21 @@ int main(void)
     assert(pit_get_out(&s, ns_for_ticks(3)) == 0);
     assert(pit_get_out(&s, ns_for_ticks(5)) == 1);
 
-    /* Mode 2 preserves QEMU's existing one-tick IRQ pulse convention. */
+    /* Mode 2 has one low clock per period. */
     s.mode = 2;
     assert(pit_get_out(&s, ns_for_ticks(4)) == 0);
     assert(pit_get_out(&s, ns_for_ticks(5)) == 1);
-    assert(pit_get_out(&s, ns_for_ticks(6)) == 0);
+    assert(pit_get_out(&s, ns_for_ticks(6)) == 1);
+
+    /* Modes 4/5: check polarity relative to the existing load epoch. */
+    for (unsigned mode = 4; mode <= 5; mode++) {
+        s.mode = mode;
+        assert(pit_get_out(&s, ns_for_ticks(0)) == 1);
+        assert(pit_get_out(&s, ns_for_ticks(4)) == 1);
+        assert(pit_get_out(&s, ns_for_ticks(5)) == 0);
+        assert(pit_get_out(&s, ns_for_ticks(6)) == 1);
+        assert(pit_get_next_transition_time(&s, ns_for_ticks(6)) == -1);
+    }
 
     return 0;
 }

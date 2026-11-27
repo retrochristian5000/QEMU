@@ -837,3 +837,32 @@ References:
 
 * https://uefi.org/sites/default/files/resources/ACPI_1.pdf
 * https://techshelps.github.io/MSDN/PC98/HTML/03bas98_3.htm
+
+Diagnosing legacy guest clock drift
+-----------------------------------
+
+The host monotonic clock, virtual clock, PIT output and PIC interrupt
+acknowledgment are separate stages. On macOS the ordinary host clock
+already uses CLOCK_MONOTONIC. Changing to raw Mach time without matching
+pause, suspend and migration semantics is not a timer-delivery fix.
+
+For a short diagnostic boot, append::
+
+    -trace enable=pit_irq_deadline -trace enable=pic_interrupt
+
+The PIT trace records its scheduled virtual nanosecond deadline and the
+actual virtual time when the callback is dispatched, along with mode and
+divisor. Repeated deadlines dispatched at almost the same actual time can
+indicate scheduler delays; the PIC trace shows acknowledged vectors
+(including BIOS IRQ0 at 08h, or the guest's remapped vector). Neither trace
+changes timer rate or injects extra interrupts. Trace only briefly because
+logging itself affects timing. Compare against the same guest's RTC time
+and host elapsed time while the VM is running. The diagnostic requires a
+trace backend that emits these events.
+
+Modes 4 and 5 now produce an active-low strobe at the modeled terminal
+count, instead of an inverted pulse. The existing immediate count-load
+epoch is unchanged; deferred loads, gate pause and mode 5 trigger arming
+still require separate work. This is a polarity repair, not a confirmed
+fix for periodic Windows clock drift. See Intel 8254 datasheet figures
+19 and 20 (https://www.scs.stanford.edu/20wi-cs140/pintos/specs/8254.pdf).

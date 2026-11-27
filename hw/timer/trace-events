@@ -52,6 +52,7 @@ cmsdk_apb_dualtimer_reset(void) "CMSDK APB dualtimer: reset"
 # i8254.c
 pit_ioport_read(uint8_t addr, uint32_t value) "[0x%" PRIx8 "] -> 0x%" PRIx32
 pit_ioport_write(uint8_t addr, uint32_t value) "[0x%" PRIx8 "] <- 0x%" PRIx32
+pit_irq_deadline(int64_t deadline, int64_t now, unsigned int mode, unsigned int divisor) "deadline=%" PRId64 " now=%" PRId64 " mode=%u divisor=%u"
 
 # imx_gpt.c
 imx_gpt_set_freq(uint32_t clksrc, uint32_t freq) "Setting clksrc %u to %u Hz"

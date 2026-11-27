@@ -76,7 +76,8 @@ static int pit_get_out_elapsed(PITChannelState *s, uint64_t d)
         break;
     case 4:
     case 5:
-        out = (d == s->count);
+        /* Strobe modes idle high and pulse low at terminal count. */
+        out = (d != s->count);
         break;
     }
     return out;

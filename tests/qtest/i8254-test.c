@@ -75,6 +75,32 @@ static void test_mode2(void)
     qtest_quit(s);
 }
 
+static void test_mode4_strobe(void)
+{
+    QTestState *s = qtest_init("-machine pc,hpet=off -nodefaults");
+    uint64_t elapsed = 0;
+
+    qtest_irq_intercept_in(s, "ioapic");
+    qtest_outb(s, PIT_CONTROL, 0x38);
+    qtest_outb(s, PIT_COUNTER0, 5);
+    qtest_outb(s, PIT_COUNTER0, 0);
+    check_output(s, true);
+
+    step_to_tick(s, 5, &elapsed);
+    check_output(s, true);
+    qtest_clock_step(s, 1);
+    elapsed++;
+    check_output(s, false);
+
+    step_to_tick(s, 6, &elapsed);
+    check_output(s, false);
+    qtest_clock_step(s, 1);
+    check_output(s, true);
+    qtest_clock_step(s, NS_PER_SEC);
+    check_output(s, true);
+    qtest_quit(s);
+}
+
 static void load_mode3(QTestState *s, uint16_t divisor)
 {
     qtest_outb(s, PIT_CONTROL, PIT_MODE3);
@@ -391,6 +417,7 @@ int main(int argc, char **argv)
 {
     g_test_init(&argc, &argv, NULL);
     qtest_add_func("/i8254/mode2/output", test_mode2);
+    qtest_add_func("/i8254/mode4/strobe", test_mode4_strobe);
     qtest_add_data_func("/i8254/speaker/compat", GINT_TO_POINTER(0),
                         test_pcspk_port61);
     qtest_add_data_func("/i8254/speaker/chipset", GINT_TO_POINTER(1),
