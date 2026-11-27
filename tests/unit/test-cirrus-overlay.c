@@ -5,6 +5,94 @@
 #include <string.h>
 #include "hw/display/cirrus_vga_overlay.h"
 
+static void test_accupak(void)
+{
+    static const uint8_t ramp[] = { 0x20, 0x28, 0x14, 0xfd };
+    static const uint8_t chroma[] = {
+        0x30, 0x04, 0x21, 0x84, 0x10, 0x0c, 0x21, 0x84,
+    };
+    static const uint32_t expected[] = {
+        0xe96701, 0xb67542, 0x828282, 0x4f90c3,
+        0x1c9dff, 0x1c9dff, 0x1c9dff, 0x1c9dff,
+    };
+    uint8_t cr[256] = { 0 };
+    uint8_t vram[32] = { 0 };
+    uint32_t dst[8];
+    CirrusOverlay w;
+    uint32_t packet = cirrus_accupak_load(ramp);
+
+    /* Figure 9-6: explicit little-endian vector with four distinct Y values. */
+    assert(packet == 0xfd142820);
+    assert(cirrus_accupak_y(packet, 0) == 16);
+    assert(cirrus_accupak_y(packet, 1) == 80);
+    assert(cirrus_accupak_y(packet, 2) == 160);
+    assert(cirrus_accupak_y(packet, 3) == 248);
+    assert(cirrus_accupak_u(packet) == 128);
+    assert(cirrus_accupak_v(packet) == 128);
+    assert(cirrus_accupak_y(0xffffffffU, 3) == 248);
+    assert(cirrus_accupak_u(0xffffffffU) == 252);
+    assert(cirrus_accupak_v(0xffffffffU) == 252);
+
+    cr[0x34] = 2;
+    cr[0x35] = 1;
+    cr[0x38] = 1;
+    cr[0x3d] = 2;
+    cr[0x3e] = 3;
+    assert(cirrus_overlay_decode(cr, 16, &w));
+    assert(w.width == 4 && w.source_bytes == 4 && w.pitch == 16);
+    memcpy(vram, ramp, sizeof(ramp));
+    memset(dst, 0x5a, sizeof(dst));
+    cirrus_overlay_draw(&w, vram, sizeof(vram), dst, 8, 0);
+    assert(dst[0] == 0 && dst[1] == 0x4b4b4b);
+    assert(dst[2] == 0xa8a8a8 && dst[3] == 0xffffff);
+    assert(dst[4] == 0x5a5a5a5a);
+
+    /* Eight pixels require two complete packets, even if screen-clipped. */
+    cr[0x34] = 4;
+    assert(!cirrus_overlay_decode(cr, 16, &w));
+    cr[0x35] = 2;
+    assert(cirrus_overlay_decode(cr, 16, &w));
+    memcpy(vram, chroma, sizeof(chroma));
+    memset(dst, 0, sizeof(dst));
+    cirrus_overlay_draw(&w, vram, sizeof(vram), dst, 8, 0);
+    assert(memcmp(dst, expected, sizeof(expected)) == 0);
+    memset(dst, 0x5a, sizeof(dst));
+    cirrus_overlay_draw(&w, vram, sizeof(vram), dst, 3, 0);
+    assert(memcmp(dst, expected, 3 * sizeof(dst[0])) == 0);
+    assert(dst[3] == 0x5a5a5a5a);
+
+    /* Five pixels still fetch two DWORDs; only five pixels are displayed. */
+    cr[0x34] = 2;
+    cr[0x5d] = 0x20;
+    assert(cirrus_overlay_decode(cr, 16, &w));
+    assert(w.width == 5 && w.source_bytes == 8);
+    memset(dst, 0x5a, sizeof(dst));
+    cirrus_overlay_draw(&w, vram, sizeof(vram), dst, 8, 0);
+    assert(memcmp(dst, expected, 5 * sizeof(dst[0])) == 0);
+    assert(dst[5] == 0x5a5a5a5a);
+
+    /* Exact end-of-VRAM fetch is allowed, incomplete fetch is rejected. */
+    w.base = 24;
+    memcpy(vram + 24, chroma, sizeof(chroma));
+    memset(dst, 0x5a, sizeof(dst));
+    cirrus_overlay_draw(&w, vram, sizeof(vram), dst, 8, 0);
+    assert(dst[4] == expected[4]);
+    memset(dst, 0x5a, sizeof(dst));
+    cirrus_overlay_draw(&w, vram, sizeof(vram) - 1, dst, 8, 0);
+    assert(dst[0] == 0x5a5a5a5a);
+
+    /* AccuPak ignores excess fetched padding; it cannot be planar-assist. */
+    cr[0x34] = 2;
+    cr[0x5d] = 0;
+    assert(cirrus_overlay_decode(cr, 16, &w));
+    cirrus_overlay_draw(&w, vram, sizeof(vram), dst, 8, 0);
+    for (unsigned i = 0; i < 4; i++) {
+        assert(dst[i] == expected[0]);
+    }
+    cr[0x3f] = 0x10;
+    assert(!cirrus_overlay_decode(cr, 16, &w));
+}
+
 int main(void)
 {
     uint8_t cr[256] = { 0 };
@@ -104,5 +192,6 @@ int main(void)
     vram[3] = 16;
     cirrus_overlay_draw(&w, vram, sizeof(vram), dst, 8, 0);
     assert(dst[0] == 0 && dst[1] == 0xffffff);
+    test_accupak();
     return 0;
 }
