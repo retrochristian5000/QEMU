@@ -5408,8 +5408,8 @@ from QEMU artifact zlib.
 Cargo and native library closure
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
-The pinned sccacher `Cargo.toml <https://github.com/retrochristian5000/sccacher/blob/20a80c052a5a377c0a05697897d4a978e8178151/Cargo.toml>`__ and
-`Cargo.lock <https://github.com/retrochristian5000/sccacher/blob/20a80c052a5a377c0a05697897d4a978e8178151/Cargo.lock>`__ expose a registry graph with one explicitly pinned Git crate:
+The pinned sccacher `Cargo.toml <https://github.com/retrochristian5000/sccacher/blob/55beed41e878333e9632f24878f3ea9af6aca599/Cargo.toml>`__ and
+`Cargo.lock <https://github.com/retrochristian5000/sccacher/blob/55beed41e878333e9632f24878f3ea9af6aca599/Cargo.lock>`__ expose a registry graph with one explicitly pinned Git crate:
 ``tar`` 0.4.46 from the WHP
 `Rust-TAR fork <https://github.com/retrochristian5000/Rust-TAR/tree/e0127f17781a00f460330373a79196e3b5e30d56>`__
 at revision ``e0127f17781a00f460330373a79196e3b5e30d56``. It replaces registry tar 0.4.45 and
@@ -5434,6 +5434,15 @@ pathname-position normalization keeps up to eight candidate offsets inline
 and spills to the heap when necessary; ordering, deduplication and
 cache-key semantics are unchanged. The local-cache CI exercises short and
 long options. No throughput improvement is claimed without measurements.
+
+Rustix 1.1.5 is now an explicit Unix-only sccacher dependency with the
+process feature, reusing its existing locked package. Opt-in core-dump
+configuration uses typed resource-limit APIs, raises only the soft limit
+to the existing hard limit, and reports failures or a zero limit.
+Fatal-signal diagnostics write static messages without Rust formatting;
+the native sigaction ABI and previous-disposition restoration remain in
+place. Windows behavior is unchanged. This improves diagnosis rather
+than establishing the cause of any GLib SIGSEGV.
 
 A lockfile entry alone does not prove feature or target activation.
 Verify the selected graph with cargo tree --locked --no-default-features.
