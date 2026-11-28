@@ -1558,13 +1558,24 @@ Only host-tool seed adapters live under the repository-root
 ``seeds/`` directory, including ``awk.sh``, ``grep.sh``,
 ``sed.sh``, ``git.sh``, ``cc.sh``, ``cxx.sh``, ``cpp.sh``,
 ``ld.sh``, ``pkg-config.sh``, ``m4.sh``, ``cp.sh``, ``ln.sh``,
-``brew.sh`` and ``install.sh``. Their explicit invocation is
+``brew.sh``, ``chmod.sh`` and ``install.sh``. Their explicit invocation is
 ``./seeds/<tool>.sh``; the root ``build.sh`` remains QEMU's public
-build entry.  The implemented ``cp``, ``install``, and ``ln``
+build entry.  The implemented ``cp``, ``chmod``, ``install``, and ``ln``
 literal-command bridges under ``scripts/whp-build/seed-bin/`` select
 one tested host implementation each before source refresh. The
 ``install`` seed selects the executable used by bootstrap install
 commands; it does not install QEMU or replace Automake's ``INSTALL``.
+
+The generic ``seeds/chmod.sh`` admits a native host permission utility
+before source refresh. It verifies numeric and symbolic modes, recursive
+permission changes, symlink isolation and nonzero failure status in a
+private temporary directory. ``WHP_CHMOD_SEED`` is authoritative; native
+BSD/macOS and GNU implementations are accepted, with ``gchmod`` as a
+fallback. The locked ``seed-bin/chmod`` bridge forwards arguments without
+repeating the probe or changing umask or requested modes. Invalid or
+recursive providers fail closed. No GNU-only flags are emulated and no
+source file modes are changed by admission. Regression coverage is in
+``scripts/tests/test-chmod-seed-adapter.bash``.
 
 The optional ``seeds/objcopy.sh`` selects an installed GNU or LLVM
 objcopy; no LLVM/Binutils build or global PATH change is performed.

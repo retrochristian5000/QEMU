@@ -87,6 +87,18 @@ export WHP_CP_SEED WHP_CP_LOCKED
 printf 'QEMU seed cp: %s\n' "$WHP_CP_SEED" >&2
 unset WHP_CP_BRIDGE
 
+# Admit one chmod before tool generation and permission-sensitive installs.
+WHP_CHMOD_SEED=$("$SOURCE_DIR/seeds/chmod.sh" --print-seed) || exit 1
+WHP_CHMOD_BRIDGE="$SOURCE_DIR/scripts/whp-build/seed-bin/chmod"
+if [ ! -x "$WHP_CHMOD_BRIDGE" ]; then
+    printf 'error: QEMU literal chmod bridge is unavailable: %s\n' "$WHP_CHMOD_BRIDGE" >&2
+    exit 1
+fi
+WHP_CHMOD_LOCKED=1
+export WHP_CHMOD_SEED WHP_CHMOD_LOCKED
+printf 'QEMU seed chmod: %s\n' "$WHP_CHMOD_SEED" >&2
+unset WHP_CHMOD_BRIDGE
+
 # Validate a native host install before source refresh and third-party
 # bootstraps. Literal install calls use the existing seed-bin PATH bridge.
 # This does not overwrite Autotools' per-project INSTALL variables or run

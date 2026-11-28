@@ -43,6 +43,12 @@ jobs:
           /bin/sh -n seeds/ln.sh
           bash scripts/tests/test-ln-seed-adapter.bash
 
+      - name: Verify native chmod seed and permission routing
+        run: |
+          /bin/sh -n seeds/chmod.sh
+          /bin/sh -n scripts/whp-build/seed-bin/chmod
+          bash scripts/tests/test-chmod-seed-adapter.bash
+
       - name: Guard executable QEMU configure entry point
         run: |
           test -x configure

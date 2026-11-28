@@ -1,0 +1,33 @@
+#!/bin/sh
+# SPDX-License-Identifier: GPL-2.0-or-later
+# Route literal chmod calls to the admitted host provider.
+set -eu
+if [ "${1:-}" = --whp-chmod-adapter-probe ]; then
+    printf '%s\n' whp-qemu-chmod-seed-adapter
+    exit 0
+fi
+case "$0" in
+    */*) adapter="${0%/*}/../../../seeds/chmod.sh" ;;
+    *) printf '%s\n' 'error: chmod bridge must be invoked by path' >&2; exit 1 ;;
+esac
+case "${1:-}" in
+    --print-seed|--check) exec "$adapter" "$@" ;;
+esac
+if [ "${WHP_CHMOD_LOCKED:-0}" = 1 ]; then
+    case "${WHP_CHMOD_SEED:-}" in
+        ""|*/chmod.sh|*/scripts/whp-build/seed-bin/chmod)
+            printf '%s\n' 'error: locked chmod has no independent seed' >&2
+            exit 1 ;;
+        /*) ;;
+        *) printf '%s\n' 'error: locked chmod seed must be an absolute path' >&2
+           exit 1 ;;
+    esac
+    if [ ! -f "$WHP_CHMOD_SEED" ] || [ ! -x "$WHP_CHMOD_SEED" ] ||
+       [ "$WHP_CHMOD_SEED" -ef "$0" ] ||
+       [ "$WHP_CHMOD_SEED" -ef "$adapter" ]; then
+        printf '%s\n' 'error: locked chmod seed is not an independent executable' >&2
+        exit 1
+    fi
+    exec "$WHP_CHMOD_SEED" "$@"
+fi
+exec "$adapter" "$@"
