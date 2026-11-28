@@ -438,7 +438,8 @@ def diagnose_dtc(source, stream=None):
     for name in ("WHP_SOURCE_UPDATE", "WHP_SOURCE_UPDATE_DONE", "CI",
                  "WHP_SHELL_PROBE_ONLY", "WHP_BUILD_DIR_PROBE_ONLY",
                  "WHP_PORTABLE_PROBE_ONLY", "QEMU_FDT_MODE",
-                 "WHP_DTC_FETCH_MISSING", "PYTHON", "WHP_MESON_PROVIDER",
+                 "QEMU_DOWNLOAD_DEPENDENCIES", "WHP_DTC_FETCH_MISSING",
+                 "PYTHON", "WHP_MESON_PROVIDER",
                  "MESON_PACKAGE_CACHE_DIR", "PYTHONHASHSEED"):
         value = os.environ.get(name)
         print("  Environment " + name + ": " +
@@ -467,6 +468,8 @@ def diagnose_dtc(source, stream=None):
     fetch_missing = os.environ.get("WHP_DTC_FETCH_MISSING", "0") == "1"
     if provider in ("system", "disabled"):
         dtc_reason = f"skipped (QEMU_FDT_MODE={provider})"
+    elif os.environ.get("QEMU_DOWNLOAD_DEPENDENCIES", "1") == "0":
+        dtc_reason = "skipped (QEMU_DOWNLOAD_DEPENDENCIES=0)"
     elif os.environ.get("WHP_SOURCE_UPDATE", "auto") == "0" and not fetch_missing:
         dtc_reason = "skipped (WHP_SOURCE_UPDATE=0 and no explicit prefetch)"
     elif any(os.environ.get(name) == "1" for name in
