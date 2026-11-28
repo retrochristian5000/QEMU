@@ -5323,14 +5323,14 @@ from QEMU artifact zlib.
 Cargo and native library closure
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
-The pinned sccacher `Cargo.toml <https://github.com/retrochristian5000/sccacher/blob/2fa6980d9624c7203fdf8a8985767e029b0f0d64/Cargo.toml>`__ and
-`Cargo.lock <https://github.com/retrochristian5000/sccacher/blob/2fa6980d9624c7203fdf8a8985767e029b0f0d64/Cargo.lock>`__ expose a non-Git graph.
+The pinned sccacher `Cargo.toml <https://github.com/retrochristian5000/sccacher/blob/57a58aa1e4ca4d5a3245e5828745a6215aad085a/Cargo.toml>`__ and
+`Cargo.lock <https://github.com/retrochristian5000/sccacher/blob/57a58aa1e4ca4d5a3245e5828745a6215aad085a/Cargo.lock>`__ expose a non-Git graph.
 QEMU's ``scripts/ensure-sccache.py`` invokes Cargo with --locked,
 --release and --no-default-features for the local binary. The native
 compilation edges remain:
 
-* zstd 0.13.1 -> zstd-safe 7.1.0 -> zstd-sys
-  2.0.10+zstd.1.5.6 -> cc and pkg-config crates.
+* zstd 0.13.3 -> zstd-safe 7.2.4 -> zstd-sys
+  2.0.16+zstd.1.5.7 -> cc and pkg-config crates.
 * BLAKE3 1.8.2 -> cc 1.4.1 -> native compiler discovery,
   jobserver, libc and shlex.
 
