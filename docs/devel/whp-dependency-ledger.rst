@@ -4205,7 +4205,7 @@ does not enable TSan integration.
 
 Existing consumers can inform provider admission:
 
-* GLib at a0a8b9e68e082d6633f7de86ad5ada8e760a358f requires libffi
+* GLib at 1889ca4387092eaa787f411976afb9b9e8d05c07 requires libffi
   >= 3.0.0 and has its existing Meson provider path.
 * Python at 40d301451ca7c05e6f5e1df2613697e7a4a2549f probes libffi
   including an Apple SDK path. Modules/_ctypes/callbacks.c prepares
