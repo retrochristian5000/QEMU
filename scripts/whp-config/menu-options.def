@@ -44,6 +44,7 @@ BOOTSTRAP_LIBISOFS|Host features|Bootstrap/use WHP libisofs|choice|auto|auto,y,n
 COMPILER_CACHE|Host features|Compiler cache|choice|auto|auto,ccache,sccache,managed-sccache,none|
 QEMU_HOST_LINKER|Host features|QEMU host linker (system = compiler default)|choice|auto|auto,system,lld,mold|
 BOOTSTRAP_MOLD|Host features|Managed mold bootstrap/use (Bash runner)|choice|auto|auto,y,n|
+QEMU_DOWNLOAD_DEPENDENCIES|Host features|Allow QEMU configure/Meson dependency downloads|bool|y||
 WHP_MESON_PROVIDER|Host features|QEMU Meson provider|choice|fork|venv,fork|
 QEMU_FDT_MODE|Host features|QEMU libfdt provider|choice|auto|auto,system,internal,enabled,disabled|
 WHP_DTC_FETCH_MISSING|Host features|Prefetch missing pinned DTC checkout|bool|n||
