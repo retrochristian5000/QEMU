@@ -159,6 +159,35 @@ def machine_array(values):
                           for item in values) + "]"
 
 
+def dependency_inputs(pc):
+    """Fingerprint available host inputs; let Meson resolve missing ones."""
+    inputs = []
+    for package in INPUTS:
+        try:
+            run([*pc, "--exists", package])
+        except subprocess.CalledProcessError as exc:
+            if exc.returncode != 1:
+                raise
+            # A missing .pc provider is not fatal: the pinned wrap may be
+            # available from the source/cache, even in offline mode.
+            inputs.append({"requirement": package, "pkg_config": "unavailable"})
+            print(f"WHP GLib: {package} unavailable via pkg-config; "
+                  "deferring dependency resolution to Meson", file=sys.stderr)
+            continue
+        inputs.append({
+            "requirement": package,
+            "pkg_config": "available",
+            "version": run([*pc, "--modversion", package]),
+            "flags": run([*pc, "--cflags", "--libs", package]),
+            "pcfiledir": run([*pc, "--variable=pcfiledir", package]),
+        })
+    return inputs
+
+
+def wrap_mode(allow_download):
+    return "default" if allow_download else "nodownload"
+
+
 def bootstrap(args):
     if platform.system() not in ("Linux", "Darwin"):
         raise RuntimeError("managed GLib supports native Linux and macOS")
@@ -182,9 +211,8 @@ def bootstrap(args):
                                      args.allow_source_init)
     _, gvdb = pinned_source(source, "subprojects/gvdb", git,
                             args.allow_source_init)
-    run([*pc, "--exists", *INPUTS])
     identity = {
-        "schema": 1, "source": str(source), "glib": revision, "gvdb": gvdb,
+        "schema": 2, "source": str(source), "glib": revision, "gvdb": gvdb,
         "host": [platform.system(), platform.machine()],
         "tools": [tool_identity(tool)
                   for tool in (cc, ar, pc, meson, ninja)],
@@ -193,11 +221,10 @@ def bootstrap(args):
             "SDKROOT", "DEVELOPER_DIR", "MACOSX_DEPLOYMENT_TARGET",
             "PKG_CONFIG_PATH", "PKG_CONFIG_LIBDIR", "PKG_CONFIG_SYSROOT_DIR",
             "CC_LD", "PATH")},
-        "inputs": [(package, run([*pc, "--modversion", package]),
-                    run([*pc, "--cflags", "--libs", package]),
-                    run([*pc, "--variable=pcfiledir", package]))
-                   for package in INPUTS],
-        "policy": "shared,nodownload,no-tests,no-docs,no-introspection",
+        "inputs": dependency_inputs(pc),
+        # Download permission is not a library ABI input. Online and offline
+        # runs can reuse an identical validated installation.
+        "policy": "shared,meson-fallbacks,no-tests,no-docs,no-introspection",
     }
     manifest = json.dumps(identity, sort_keys=True, indent=2) + "\n"
     key = hashlib.sha256(manifest.encode()).hexdigest()[:24]
@@ -243,11 +270,13 @@ def bootstrap(args):
     setup = [*meson, "setup"]
     if (work / "meson-private/coredata.dat").is_file():
         setup.append("--reconfigure")
-    print(f"WHP GLib: building {revision[:12]} -> {prefix}", file=sys.stderr)
+    mode = wrap_mode(args.allow_download)
+    print(f"WHP GLib: building {revision[:12]} -> {prefix} "
+          f"(wrap-mode={mode})", file=sys.stderr)
     run([*setup, str(work), str(source), "--native-file", str(native),
          "--prefix", str(prefix), "--libdir", "lib", "--bindir", "bin",
          "--default-library=shared", "--buildtype=release",
-         "--wrap-mode=nodownload", "-Dtests=false", "-Dinstalled_tests=false",
+         f"--wrap-mode={mode}", "-Dtests=false", "-Dinstalled_tests=false",
          "-Ddocumentation=false", "-Dintrospection=disabled",
          "-Dman-pages=disabled", "-Dnls=disabled", "-Ddtrace=disabled",
          "-Dsystemtap=disabled", "-Dmultiarch=false"], env=env, capture=False)
@@ -271,7 +300,10 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--build-dir", required=True)
     parser.add_argument("--mode", required=True, choices=("auto", "1"))
-    parser.add_argument("--allow-source-init", action="store_true")
+    parser.add_argument("--allow-source-init", action="store_true",
+                        help="initialize missing pinned GLib/GVDB sources")
+    parser.add_argument("--allow-download", action="store_true",
+                        help="allow Meson to fetch missing pinned wrap dependencies")
     for name in ("meson", "ninja", "cc", "ar", "pkg-config"):
         parser.add_argument("--" + name, required=True)
     parser.add_argument("--cflags", default="")

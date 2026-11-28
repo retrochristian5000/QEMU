@@ -1350,10 +1350,13 @@ installation lives under ``BUILD_DIR/deps/glib/<identity>``; no global
 installation is performed. The helper checks package origin, generated
 headers, link/run compatibility and loaded library paths. Its identity
 includes the actual pinned GLib/GVDB commits, compiler flags, SDK, tools
-and selected dependency metadata. Missing source submodules can be
-initialized only when configure permits downloads; Meson wraps always
-use nodownload. Install libffi, PCRE2, zlib and any other required host
-providers first. The fork currently supports native shared-library Linux
+and available host dependency metadata. Missing source submodules can be
+initialized only when configure permits downloads. Missing libffi, PCRE2,
+and zlib pkg-config providers are deferred to the pinned Meson wraps;
+Meson receives ``default`` or ``nodownload`` according to the same QEMU
+configure policy. Offline builds may use existing wrap sources and caches,
+but cannot fetch missing sources. A validated installation with the same
+identity can be reused under either policy. The fork currently supports native shared-library Linux
 and macOS builds only; cross/static builds must use the normal provider.
 
 For an explicit fork build from the normal entry point::

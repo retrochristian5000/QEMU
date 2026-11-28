@@ -211,7 +211,8 @@ errors instead of silently fetching. The independent DTC prefetch choice
 still controls whether to prefetch rather than letting Meson fetch on demand.
 This is not a global offline switch: parent source refresh, firmware and
 managed toolchain bootstraps retain their separate policies. The managed
-GLib helper retains its own wrap restrictions and host-provider checks.
+GLib helper follows configure's download permission for pinned wraps and
+source initialization, while retaining its host-provider and loader checks.
 
 ``seeds/pip.sh`` selects pip through the chosen Python interpreter, not a
 standalone executable on PATH. Use ``--python /path/to/python --check``

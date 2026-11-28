@@ -2082,9 +2082,14 @@ if test "$skip_meson" = no; then
       error_exit "Managed GLib currently requires a native shared-library QEMU build; use BOOTSTRAP_GLIB=0 for cross/static builds"
     fi
     whp_glib_init=
-    test "$download" != disabled && whp_glib_init=--allow-source-init
+    whp_glib_download=
+    if test "$download" = enabled; then
+      whp_glib_init=--allow-source-init
+      whp_glib_download=--allow-download
+    fi
     whp_glib_prefix=$($python "$source_path/scripts/ensure-glib.py" \
       --build-dir "$PWD" --mode "$whp_glib_policy" $whp_glib_init \
+      $whp_glib_download \
       --meson "$meson" --ninja "$ninja" --cc "$cc" --ar "$ar" \
       --pkg-config "$pkg_config" --cflags="$CFLAGS $CPU_CFLAGS" \
       --ldflags="$LDFLAGS") || error_exit "Managed GLib preparation failed"
