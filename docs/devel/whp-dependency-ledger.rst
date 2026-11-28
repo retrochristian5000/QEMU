@@ -5408,8 +5408,8 @@ from QEMU artifact zlib.
 Cargo and native library closure
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
-The pinned sccacher `Cargo.toml <https://github.com/retrochristian5000/sccacher/blob/45cb854412588241fa3fb77bae9e7318184e7956/Cargo.toml>`__ and
-`Cargo.lock <https://github.com/retrochristian5000/sccacher/blob/45cb854412588241fa3fb77bae9e7318184e7956/Cargo.lock>`__ expose a registry graph with one explicitly pinned Git crate:
+The pinned sccacher `Cargo.toml <https://github.com/retrochristian5000/sccacher/blob/335b23185b7ec720321aa0b83aa62fafd3561df4/Cargo.toml>`__ and
+`Cargo.lock <https://github.com/retrochristian5000/sccacher/blob/335b23185b7ec720321aa0b83aa62fafd3561df4/Cargo.lock>`__ expose a registry graph with one explicitly pinned Git crate:
 ``tar`` 0.4.46 from the WHP
 `Rust-TAR fork <https://github.com/retrochristian5000/Rust-TAR/tree/e0127f17781a00f460330373a79196e3b5e30d56>`__
 at revision ``e0127f17781a00f460330373a79196e3b5e30d56``. It replaces registry tar 0.4.45 and
@@ -5454,6 +5454,16 @@ backend are preserved. Archive hashing runs in batches of two per call
 to limit simultaneous full-file snapshots; this is not a global memory
 limit. Tests cover source truncation after loading, invalid lengths,
 short/long reads and regular archive digest compatibility.
+
+Rustix also enables its event feature for the Unix daemon startup handshake.
+A synchronous poll-based notification reader shares one monotonic timeout
+budget across socket accept, header and payload reads. Interrupted calls
+are retried without resetting the budget; buffered data is drained on
+hangup, premature EOF is an error, and the startup frame is capped at 1 MiB
+before allocation. The wire format, default startup timeout, Windows
+notification path and Tokio runtime for asynchronous server/compiler I/O
+remain unchanged. Local-cache CI covers socket readiness, timeout, EOF,
+length validation and the listener handshake.
 
 A lockfile entry alone does not prove feature or target activation.
 Verify the selected graph with cargo tree --locked --no-default-features.
