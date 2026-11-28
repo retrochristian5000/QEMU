@@ -1203,9 +1203,11 @@ static void modem_test_expect_peer(QIOChannel *peer, const char *expected)
 static void test_dataport_macppp_init(gconstpointer opaque)
 {
     const char *model = opaque;
+    char host[] = "127.0.0.1";
+    char port[] = "0";
     SocketAddress address = {
         .type = SOCKET_ADDRESS_TYPE_INET,
-        .u.inet = { .host = "127.0.0.1", .port = "0" },
+        .u.inet = { .host = host, .port = port },
     };
     QIOChannelSocket *listener = qio_channel_socket_new();
     QIOChannel *peer;
@@ -1280,9 +1282,11 @@ static void test_dataport_macppp_init(gconstpointer opaque)
  */
 static void test_dataport_aol_setup(void)
 {
+    char host[] = "127.0.0.1";
+    char port[] = "0";
     SocketAddress address = {
         .type = SOCKET_ADDRESS_TYPE_INET,
-        .u.inet = { .host = "127.0.0.1", .port = "0" },
+        .u.inet = { .host = host, .port = port },
     };
     QIOChannelSocket *listener = qio_channel_socket_new();
     QIOChannel *peer;
@@ -1372,9 +1376,11 @@ static void test_dataport_xon_xoff_transport(gconstpointer opaque)
     bool software = mode < 2;
     bool forward = mode != 0;
     bool rts_test = mode == 3;
+    char host[] = "127.0.0.1";
+    char port[] = "0";
     SocketAddress address = {
         .type = SOCKET_ADDRESS_TYPE_INET,
-        .u.inet = { .host = "127.0.0.1", .port = "0" },
+        .u.inet = { .host = host, .port = port },
     };
     QIOChannelSocket *listener = qio_channel_socket_new();
     QIOChannel *peer;
