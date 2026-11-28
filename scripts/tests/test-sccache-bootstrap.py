@@ -205,13 +205,26 @@ class ManagedSccacheTests(unittest.TestCase):
                         bootstrap.require_tool_version(tool, f'{tool} {version}')
 
     def test_cargo_locked_local_and_offline_modes(self):
-        online = bootstrap.cargo_build_command('/native/cargo', 2)
+        target = 'aarch64-apple-darwin'
+        online = bootstrap.cargo_build_command('/native/cargo', 2, target)
         self.assertEqual(online, [
             '/native/cargo', 'build', '--locked', '--release',
             '--no-default-features', '--bin', 'sccache', '--jobs', '2',
+            '--target', target,
         ])
         self.assertEqual(bootstrap.cargo_build_command(
-            '/native/cargo', 2, offline=True), online + ['--offline'])
+            '/native/cargo', 2, target, offline=True), online + ['--offline'])
+
+    def test_rust_host_target(self):
+        with mock.patch.object(bootstrap, 'call',
+                               return_value='rustc 1.91.0\nhost: aarch64-apple-darwin'):
+            self.assertEqual(bootstrap.rust_host_target('/native/rustc'),
+                             'aarch64-apple-darwin')
+        for banner in ('rustc 1.91.0', 'host: ../foreign',
+                       'host: aarch64-apple-darwin\nhost: x86_64-unknown-linux-gnu'):
+            with mock.patch.object(bootstrap, 'call', return_value=banner):
+                with self.assertRaisesRegex(RuntimeError, 'native host target'):
+                    bootstrap.rust_host_target('/native/rustc')
 
     def test_cargo_build_uses_native_compiler_environment(self):
         qemu_flags = {
@@ -430,6 +443,7 @@ class ManagedSccacheTests(unittest.TestCase):
             'rustc': 'rustc 1.91.0',
             'cargo_path': '/native/cargo',
             'cargo': 'cargo 1.91.0',
+            'rust_target': 'aarch64-apple-darwin',
             'profile': 'lto=false,codegen-units=8,debug=0',
             'native_producer': {
                 'cc': '/native/clang',
@@ -464,6 +478,7 @@ class ManagedSccacheTests(unittest.TestCase):
             ('rustc', 'rustc 1.92.0'),
             ('cargo_path', '/other/cargo'),
             ('cargo', 'cargo 1.92.0'),
+            ('rust_target', 'x86_64-apple-darwin'),
             ('profile', 'lto=true,codegen-units=1,debug=2'),
         ):
             modified = {**marker, key: changed}
@@ -550,12 +565,15 @@ class ManagedSccacheTests(unittest.TestCase):
                 'schema': bootstrap.SCHEMA, 'gitlink': 'a' * 40,
                 'rustc_path': '/native/rustc', 'rustc': 'rustc 1.91.0',
                 'cargo_path': 'cargo', 'cargo': 'cargo 1.91.0',
+                'rust_target': 'aarch64-apple-darwin',
                 'features': 'local-only', 'profile': 'lto=false,codegen-units=8,debug=0',
                 'native_producer': {'cc': '/native/clang', 'cxx': '/native/clang++'},
             }
             (prefix / '.whp-sccacher.json').write_text(json.dumps(identity))
             with mock.patch.object(bootstrap, 'pinned_source', return_value=(build, 'a' * 40)), \
                  mock.patch.object(bootstrap, 'host_tools', return_value=('cargo', '/native/rustc', 'rustc 1.91.0', 'cargo 1.91.0')), \
+                 mock.patch.object(bootstrap, 'rust_host_target',
+                                   return_value='aarch64-apple-darwin'), \
                  mock.patch.object(bootstrap, 'call', return_value='sccache-0.18.0') as run, \
                  mock.patch.object(bootstrap, 'native_producer_identity',
                                    return_value=identity['native_producer']):

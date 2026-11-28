@@ -5378,8 +5378,8 @@ from QEMU artifact zlib.
 Cargo and native library closure
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
-The pinned sccacher `Cargo.toml <https://github.com/retrochristian5000/sccacher/blob/fb1f2c3bc9822545a5fb8a93345b88149d4119fc/Cargo.toml>`__ and
-`Cargo.lock <https://github.com/retrochristian5000/sccacher/blob/fb1f2c3bc9822545a5fb8a93345b88149d4119fc/Cargo.lock>`__ expose a non-Git graph.
+The pinned sccacher `Cargo.toml <https://github.com/retrochristian5000/sccacher/blob/65b5be6321725cea52235283ab365f4f25049ac1/Cargo.toml>`__ and
+`Cargo.lock <https://github.com/retrochristian5000/sccacher/blob/65b5be6321725cea52235283ab365f4f25049ac1/Cargo.lock>`__ expose a non-Git graph.
 QEMU's ``scripts/ensure-sccache.py`` invokes Cargo with --locked,
 --release and --no-default-features for the local binary. The native
 compilation edges remain:
@@ -5403,6 +5403,13 @@ bootstrap clears inherited ZSTD_SYS_USE_PKG_CONFIG and target-specific
 archiver/pkg-config overrides so the bundled compression provider cannot
 silently become a QEMU guest/system library. The cache schema changes to
 reject earlier native producer artifacts, without deleting old work trees.
+The managed Cargo invocation explicitly selects the host target reported
+by the admitted rustc, overriding inherited Cargo build.target defaults.
+The host tuple participates in the work-cache identity, and the executable
+is read from the corresponding target-specific release directory. The fork's
+extra-test feature matrix uses POSIX shell, explicit targets and locked
+workspace dependencies; its command-routing regression needs no Rust build.
+
 Cargo --locked is not offline mode; missing crate sources may require
 acquisition. The helper's optional --cargo-offline passes --offline to
 Cargo; ordinary runs retain Cargo's own CARGO_NET_OFFLINE and registry

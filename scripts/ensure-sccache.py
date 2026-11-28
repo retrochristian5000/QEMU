@@ -21,7 +21,7 @@ if str(ROOT / "scripts") not in sys.path:
     sys.path.insert(0, str(ROOT / "scripts"))
 from bootstrap_env import clean_host_environment, reconcile_submodule
 SUBMODULE = pathlib.Path('toolchains/sccacher')
-SCHEMA = 7
+SCHEMA = 8
 MINIMUM_RUST = (1, 91, 0)
 
 
@@ -180,7 +180,7 @@ def native_work_key(identity):
     inputs = {
         name: identity[name] for name in (
             'schema', 'native_producer', 'rustc_path', 'rustc',
-            'cargo_path', 'cargo', 'profile'
+            'cargo_path', 'cargo', 'profile', 'rust_target'
         )
     }
     return hashlib.sha256(
@@ -210,9 +210,18 @@ def host_tools():
     return cargo, rustc, version, cargo_version
 
 
-def cargo_build_command(cargo, jobs, *, offline=False):
+def rust_host_target(rustc):
+    banner = call([rustc, '--version', '--verbose'], capture=True)
+    hosts = [line.removeprefix('host: ') for line in banner.splitlines()
+             if line.startswith('host: ')]
+    if len(hosts) != 1 or not re.fullmatch(r'[A-Za-z0-9_]+(?:-[A-Za-z0-9_]+)+', hosts[0]):
+        raise RuntimeError('rustc did not report a valid native host target')
+    return hosts[0]
+
+
+def cargo_build_command(cargo, jobs, rust_target, *, offline=False):
     argv = [cargo, 'build', '--locked', '--release', '--no-default-features',
-            '--bin', 'sccache', '--jobs', str(jobs)]
+            '--bin', 'sccache', '--jobs', str(jobs), '--target', rust_target]
     if offline:
         argv.append('--offline')
     return argv
@@ -222,6 +231,7 @@ def ensure(build_dir, *, cargo_offline=False):
     source, revision = pinned_source()
     cargo, rustc, rust_version, cargo_version = host_tools()
     jobs = build_jobs(os.environ)
+    rust_target = rust_host_target(rustc)
     host = f'{platform.system().lower()}-{platform.machine().lower()}'
     prefix = build_dir / 'toolchains' / 'sccache' / host
     executable = prefix / 'bin' / 'sccache'
@@ -229,6 +239,7 @@ def ensure(build_dir, *, cargo_offline=False):
     identity = {'schema': SCHEMA, 'gitlink': revision,
                 'rustc_path': rustc, 'rustc': rust_version,
                 'cargo_path': cargo, 'cargo': cargo_version,
+                'rust_target': rust_target,
                 'features': 'local-only',
                 'profile': 'lto=false,codegen-units=8,debug=0',
                 'native_producer': native_producer_identity(os.environ)}
@@ -246,9 +257,9 @@ def ensure(build_dir, *, cargo_offline=False):
               f'{host}-v{SCHEMA}-{native_work_key(identity)}')
     target.mkdir(parents=True, exist_ok=True)
     print(f'WHP sccacher: building {revision} with {jobs} Cargo jobs', file=sys.stderr)
-    call(cargo_build_command(cargo, jobs, offline=cargo_offline), cwd=source,
-         env=cargo_environment(os.environ, target, rustc=rustc))
-    built = target / 'release' / 'sccache'
+    call(cargo_build_command(cargo, jobs, rust_target, offline=cargo_offline),
+         cwd=source, env=cargo_environment(os.environ, target, rustc=rustc))
+    built = target / rust_target / 'release' / 'sccache'
     if not built.is_file():
         raise RuntimeError('Cargo succeeded without producing the sccache executable')
     call([str(built), '--version'], capture=True)
