@@ -162,7 +162,7 @@ whp_native_lld_accepts_threads()
         "${probe_cc[@]}" -arch "$WHP_MACOS_ARCH" \
             -isysroot "$SDKROOT" \
             "-mmacosx-version-min=$MACOSX_DEPLOYMENT_TARGET" \
-            -fuse-ld=lld "$flag" -x c - -o /dev/null >/dev/null 2>&1
+            -fuse-ld=lld "--ld-path=$LD" "$flag" -x c - -o /dev/null >/dev/null 2>&1
 }
 
 validate_macho_thread_flags()

@@ -149,6 +149,20 @@ whp_prepare_mold
 [[ "$BOOTSTRAP_MOLD" == 0 ]]
 [[ " $LDFLAGS " == *' -fuse-ld=lld '* ]]
 grep -Fq -- ' -fuse-ld=lld ' "$log"
+
+# A managed exact Mach-O LLD path is accepted, but an arbitrary override
+# cannot redirect the validated driver selection.
+(
+    NATIVE_LLVM_DIR=/mock/native-llvm
+    NATIVE_LLVM_LDFLAG=-fuse-ld=lld
+    LD="$NATIVE_LLVM_DIR/bin/ld64.lld"
+    LDFLAGS="-fuse-ld=lld --ld-path=$LD"
+    whp_linker_flags_compatible lld
+    ! whp_linker_flags_compatible system
+    LDFLAGS="-fuse-ld=lld --ld-path=/foreign/ld64.lld"
+    ! whp_linker_flags_compatible lld
+)
+
 QEMU_HOST_LINKER=system
 if whp_prepare_mold > /dev/null 2> "$stderr"; then
     printf 'error: the system linker ignored an inherited LLD override\n' >&2

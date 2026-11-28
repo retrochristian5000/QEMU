@@ -19,7 +19,18 @@ whp_linker_flags_compatible()
                         return 1
                     fi
                     ;;
-                --ld-path=*|--ld-path) return 1 ;;
+                --ld-path=*)
+                    # Only the managed Mach-O LLD path inserted by build.sh
+                    # is compatible with an explicit LLD request.
+                    if [[ "$selected" != lld || "$variable" != LDFLAGS ||
+                          "${NATIVE_LLVM_LDFLAG:-}" != -fuse-ld=lld ||
+                          -z "${NATIVE_LLVM_DIR:-}" ||
+                          "${LD:-}" != "$NATIVE_LLVM_DIR/bin/ld64.lld" ||
+                          "${token#--ld-path=}" != "$LD" ]]; then
+                        return 1
+                    fi
+                    ;;
+                --ld-path) return 1 ;;
             esac
         done
     done

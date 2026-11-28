@@ -73,6 +73,10 @@ assert 'export LD LIPO NATIVE_LLVM_LDFLAG LDFLAGS' in build
 assert '$ENV{"OBJDUMP"} || "objdump"' in disas_objdump
 assert 'LD="$NATIVE_LLVM_DIR/bin/ld64.lld"' in build
 assert 'NATIVE_LLVM_LDFLAG=-fuse-ld=lld' in build
+assert 'LDFLAGS="${LDFLAGS:+$LDFLAGS }--ld-path=$LD"' in build
+assert '-DCLANG_DEFAULT_LINKER=' in bootstrap
+assert 'CLANG_DEFAULT_LINKER=' in bootstrap
+assert '"--ld-path=$LD"' in macos_builder
 assert 'toolchains/llvm-project' in bootstrap
 # Firmware LLVM variants must not accept cached cross-linker ABI choices.
 for source in (i386_bootstrap, powerpc_bootstrap):
@@ -908,6 +912,7 @@ with tempfile.TemporaryDirectory(prefix='whp-llvm-cmake-guard-') as td:
         'CMAKE_OSX_DEPLOYMENT_TARGET': ('STRING', '27.2'),
         'LLVM_HOST_TRIPLE': ('STRING', 'arm64e-apple-macosx27.2'),
         'LLVM_DEFAULT_TARGET_TRIPLE': ('STRING', 'arm64e-apple-macosx27.2'),
+        'CLANG_DEFAULT_LINKER': ('STRING', ''),
         'LLVM_ENABLE_LTO': ('BOOL', 'OFF'),
         'LLVM_ENABLE_PROJECTS': ('STRING', 'clang;lld'),
         'CMAKE_C_COMPILER_LAUNCHER': ('STRING', '/cache/sccache'),
@@ -935,6 +940,7 @@ with tempfile.TemporaryDirectory(prefix='whp-llvm-cmake-guard-') as td:
     for key, (kind, value), poisoned_value in (
         ('LLVM_HOST_TRIPLE', wanted['LLVM_HOST_TRIPLE'], 'aarch64-apple-darwin27.2'),
         ('LLVM_DEFAULT_TARGET_TRIPLE', wanted['LLVM_DEFAULT_TARGET_TRIPLE'], 'aarch64-apple-macosx27.2'),
+        ('CLANG_DEFAULT_LINKER', wanted['CLANG_DEFAULT_LINKER'], 'lld'),
         ('CMAKE_OSX_ARCHITECTURES', wanted['CMAKE_OSX_ARCHITECTURES'], 'arm64'),
         ('CMAKE_OSX_DEPLOYMENT_TARGET', wanted['CMAKE_OSX_DEPLOYMENT_TARGET'], '27.3'),
         ('CMAKE_OSX_SYSROOT', wanted['CMAKE_OSX_SYSROOT'], '/foreign/iPhoneOS.sdk'),

@@ -969,9 +969,20 @@ if [ "$BOOTSTRAP_NATIVE_LLVM" = 1 ]; then
         else
             LD="$NATIVE_LLVM_DIR/bin/ld64.lld"
             NATIVE_LLVM_LDFLAG=-fuse-ld=lld
+            # The driver must use our LLD, not another one selected by -B,
+            # COMPILER_PATH or PATH. The build's flag lists are word-split.
+            case "$LD" in
+                *[[:space:]]*)
+                    printf 'error: native LLD path contains whitespace; use a toolchain prefix without whitespace\n' >&2
+                    exit 1 ;;
+            esac
             case " ${LDFLAGS:-} " in
                 *" $NATIVE_LLVM_LDFLAG "*) ;;
                 *) LDFLAGS="${LDFLAGS:+$LDFLAGS }$NATIVE_LLVM_LDFLAG" ;;
+            esac
+            case " ${LDFLAGS:-} " in
+                *" --ld-path=$LD "*) ;;
+                *) LDFLAGS="${LDFLAGS:+$LDFLAGS }--ld-path=$LD" ;;
             esac
             if [ "${WHP_MACOS_ARCH:-auto}" = arm64e ]; then
                 printf 'QEMU native Mach-O linker: LLD (explicit ARM64e development mode)\n'

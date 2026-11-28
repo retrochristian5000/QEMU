@@ -1385,6 +1385,7 @@ LLVM_TARGET_ARCH=host
 LLD_ENABLE_BACKENDS=$LLD_ENABLE_BACKENDS
 LLVM_HOST_TRIPLE=$llvm_host_triple
 LLVM_DEFAULT_TARGET_TRIPLE=$llvm_default_target_triple
+CLANG_DEFAULT_LINKER=
 LLVM_ENABLE_PROJECTS=$llvm_enable_projects
 LLVM_ENABLE_RUNTIMES=$llvm_enable_runtimes
 LLVM_INCLUDE_RUNTIMES=$llvm_include_runtimes
@@ -2025,6 +2026,9 @@ cmake_args=(
     "-DLLD_ENABLE_BACKENDS=$LLD_ENABLE_BACKENDS"
     "-DLLVM_HOST_TRIPLE=$llvm_host_triple"
     "-DLLVM_DEFAULT_TARGET_TRIPLE=$llvm_default_target_triple"
+    # Keep the installed driver on the platform default; the QEMU build
+    # selects its exact LLD explicitly after ABI/runtime validation.
+    -DCLANG_DEFAULT_LINKER=
     "-DLLVM_DISTRIBUTION_COMPONENTS=$llvm_distribution_components"
     -DBUILD_SHARED_LIBS=OFF
     -DLLVM_ENABLE_PIC=ON
@@ -2183,7 +2187,7 @@ native_llvm_cmake_cache_clean()
                 "CMAKE_MODULE_LINKER_FLAGS_RELEASE " \
                 "CMAKE_STATIC_LINKER_FLAGS_RELEASE " \
                 "CMAKE_INTERPROCEDURAL_OPTIMIZATION " \
-                "LLVM_HOST_TRIPLE LLVM_DEFAULT_TARGET_TRIPLE " \
+                "LLVM_HOST_TRIPLE LLVM_DEFAULT_TARGET_TRIPLE CLANG_DEFAULT_LINKER " \
                 "LLVM_TARGETS_TO_BUILD LLVM_TARGET_ARCH " \
                 "LLVM_ENABLE_PROJECTS LLVM_ENABLE_RUNTIMES " \
                 "LLVM_INCLUDE_RUNTIMES LLVM_DISTRIBUTION_COMPONENTS " \
