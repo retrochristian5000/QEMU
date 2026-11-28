@@ -120,7 +120,7 @@ pip_usable()
 {
     candidate=$1
     [ -n "$candidate" ] || return 1
-    "$candidate" -m pip --version >/dev/null 2>&1
+    /bin/sh "$SOURCE_DIR/seeds/pip.sh" --python "$candidate" --check >/dev/null 2>&1
 }
 
 ensure_pip()

@@ -213,6 +213,16 @@ This is not a global offline switch: parent source refresh, firmware and
 managed toolchain bootstraps retain their separate policies. The managed
 GLib helper retains its own wrap restrictions and host-provider checks.
 
+``seeds/pip.sh`` selects pip through the chosen Python interpreter, not a
+standalone executable on PATH. Use ``--python /path/to/python --check``
+for a read-only probe, or ``--print-python`` to identify the interpreter.
+Ordinary pip arguments are forwarded only when explicitly supplied. The
+seed does not install pip or packages on its own. The managed Python
+bootstrap still repairs its own pip using bundled ensurepip wheels, and
+QEMU's virtual environment keeps its existing dependency resolver.
+The explicit venv Meson provider now follows the same download flag as
+the tooling group.
+
 Host linker selection
 ---------------------
 

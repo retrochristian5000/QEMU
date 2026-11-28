@@ -967,6 +967,11 @@ fi
 python="$python -B"
 mkvenv="$python ${source_path}/python/scripts/mkvenv.py"
 
+mkvenv_online_flag=""
+if test "$download" = "enabled" ; then
+    mkvenv_online_flag=" --online"
+fi
+
 # WHP's default is the exact Meson Git pin. Do not install the unrelated
 # Meson wheel unless the caller explicitly chooses the venv compatibility lane.
 # Both providers use QEMU's selected virtual-environment Python.
@@ -980,7 +985,7 @@ get_pwd() {
 
 case "${WHP_MESON_PROVIDER:-fork}" in
   venv)
-    $mkvenv ensuregroup --dir "${source_path}/python/wheels" \
+    $mkvenv ensuregroup $mkvenv_online_flag --dir "${source_path}/python/wheels" \
          ${source_path}/pythondeps.toml meson || exit 1
     meson="$(cd pyvenv/bin; get_pwd)/meson"
     if [ -f "$meson$EXESUF" ]; then
@@ -1041,11 +1046,6 @@ case "${WHP_MESON_PROVIDER:-fork}" in
     error_exit "WHP_MESON_PROVIDER must be venv or fork"
     ;;
 esac
-
-mkvenv_online_flag=""
-if test "$download" = "enabled" ; then
-    mkvenv_online_flag=" --online"
-fi
 
 # Unconditionally install our tooling group. PyPI is allowed if enabled here.
 

@@ -204,6 +204,10 @@ class WhpConfigTests(unittest.TestCase):
         self.assertNotIn('pythondeps.toml meson || exit 1',
                          configure.split(selector)[0])
         self.assertIn('  venv)\n', configure)
+        self.assertLess(configure.index('mkvenv_online_flag=""'),
+                        configure.index(selector))
+        venv = configure.split(selector, 1)[1].split('  fork)', 1)[0]
+        self.assertIn('$mkvenv ensuregroup $mkvenv_online_flag', venv)
         self.assertIn('  fork)\n', configure)
         self.assertIn('meson="$python $source_path/toolchains/meson/meson.py"', configure)
         stage = (ROOT / 'scripts/whp-build/configure.bash').read_text(encoding='utf-8')
