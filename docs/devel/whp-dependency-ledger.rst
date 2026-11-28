@@ -5409,16 +5409,16 @@ Cargo and native library closure
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
 The pinned sccacher `Cargo.toml <https://github.com/retrochristian5000/sccacher/blob/70b17450e9abcef89335221e93ef6d225f84fc36/Cargo.toml>`__ and
-`Cargo.lock <https://github.com/retrochristian5000/sccacher/blob/70b17450e9abcef89335221e93ef6d225f84fc36/Cargo.lock>`__ expose a registry graph with one explicitly pinned Git crate:
-``tar`` 0.4.46 from the WHP
+`Cargo.lock <https://github.com/retrochristian5000/sccacher/blob/70b17450e9abcef89335221e93ef6d225f84fc36/Cargo.lock>`__ expose a registry graph with two explicitly pinned Git crates (tar and libc).
+``tar`` 0.4.46 comes from the WHP
 `Rust-TAR fork <https://github.com/retrochristian5000/Rust-TAR/tree/e0127f17781a00f460330373a79196e3b5e30d56>`__
 at revision ``e0127f17781a00f460330373a79196e3b5e30d56``. It replaces registry tar 0.4.45 and
 retains the resolved filetime, libc and xattr versions. Cargo owns this
 source edge; do not add another QEMU gitlink for the same crate.
 The sccacher local-cache CI verifies a unique, direct tar provider at
 the locked fork revision. Initial online Cargo acquisition may now need
-the Git crate as well as registry sources; offline Cargo requires that
-exact source to already be cached.
+both Git crates as well as registry sources; offline Cargo requires those
+exact sources to already be cached.
 QEMU's ``scripts/ensure-sccache.py`` invokes Cargo with --locked,
 --release and --no-default-features for the local binary. The native
 compilation edges remain:
