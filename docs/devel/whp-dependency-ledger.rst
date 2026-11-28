@@ -1449,7 +1449,14 @@ For a diagnostic build with GLib's atomic and thread tests enabled::
 
 The test profile has a separate cache identity and runs the two native
 tests before installation and before writing the completion marker.
-The normal lightweight build remains unchanged. A directly signaled
+The normal lightweight build remains unchanged. Managed builds reject
+explicit external GLib include, library and runtime search paths in
+compiler flags and search environments. QEMU-only extra flags are
+checked and used for the admission probe, not passed into the GLib
+source build. The probe checks both header origins and loaded library
+paths, including when installed and managed GLib have identical versions.
+Generic host search paths for unrelated dependencies remain supported.
+A directly signaled
 child or status 139 (possible wrapped SIGSEGV) aborts provider fallback
 and cache repair, reporting the failed command; ordinary probe failures
 retain the previous recovery behavior.

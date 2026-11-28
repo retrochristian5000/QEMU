@@ -35,7 +35,8 @@ class BootstrapTest(unittest.TestCase):
 
     def test_auto_probe_signal_does_not_fall_back(self):
         args = argparse.Namespace(mode="auto", cc="cc", ar="ar",
-                                  pkg_config="pkg-config", cflags="", ldflags="")
+                                  pkg_config="pkg-config", cflags="", ldflags="",
+                                  consumer_cflags="", consumer_ldflags="")
         for code in (-signal.SIGSEGV, 128 + signal.SIGSEGV):
             with self.subTest(code=code), \
                  mock.patch.dict(glib.os.environ, {"WHP_GLIB_TESTS": "0"}), \
@@ -86,6 +87,71 @@ class BootstrapTest(unittest.TestCase):
             with self.assertRaisesRegex(RuntimeError, "selected from"):
                 glib.probe(["pkg-config"], ["cc"], [], [], Path("/private"))
 
+    def test_explicit_glib_flags_rejected(self):
+        for flags in (
+            ["-I/opt/homebrew/include/glib-2.0"],
+            ["-isystem", "/opt/homebrew/opt/glib/include"],
+            ["-L/opt/homebrew/Cellar/glib/2.88/lib"],
+            ["-lglib-2.0"],
+            ["-Wl,-lglib-2.0"],
+            ["-l:libglib-2.0.so"],
+            ["-Wl,-rpath,/opt/homebrew/opt/glib/lib"],
+            ["/usr/lib/libgobject-2.0.so.0"],
+        ):
+            with self.subTest(flags=flags):
+                with self.assertRaisesRegex(RuntimeError, "conflicts"):
+                    glib.validate_managed_flags(flags, "test flags")
+        glib.validate_managed_flags(
+            ["-arch", "arm64e", "-O2", "-I/opt/homebrew/include",
+             "-L/opt/homebrew/lib", "-lffi", "-lz", "-flto=thin"],
+            "test flags",
+        )
+
+    def test_header_origin_rejects_same_version_foreign_headers(self):
+        with tempfile.TemporaryDirectory(prefix="glib test ") as directory:
+            prefix = Path(directory)
+            header = prefix / "include/glib-2.0/glib.h"
+            config = prefix / "lib/glib-2.0/include/glibconfig.h"
+            def escape(path):
+                return str(path).replace(" ", "\\ ")
+            good = "whp-glib-probe: " + escape(header) + " " + escape(config)
+            glib.verify_header_origin(good, prefix)
+            bad = "whp-glib-probe: /external/glib.h " + escape(config)
+            with self.assertRaisesRegex(RuntimeError, "header glib.h"):
+                glib.verify_header_origin(bad, prefix)
+            with self.assertRaisesRegex(RuntimeError, "header glibconfig.h"):
+                glib.verify_header_origin(
+                    "whp-glib-probe: " + escape(header), prefix
+                )
+
+    def test_managed_probe_rejects_wrong_headers_before_linking(self):
+        prefix = Path("/private")
+        def command(argv, **kwargs):
+            if argv[0] == "pkg-config":
+                if argv[1] == "--exists":
+                    return ""
+                if argv[1] == "--variable=pcfiledir":
+                    return "/private/lib/pkgconfig"
+                if argv[1] == "--cflags":
+                    return "-I/private/include/glib-2.0"
+                if argv[1] == "--libs":
+                    return "-L/private/lib -lglib-2.0"
+            if argv[0] == "cc" and "-M" in argv:
+                self.assertLess(argv.index("-I/external"),
+                                argv.index("-I/private/include/glib-2.0"))
+                return ("whp-glib-probe: /external/glib.h "
+                        "/private/lib/glib-2.0/include/glibconfig.h")
+            self.fail(f"unexpected command before header rejection: {argv}")
+
+        with mock.patch.object(glib, "run", side_effect=command):
+            with self.assertRaisesRegex(RuntimeError, "header glib.h"):
+                glib.probe(["pkg-config"], ["cc"], ["-I/external"], [], prefix)
+
+    def test_consumer_flags_are_forwarded(self):
+        configure = (ROOT / "configure").read_text(encoding="utf-8")
+        self.assertIn('--consumer-cflags="$EXTRA_CFLAGS"', configure)
+        self.assertIn('--consumer-ldflags="$EXTRA_LDFLAGS"', configure)
+
     def test_missing_pkg_config_provider_is_deferred(self):
         def pkg_config(argv, **kwargs):
             if argv[-1] == "libffi >= 3.0.0":
@@ -122,6 +188,7 @@ class BootstrapTest(unittest.TestCase):
                 mode="1", build_dir=str(root), allow_source_init=True,
                 allow_download=True, cc="cc", ar="ar", pkg_config="pkg-config",
                 meson="meson", ninja="ninja", cflags="", ldflags="",
+                consumer_cflags="", consumer_ldflags="",
             )
             inputs = [{"requirement": "zlib", "pkg_config": "unavailable"}]
             with mock.patch.dict(glib.os.environ, {"WHP_GLIB_TESTS": "0"}), \
@@ -138,6 +205,11 @@ class BootstrapTest(unittest.TestCase):
                 marker = prefix / ".whp-glib-bootstrap"
                 identity = json.loads(marker.read_text())
                 self.assertEqual(identity["inputs"], inputs)
+                self.assertEqual(identity["schema"], 4)
+                args.consumer_cflags = "-I/opt/homebrew/include/glib-2.0"
+                with self.assertRaisesRegex(RuntimeError, "conflicts"):
+                    glib.bootstrap(args)
+                args.consumer_cflags = ""
                 self.assertEqual(identity["profile"], list(glib.MESON_PROFILE))
                 for option in identity["profile"]:
                     self.assertIn(option, setup)

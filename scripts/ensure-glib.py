@@ -8,6 +8,7 @@ import json
 import os
 from pathlib import Path
 import platform
+import re
 import shlex
 import shutil
 import signal
@@ -19,6 +20,20 @@ ROOT = Path(__file__).resolve().parents[1]
 MODULES = ("glib-2.0", "gobject-2.0", "gio-2.0", "gio-unix-2.0",
            "gmodule-2.0", "gmodule-export-2.0", "gmodule-no-export-2.0")
 INPUTS = ("libffi >= 3.0.0", "libpcre2-8 >= 10.32", "zlib")
+SEARCH_ENV = (
+    "CPATH", "C_INCLUDE_PATH", "CPLUS_INCLUDE_PATH", "OBJC_INCLUDE_PATH",
+    "LIBRARY_PATH", "LD_LIBRARY_PATH", "LD_PRELOAD", "DYLD_LIBRARY_PATH",
+    "DYLD_FALLBACK_LIBRARY_PATH", "DYLD_INSERT_LIBRARIES",
+)
+GLIB_FLAG_PATH = re.compile(
+    r"(?:^|[/=:,])(?:glib(?:-2\.0)?|gobject-2\.0|"
+    r"gio(?:-unix)?-2\.0|gmodule(?:-export|-no-export)?-2\.0|"
+    r"gthread-2\.0|lib(?:glib|gobject|gio|gmodule|gthread)-2\.0"
+    r"(?:\.[^/=:,]+)?)(?:$|[/=:,])"
+)
+GLIB_LIBRARY_FLAG = re.compile(
+    r"(?:^|,)-l(?:glib|gobject|gio|gmodule|gthread)-2\.0(?:$|,)"
+)
 # Keep the optional host-tool profile and its cache identity in one place.
 # Do not disable GIO filesystem/security backends or public core APIs.
 MESON_PROFILE = (
@@ -159,6 +174,35 @@ def pc_environment(prefix=None):
     return env
 
 
+def validate_managed_flags(flags, label):
+    """Reject explicitly injected GLib providers, not shared host paths."""
+    for flag in flags:
+        # Handle joined -I/-L forms as well as separate path arguments.
+        path = re.sub(r"^-(?:isystem|iquote|idirafter|I|L|F)", "", flag)
+        if GLIB_LIBRARY_FLAG.search(flag) or GLIB_FLAG_PATH.search(path):
+            raise RuntimeError(
+                f"managed GLib conflicts with {label}: {flag}; "
+                "remove explicit GLib paths or libraries"
+            )
+
+
+def verify_header_origin(dependencies, prefix):
+    # GCC/Clang -M uses make escaping for spaces and line continuations.
+    headers = shlex.split(dependencies.replace("\\\n", " "))
+    expected = {
+        "glib.h": prefix / "include/glib-2.0/glib.h",
+        "glibconfig.h": prefix / "lib/glib-2.0/include/glibconfig.h",
+    }
+    for name, path in expected.items():
+        actual = {Path(item).resolve() for item in headers
+                  if Path(item).name == name}
+        if actual != {path.resolve()}:
+            raise RuntimeError(
+                f"managed GLib header {name} selected from "
+                f"{sorted(str(item) for item in actual)}; expected {path}"
+            )
+
+
 def probe(pc, cc, cflags, ldflags, prefix=None):
     env = pc_environment(prefix)
     run([*pc, "--exists", "glib-2.0 >= 2.66.0", *MODULES], env=env)
@@ -170,7 +214,8 @@ def probe(pc, cc, cflags, ldflags, prefix=None):
             if actual != expected:
                 raise RuntimeError(f"{module} selected from {actual}, "
                                    f"expected {expected}")
-    flags = shlex.split(run([*pc, "--cflags", "--libs", *MODULES], env=env))
+    includes = shlex.split(run([*pc, "--cflags", *MODULES], env=env))
+    libraries = shlex.split(run([*pc, "--libs", *MODULES], env=env))
     extra = [f"-Wl,-rpath,{prefix / 'lib'}"] if prefix else []
     if platform.system() == "Linux":
         extra.append("-ldl")
@@ -178,8 +223,14 @@ def probe(pc, cc, cflags, ldflags, prefix=None):
         source = Path(directory) / "probe.c"
         binary = Path(directory) / "probe"
         source.write_text(PROBE, encoding="utf-8")
-        run([*cc, *cflags, "-fPIC", str(source), "-o", str(binary),
-             *flags, *ldflags, *extra], env=env)
+        if prefix:
+            # Check the inherited include order before executing a probe
+            # that may otherwise compile against foreign GLib headers.
+            deps = run([*cc, *cflags, *includes, "-M", "-MT",
+                        "whp-glib-probe", str(source)], env=env)
+            verify_header_origin(deps, prefix)
+        run([*cc, *cflags, *includes, "-fPIC", str(source), "-o", str(binary),
+             *ldflags, *libraries, *extra], env=env)
         libs = run([str(binary)], env=env).splitlines()
         if len(libs) != 4:
             raise RuntimeError("GLib loader probe did not identify four libraries")
@@ -232,6 +283,8 @@ def bootstrap(args):
     pc = command(args.pkg_config)
     cflags = shlex.split(args.cflags) + shlex.split(os.environ.get("CPPFLAGS", ""))
     ldflags = shlex.split(args.ldflags)
+    consumer_cflags = cflags + shlex.split(args.consumer_cflags)
+    consumer_ldflags = ldflags + shlex.split(args.consumer_ldflags)
     test_setting = os.environ.get("WHP_GLIB_TESTS", "0")
     if test_setting not in ("0", "1"):
         raise RuntimeError("WHP_GLIB_TESTS must be 0 or 1")
@@ -242,7 +295,7 @@ def bootstrap(args):
                     else arg for arg in MESON_PROFILE)
     if args.mode == "auto":
         try:
-            probe(pc, cc, cflags, ldflags)
+            probe(pc, cc, consumer_cflags, consumer_ldflags)
         except (OSError, RuntimeError, subprocess.CalledProcessError) as exc:
             if is_signal_failure(exc):
                 raise
@@ -252,6 +305,12 @@ def bootstrap(args):
             print("WHP GLib: installed provider is usable", file=sys.stderr)
             return None
 
+    validate_managed_flags(cc[1:], "compiler command")
+    validate_managed_flags(consumer_cflags, "CFLAGS/CPPFLAGS/extra CFLAGS")
+    validate_managed_flags(consumer_ldflags, "LDFLAGS/extra LDFLAGS")
+    for key in SEARCH_ENV:
+        validate_managed_flags(os.environ.get(key, "").split(os.pathsep), key)
+
     meson, ninja = command(args.meson), command(args.ninja)
     git = command(os.environ.get("GIT", "git"))
     source, revision = pinned_source(ROOT, "toolchains/glib", git,
@@ -259,15 +318,17 @@ def bootstrap(args):
     _, gvdb = pinned_source(source, "subprojects/gvdb", git,
                             args.allow_source_init)
     identity = {
-        "schema": 3, "source": str(source), "glib": revision, "gvdb": gvdb,
+        "schema": 4, "source": str(source), "glib": revision, "gvdb": gvdb,
         "host": [platform.system(), platform.machine()],
         "tools": [tool_identity(tool)
                   for tool in (cc, ar, pc, meson, ninja)],
         "cflags": cflags, "ldflags": ldflags,
+        "consumer_cflags": consumer_cflags,
+        "consumer_ldflags": consumer_ldflags,
         "environment": {key: os.environ.get(key, "") for key in (
             "SDKROOT", "DEVELOPER_DIR", "MACOSX_DEPLOYMENT_TARGET",
             "PKG_CONFIG_PATH", "PKG_CONFIG_LIBDIR", "PKG_CONFIG_SYSROOT_DIR",
-            "CC_LD", "PATH")},
+            "CC_LD", "PATH", *SEARCH_ENV)},
         "inputs": dependency_inputs(pc),
         # Download permission is not a library ABI input. Online and offline
         # runs can reuse an identical validated installation.
@@ -286,7 +347,7 @@ def bootstrap(args):
         raise RuntimeError(f"refusing symlinked GLib marker: {marker}")
     if marker.is_file() and marker.read_text(encoding="utf-8") == manifest:
         try:
-            probe(pc, cc, cflags, ldflags, prefix)
+            probe(pc, cc, consumer_cflags, consumer_ldflags, prefix)
         except (OSError, RuntimeError, subprocess.CalledProcessError) as exc:
             if is_signal_failure(exc):
                 raise
@@ -334,7 +395,7 @@ def bootstrap(args):
              "atomic", "thread"], env=env, capture=False)
     run([*meson, "install", "-C", str(work), "--no-rebuild"],
         env=env, capture=False)
-    probe(pc, cc, cflags, ldflags, prefix)
+    probe(pc, cc, consumer_cflags, consumer_ldflags, prefix)
     with tempfile.NamedTemporaryFile(mode="w", encoding="utf-8",
                                      dir=prefix, delete=False) as stamp:
         stamp.write(manifest)
@@ -358,6 +419,8 @@ def main():
         parser.add_argument("--" + name, required=True)
     parser.add_argument("--cflags", default="")
     parser.add_argument("--ldflags", default="")
+    parser.add_argument("--consumer-cflags", default="")
+    parser.add_argument("--consumer-ldflags", default="")
     try:
         prefix = bootstrap(parser.parse_args())
     except (OSError, RuntimeError, ValueError, subprocess.CalledProcessError) as exc:

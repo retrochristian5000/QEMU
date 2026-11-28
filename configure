@@ -2092,7 +2092,8 @@ if test "$skip_meson" = no; then
       $whp_glib_download \
       --meson "$meson" --ninja "$ninja" --cc "$cc" --ar "$ar" \
       --pkg-config "$pkg_config" --cflags="$CFLAGS $CPU_CFLAGS" \
-      --ldflags="$LDFLAGS") || error_exit "Managed GLib preparation failed"
+      --ldflags="$LDFLAGS" --consumer-cflags="$EXTRA_CFLAGS" \
+      --consumer-ldflags="$EXTRA_LDFLAGS") || error_exit "Managed GLib preparation failed"
   fi
   # Persist the selected search path as a Meson option, not merely an
   # environment variable (which an existing Meson cache can ignore).
