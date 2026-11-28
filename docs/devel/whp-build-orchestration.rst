@@ -224,9 +224,14 @@ linkers. The portable Python path uses installed linkers with dual-language
 link/run probes; it does not bootstrap the pinned mold submodule.
 
 ``BOOTSTRAP_MOLD`` remains a separate control for the WHP mold fork.
-Conflicting explicit choices, including ``QEMU_HOST_LINKER=lld`` plus
-``BOOTSTRAP_MOLD=1``, are rejected.  ARM64e authenticated-fixup and macOS
-AddressSanitizer runtime admissions are not bypassed by trivial link tests.
+Both menuconfig frontends reject saving ``QEMU_HOST_LINKER=system`` or
+``lld`` together with ``BOOTSTRAP_MOLD=y``. The Bash runner also rejects
+``QEMU_HOST_LINKER=mold`` with ``BOOTSTRAP_MOLD=n`` (or environment value
+``0``); selecting mold with ``auto`` or ``y`` requests the managed fork.
+The portable runner can use an installed mold with ``auto`` or ``n`` but
+cannot bootstrap it. These runner-specific checks remain at build time.
+ARM64e authenticated-fixup and macOS AddressSanitizer runtime admissions
+are not bypassed by trivial link tests.
 
 The Bash build records effective LDFLAGS in its incremental configuration
 identity. Switching linkers triggers ordinary QEMU reconfiguration without
