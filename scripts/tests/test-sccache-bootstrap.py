@@ -170,6 +170,49 @@ class ManagedSccacheTests(unittest.TestCase):
             pathlib.Path('/tmp/sccache-target'), rustc='/native/rustc')
         self.assertEqual(chosen['RUSTC'], '/native/rustc')
 
+    def test_native_compression_and_archive_provider_isolation(self):
+        source = {
+            'CC_FOR_BUILD': '/native/clang',
+            'ZSTD_SYS_USE_PKG_CONFIG': '0',
+            'CRATE_CC_NO_DEFAULTS': '1',
+            'AR_aarch64_apple_darwin': '/guest/ar',
+            'ARFLAGS_aarch64_apple_darwin': 'wrong',
+            'HOST_AR': '/guest/ar',
+            'HOST_ARFLAGS': 'wrong',
+            'TARGET_ARFLAGS': 'wrong',
+            'HOST_RANLIB': '/guest/ranlib',
+            'PKG_CONFIG_PATH_aarch64_apple_darwin': '/guest/pkgconfig',
+            'TARGET_PKG_CONFIG': '/guest/pkg-config',
+            'CARGO_NET_OFFLINE': 'true',
+            'CARGO_HOME': '/cargo/cache',
+        }
+        env = bootstrap.cargo_environment(
+            source, pathlib.Path('/tmp/sccache-target'))
+        for key in source.keys() - {'CC_FOR_BUILD', 'CARGO_NET_OFFLINE',
+                                    'CARGO_HOME'}:
+            self.assertNotIn(key, env)
+        self.assertEqual(env['CARGO_NET_OFFLINE'], 'true')
+        self.assertEqual(env['CARGO_HOME'], '/cargo/cache')
+        self.assertEqual(source['ZSTD_SYS_USE_PKG_CONFIG'], '0')
+
+    def test_rust_and_cargo_minimum(self):
+        for tool in ('rustc', 'cargo'):
+            for version in ('1.91.0', '1.92.1', '2.0.0'):
+                bootstrap.require_tool_version(tool, f'{tool} {version} (fixture)')
+            for version in ('1.90.9', '1.9.0', '1.91.0-beta.1', 'unknown'):
+                with self.subTest(tool=tool, version=version):
+                    with self.assertRaisesRegex(RuntimeError, tool):
+                        bootstrap.require_tool_version(tool, f'{tool} {version}')
+
+    def test_cargo_locked_local_and_offline_modes(self):
+        online = bootstrap.cargo_build_command('/native/cargo', 2)
+        self.assertEqual(online, [
+            '/native/cargo', 'build', '--locked', '--release',
+            '--no-default-features', '--bin', 'sccache', '--jobs', '2',
+        ])
+        self.assertEqual(bootstrap.cargo_build_command(
+            '/native/cargo', 2, offline=True), online + ['--offline'])
+
     def test_cargo_build_uses_native_compiler_environment(self):
         qemu_flags = {
             'CPPFLAGS': '-I/guest/include',

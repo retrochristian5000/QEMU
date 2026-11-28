@@ -21,7 +21,8 @@ if str(ROOT / "scripts") not in sys.path:
     sys.path.insert(0, str(ROOT / "scripts"))
 from bootstrap_env import clean_host_environment, reconcile_submodule
 SUBMODULE = pathlib.Path('toolchains/sccacher')
-SCHEMA = 6
+SCHEMA = 7
+MINIMUM_RUST = (1, 91, 0)
 
 
 def call(argv, *, cwd=None, env=None, capture=False):
@@ -64,6 +65,10 @@ def build_jobs(environ):
 def cargo_environment(environ, target, *, rustc=None):
     # Cargo's BLAKE3 and zstd dependencies compile native C code.
     env = clean_host_environment(environ)
+    # Keep the locked zstd-sys bundled C provider. Presence of this
+    # variable can select pkg-config, even when its value is empty.
+    env.pop('ZSTD_SYS_USE_PKG_CONFIG', None)
+    env.pop('CRATE_CC_NO_DEFAULTS', None)
     # Cargo build scripts (including cc-rs) can read target-qualified compiler
     # and flag overrides. A parent's QEMU C++/preprocessor options must never
     # become flags for the native C/C++ code compiled while building sccache.
@@ -81,10 +86,14 @@ def cargo_environment(environ, target, *, rustc=None):
         if (key.startswith(('CC_', 'CXX_', 'CPP_', 'CFLAGS_', 'CXXFLAGS_',
                             'CPPFLAGS_', 'HOST_CC_', 'HOST_CXX_', 'HOST_CPP_',
                             'HOST_CFLAGS_', 'HOST_CXXFLAGS_', 'HOST_CPPFLAGS_',
+                            'AR_', 'ARFLAGS_', 'RANLIB_', 'HOST_AR_',
+                            'HOST_ARFLAGS_', 'HOST_RANLIB_', 'PKG_CONFIG_',
                             'CARGO_TARGET_'))
                 or key in ('TARGET_CC', 'TARGET_CXX', 'TARGET_CPP',
                            'TARGET_CFLAGS', 'TARGET_CXXFLAGS', 'TARGET_CPPFLAGS',
                            'HOST_CFLAGS', 'HOST_CXXFLAGS', 'HOST_CPPFLAGS',
+                           'HOST_AR', 'HOST_ARFLAGS', 'HOST_RANLIB',
+                           'TARGET_ARFLAGS', 'TARGET_PKG_CONFIG', 'HOST_PKG_CONFIG',
                            'CARGO_BUILD_TARGET', 'CARGO_BUILD_RUSTC',
                            'CARGO_BUILD_RUSTDOC', 'CARGO_BUILD_RUSTFLAGS',
                            'IPHONEOS_DEPLOYMENT_TARGET',
@@ -179,6 +188,13 @@ def native_work_key(identity):
     ).hexdigest()[:16]
 
 
+def require_tool_version(tool, banner):
+    match = re.match(rf'^{re.escape(tool)} (\d+)\.(\d+)\.(\d+)(?:\s|$)', banner)
+    if not match or tuple(map(int, match.groups())) < MINIMUM_RUST:
+        minimum = '.'.join(map(str, MINIMUM_RUST))
+        raise RuntimeError(f'sccacher requires {tool} {minimum} or newer: {banner}')
+
+
 def host_tools():
     # Cargo is a pre-QEMU root capability, selected through the WHP seed.
     # Use /bin/sh explicitly so the seed also works from source archives
@@ -188,13 +204,21 @@ def host_tools():
     rustc = call(['/bin/sh', str(ROOT / 'seeds/rustc.sh'), '--print-seed'],
                  capture=True)
     version = call([rustc, '--version'], capture=True)
-    match = re.match(r'^rustc (\d+)\.(\d+)\.(\d+)', version)
-    if not match or tuple(map(int, match.groups())) < (1, 91, 0):
-        raise RuntimeError('sccacher requires Rust 1.91.0 or newer: ' + version)
-    return cargo, rustc, version, call([cargo, '--version'], capture=True)
+    require_tool_version('rustc', version)
+    cargo_version = call([cargo, '--version'], capture=True)
+    require_tool_version('cargo', cargo_version)
+    return cargo, rustc, version, cargo_version
 
 
-def ensure(build_dir):
+def cargo_build_command(cargo, jobs, *, offline=False):
+    argv = [cargo, 'build', '--locked', '--release', '--no-default-features',
+            '--bin', 'sccache', '--jobs', str(jobs)]
+    if offline:
+        argv.append('--offline')
+    return argv
+
+
+def ensure(build_dir, *, cargo_offline=False):
     source, revision = pinned_source()
     cargo, rustc, rust_version, cargo_version = host_tools()
     jobs = build_jobs(os.environ)
@@ -222,8 +246,7 @@ def ensure(build_dir):
               f'{host}-v{SCHEMA}-{native_work_key(identity)}')
     target.mkdir(parents=True, exist_ok=True)
     print(f'WHP sccacher: building {revision} with {jobs} Cargo jobs', file=sys.stderr)
-    call([cargo, 'build', '--locked', '--release', '--no-default-features',
-          '--bin', 'sccache', '--jobs', str(jobs)], cwd=source,
+    call(cargo_build_command(cargo, jobs, offline=cargo_offline), cwd=source,
          env=cargo_environment(os.environ, target, rustc=rustc))
     built = target / 'release' / 'sccache'
     if not built.is_file():
@@ -280,6 +303,8 @@ def verify_managed_executable(build_dir: pathlib.Path,
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--build-dir', type=pathlib.Path, required=True)
+    parser.add_argument('--cargo-offline', action='store_true',
+                        help='use cached Cargo dependencies; Git source policy is separate')
     parser.add_argument('--verify-executable', type=pathlib.Path,
                         help='check an existing pinned local-only sccacher without rebuilding')
     args = parser.parse_args()
@@ -288,7 +313,7 @@ def main():
             args.build_dir, args.verify_executable
         ) else 1
     try:
-        path = ensure(args.build_dir.resolve())
+        path = ensure(args.build_dir.resolve(), cargo_offline=args.cargo_offline)
     except (OSError, ValueError, RuntimeError) as exc:
         print(f'error: WHP sccacher: {exc}', file=sys.stderr)
         return 1

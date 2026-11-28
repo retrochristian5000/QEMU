@@ -5336,10 +5336,24 @@ compilation edges remain:
 
 A lockfile entry alone does not prove feature or target activation.
 Verify the selected graph with cargo tree --locked --no-default-features.
-The helper already keys native Cargo work by compiler and SDK identity.
+The helper keys native Cargo work by compiler and SDK identity. Its
+local-only profile excludes OpenDAL remote backends and distributed support,
+while zstd, BLAKE3, gzp/flate2 and Tokio remain production dependencies.
+The 0.18.0 lockfile contains 538 package entries (491 distinct names),
+including optional, development and other-platform dependencies; this is
+not a count of packages compiled on the native local-only path.
+
+Both Cargo and rustc must meet the managed minimum of 1.91.0. The
+bootstrap clears inherited ZSTD_SYS_USE_PKG_CONFIG and target-specific
+archiver/pkg-config overrides so the bundled compression provider cannot
+silently become a QEMU guest/system library. The cache schema changes to
+reject earlier native producer artifacts, without deleting old work trees.
 Cargo --locked is not offline mode; missing crate sources may require
-acquisition. The pkg-config crate is not the executable seed.
-Do not duplicate bundled native library sources as QEMU gitlinks.
+acquisition. The helper's optional --cargo-offline passes --offline to
+Cargo; ordinary runs retain Cargo's own CARGO_NET_OFFLINE and registry
+configuration. This governs Cargo only, not Git source reconciliation.
+The pkg-config crate is not the executable seed. Do not duplicate bundled
+native library sources as QEMU gitlinks.
 
 Fast-linker source providers
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~
