@@ -18,7 +18,7 @@ LDFLAGS=-Wl,-T$(LINK_SCRIPT) -Wl,-melf_i386
 CFLAGS+=-nostdlib -ggdb -O0 $(MINILIB_INC)
 LDFLAGS+=-static -nostdlib $(CRT_OBJS) $(MINILIB_OBJS) -lgcc
 
-TESTS+=$(MULTIARCH_TESTS) register-flags
+TESTS+=$(MULTIARCH_TESTS) register-flags stack-address-wrap
 EXTRA_RUNS+=$(MULTIARCH_RUNS)
 
 # building head blobs
@@ -34,7 +34,12 @@ EXTRA_RUNS+=$(MULTIARCH_RUNS)
 register-flags: $(I386_SYSTEM_SRC)/register-flags.c $(LINK_SCRIPT) $(CRT_OBJS) $(MINILIB_OBJS)
 	$(CC) $(CFLAGS) $(EXTRA_CFLAGS) $< -o $@ $(LDFLAGS)
 
+stack-address-wrap: $(I386_SYSTEM_SRC)/stack-address-wrap.S $(LINK_SCRIPT) $(CRT_OBJS) $(MINILIB_OBJS)
+	$(CC) $(CFLAGS) $(EXTRA_CFLAGS) $< -o $@ $(LDFLAGS)
+
 memory: CFLAGS+=-DCHECK_UNALIGNED=1
 
 # Running
 QEMU_OPTS+=-device isa-debugcon,chardev=output -device isa-debug-exit,iobase=0xf4,iosize=0x4 -kernel
+
+run-stack-address-wrap: QEMU_OPTS := -cpu pentium_mmx $(QEMU_OPTS)

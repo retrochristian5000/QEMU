@@ -3634,15 +3634,16 @@ static void gen_RETF(DisasContext *s, X86DecodedInsn *decode)
 
     if (!PE(s) || VM86(s)) {
         gen_lea_ss_ofs(s, s->A0, cpu_regs[R_ESP], 0);
-        /* pop offset */
         gen_op_ld_v(s, s->dflag, s->T0, s->A0);
-        /* NOTE: keeping EIP updated is not a problem in case of
-           exception */
+        /*
+         * Each stack slot uses the stack-address size independently.
+         * In particular, a 16-bit SP can wrap before the selector read.
+         */
+        gen_lea_ss_ofs(s, s->A0, cpu_regs[R_ESP], 1 << s->dflag);
+        gen_op_ld_v(s, s->dflag, s->T1, s->A0);
+        /* Commit the return address only after both stack reads. */
         gen_op_jmp_v(s, s->T0);
-        /* pop selector */
-        gen_add_A0_im(s, 1 << s->dflag);
-        gen_op_ld_v(s, s->dflag, s->T0, s->A0);
-        gen_op_movl_seg_real(s, R_CS, s->T0);
+        gen_op_movl_seg_real(s, R_CS, s->T1);
         /* add stack offset */
         gen_stack_update(s, adjust + (2 << s->dflag));
     } else {
