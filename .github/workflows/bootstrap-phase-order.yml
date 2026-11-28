@@ -5,6 +5,9 @@ on:
     branches: [master]
     paths:
       - 'build.sh'
+      - 'configure'
+      - 'scripts/whp-build/prepare-build.bash'
+      - 'scripts/whp-build/configure.bash'
       - 'scripts/tests/test-build-launcher-permissions.sh'
       - 'seeds/git.sh'
       - 'seeds/cmake.sh'
@@ -38,6 +41,9 @@ on:
   pull_request:
     paths:
       - 'build.sh'
+      - 'configure'
+      - 'scripts/whp-build/prepare-build.bash'
+      - 'scripts/whp-build/configure.bash'
       - 'scripts/tests/test-build-launcher-permissions.sh'
       - 'seeds/git.sh'
       - 'seeds/cmake.sh'

@@ -275,6 +275,20 @@ def dependency_inputs(pc):
     return inputs
 
 
+def verify_artifact_zlib(inputs, prefix):
+    """A staged artifact zlib must win over package-manager defaults."""
+    if not prefix:
+        return
+    zlib = next(item for item in inputs if item["requirement"] == "zlib")
+    directory = zlib.get("pcfiledir")
+    if not directory or not Path(directory).resolve().is_relative_to(
+            Path(prefix).resolve()):
+        raise RuntimeError(
+            f"GLib requires the selected artifact zlib at {prefix}; "
+            f"pkg-config selected {directory or 'no provider'}"
+        )
+
+
 def wrap_mode(allow_download):
     return "default" if allow_download else "nodownload"
 
@@ -340,8 +354,11 @@ def bootstrap(args):
                                      args.allow_source_init)
     _, gvdb = pinned_source(source, "subprojects/gvdb", git,
                             args.allow_source_init)
+    inputs = dependency_inputs(pc)
+    artifact_zlib = os.environ.get("WHP_ZLIB_PREFIX", "")
+    verify_artifact_zlib(inputs, artifact_zlib)
     identity = {
-        "schema": 5, "source": str(source), "glib": revision, "gvdb": gvdb,
+        "schema": 6, "source": str(source), "glib": revision, "gvdb": gvdb,
         "host": [platform.system(), platform.machine()],
         "tools": [tool_identity(tool)
                   for tool in (cc, ar, pc, meson, ninja)],
@@ -353,7 +370,8 @@ def bootstrap(args):
             "PKG_CONFIG_PATH", "PKG_CONFIG_LIBDIR", "PKG_CONFIG_SYSROOT_DIR",
             "CC_LD", "CXX", "CXXFLAGS", "CXX_LD", "OBJC", "OBJCFLAGS",
             "OBJCXX", "OBJCXXFLAGS", "PATH", *SEARCH_ENV)},
-        "inputs": dependency_inputs(pc),
+        "inputs": inputs,
+        "artifact_zlib": artifact_zlib,
         # Download permission is not a library ABI input. Online and offline
         # runs can reuse an identical validated installation.
         "profile": list(profile),

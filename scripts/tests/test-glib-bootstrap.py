@@ -181,6 +181,20 @@ class BootstrapTest(unittest.TestCase):
             self.assertFalse(any(arg.startswith(f"-D{option}=")
                                  for arg in glib.MESON_PROFILE))
 
+    def test_artifact_zlib_must_precede_system_provider(self):
+        glib.verify_artifact_zlib(
+            [{"requirement": "zlib", "pcfiledir": "/private/zlib/lib/pkgconfig"}],
+            "/private/zlib",
+        )
+        for provider in ("/system/lib/pkgconfig", "/private/zlib-other/lib/pkgconfig", None):
+            with self.subTest(provider=provider):
+                with self.assertRaisesRegex(RuntimeError, "selected artifact zlib"):
+                    glib.verify_artifact_zlib(
+                        [{"requirement": "zlib", "pcfiledir": provider}],
+                        "/private/zlib",
+                    )
+        glib.verify_artifact_zlib([], "")
+
     def test_cache_lock_excludes_other_writers(self):
         with tempfile.TemporaryDirectory() as directory:
             work = Path(directory) / "identity"
@@ -216,7 +230,8 @@ class BootstrapTest(unittest.TestCase):
                 consumer_cflags="", consumer_ldflags="",
             )
             inputs = [{"requirement": "zlib", "pkg_config": "unavailable"}]
-            with mock.patch.dict(glib.os.environ, {"WHP_GLIB_TESTS": "0"}), \
+            with mock.patch.dict(glib.os.environ, {"WHP_GLIB_TESTS": "0",
+                                                  "WHP_ZLIB_PREFIX": ""}), \
                  mock.patch.object(glib.platform, "system", return_value="Darwin"), \
                  mock.patch.object(glib, "command", side_effect=lambda v: [v]), \
                  mock.patch.object(glib, "tool_identity", side_effect=lambda v: v), \
@@ -230,7 +245,7 @@ class BootstrapTest(unittest.TestCase):
                 marker = prefix / ".whp-glib-bootstrap"
                 identity = json.loads(marker.read_text())
                 self.assertEqual(identity["inputs"], inputs)
-                self.assertEqual(identity["schema"], 5)
+                self.assertEqual(identity["schema"], 6)
                 args.consumer_cflags = "-I/opt/homebrew/include/glib-2.0"
                 with self.assertRaisesRegex(RuntimeError, "conflicts"):
                     glib.bootstrap(args)

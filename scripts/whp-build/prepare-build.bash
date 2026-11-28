@@ -443,9 +443,11 @@ whp_prepare_host_tools()
                     "$HOST_ARCH" "$MACOS_ALLOW_MIXED_HOMEBREW" || return 1
                 export PATH="$HOMEBREW_PREFIX/bin:$PATH"
                 homebrew_pc="$HOMEBREW_PREFIX/lib/pkgconfig:$HOMEBREW_PREFIX/share/pkgconfig"
-                export PKG_CONFIG_PATH="$homebrew_pc${PKG_CONFIG_PATH:+:$PKG_CONFIG_PATH}"
+                PKG_CONFIG_PATH="$(whp_append_dependency_paths "${PKG_CONFIG_PATH:-}" "$homebrew_pc")" || return 1
+                export PKG_CONFIG_PATH
                 export PKG_CONFIG_PATH_FOR_BUILD="${PKG_CONFIG_PATH_FOR_BUILD:-$PKG_CONFIG_PATH}"
-                export CMAKE_PREFIX_PATH="$HOMEBREW_PREFIX${CMAKE_PREFIX_PATH:+:$CMAKE_PREFIX_PATH}"
+                CMAKE_PREFIX_PATH="$(whp_append_dependency_paths "${CMAKE_PREFIX_PATH:-}" "$HOMEBREW_PREFIX")" || return 1
+                export CMAKE_PREFIX_PATH
                 ;;
             macports)
                 MACPORTS_PREFIX="${MACPORTS_PREFIX:-/opt/local}"
@@ -471,9 +473,11 @@ whp_prepare_host_tools()
                 export PKG_CONFIG_FOR_BUILD="$macports_pc_tool"
                 macports_pc="$MACPORTS_PREFIX/lib/pkgconfig:$MACPORTS_PREFIX/share/pkgconfig"
                 export PKG_CONFIG_LIBDIR="${PKG_CONFIG_LIBDIR:-$macports_pc}"
-                export PKG_CONFIG_PATH="$macports_pc${PKG_CONFIG_PATH:+:$PKG_CONFIG_PATH}"
+                PKG_CONFIG_PATH="$(whp_append_dependency_paths "${PKG_CONFIG_PATH:-}" "$macports_pc")" || return 1
+                export PKG_CONFIG_PATH
                 export PKG_CONFIG_PATH_FOR_BUILD="${PKG_CONFIG_PATH_FOR_BUILD:-$PKG_CONFIG_PATH}"
-                export CMAKE_PREFIX_PATH="$MACPORTS_PREFIX${CMAKE_PREFIX_PATH:+:$CMAKE_PREFIX_PATH}"
+                CMAKE_PREFIX_PATH="$(whp_append_dependency_paths "${CMAKE_PREFIX_PATH:-}" "$MACPORTS_PREFIX")" || return 1
+                export CMAKE_PREFIX_PATH
                 ;;
             system) ;;
         esac

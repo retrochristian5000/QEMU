@@ -1452,7 +1452,12 @@ tests before installation and before writing the completion marker.
 A per-identity advisory lock excludes concurrent bootstrap writers;
 a busy cache reports an error instead of overlapping an existing build.
 Inherited C++, Objective-C and Objective-C++ tool settings also contribute
-to the cache identity.
+to the cache identity. Artifact zlib is resolved before GLib; later
+Homebrew/MacPorts discovery appends defaults after existing dependency
+overlays. Managed GLib rejects a missing or different pkg-config zlib
+when an artifact prefix was selected. The outer QEMU configure identity
+includes the artifact prefix and GLib diagnostic test switch so incremental
+builds cannot skip the required preparation stage.
 The normal lightweight build remains unchanged. Managed builds reject
 explicit external GLib include, library and runtime search paths in
 compiler flags and search environments. QEMU-only extra flags are

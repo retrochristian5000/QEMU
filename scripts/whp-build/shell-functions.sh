@@ -5,6 +5,31 @@
 # Keep this module dependency-free: build.sh and host-tools.sh may source it
 # before GNU Bash or other managed host tools are available.
 
+# Keep staged/explicit dependency search paths ahead of package-manager defaults.
+# Both arguments are colon-delimited lists. Drop empty and duplicate elements
+# without changing the priority of any existing provider.
+whp_append_dependency_paths()
+(
+    whp_paths=$1
+    if [ -n "$2" ]; then
+        whp_paths=${whp_paths:+$whp_paths:}$2
+    fi
+    whp_result=
+    while [ -n "$whp_paths" ]; do
+        whp_item=${whp_paths%%:*}
+        case "$whp_paths" in
+            *:*) whp_paths=${whp_paths#*:} ;;
+            *) whp_paths= ;;
+        esac
+        [ -n "$whp_item" ] || continue
+        case ":$whp_result:" in
+            *":$whp_item:"*) ;;
+            *) whp_result=${whp_result:+$whp_result:}$whp_item ;;
+        esac
+    done
+    printf '%s\n' "$whp_result"
+)
+
 # Resolve a command's parent directory without an external dirname process.
 # Callers pass executable file paths, not paths ending in a slash.
 whp_command_dir()

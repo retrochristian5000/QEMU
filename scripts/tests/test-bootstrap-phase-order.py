@@ -276,6 +276,39 @@ require(jack, 'command_path("clang", "CC"', "JACK artifact C compiler")
 require(jack, 'command_path("clang++", "CXX"', "JACK artifact C++ compiler")
 require(jack, 'build_env = "CC_FOR_BUILD"', "JACK seed fallback")
 
+# Package-manager discovery runs after artifact-library staging.
+shell_helpers = ROOT / "scripts/whp-build/shell-functions.sh"
+for current, defaults, expected in (
+    ("/private/zlib/lib/pkgconfig", "/brew/lib/pkgconfig",
+     "/private/zlib/lib/pkgconfig:/brew/lib/pkgconfig"),
+    ("", "/brew/lib/pkgconfig", "/brew/lib/pkgconfig"),
+    ("/private/lib:/brew/lib", ":/brew/lib:/brew/share:",
+     "/private/lib:/brew/lib:/brew/share"),
+):
+    result = subprocess.run(
+        ["/bin/sh", "-c",
+         '. "$1"; whp_append_dependency_paths "$2" "$3"',
+         "dependency-order", str(shell_helpers), current, defaults],
+        text=True, capture_output=True, check=True,
+    )
+    if result.stdout.strip() != expected:
+        raise SystemExit("error: package-manager defaults changed dependency priority")
+
+prepare = (ROOT / "scripts/whp-build/prepare-build.bash").read_text(encoding="utf-8")
+for pc in ("homebrew_pc", "macports_pc"):
+    require(prepare,
+            'whp_append_dependency_paths "${PKG_CONFIG_PATH:-}" "$' + pc + '"',
+            "staged pkg-config priority")
+configure = (ROOT / "configure").read_text(encoding="utf-8")
+if not (configure.index('meson="$python $source_path/toolchains/meson/meson.py"') <
+        configure.index('ninja=$(command -v "$c")') <
+        configure.index("scripts/ensure-glib.py") <
+        configure.index("eval run_meson $meson_reconfigure $meson_options")):
+    raise SystemExit("error: expected Meson/Ninja -> GLib -> QEMU Meson setup")
+config_stage = (ROOT / "scripts/whp-build/configure.bash").read_text(encoding="utf-8")
+require(config_stage, "WHP_GLIB_TESTS=%s", "GLib diagnostic configure identity")
+require(config_stage, "WHP_ZLIB_PREFIX=%s", "artifact zlib configure identity")
+
 ledger = (ROOT / "docs/devel/whp-dependency-ledger.rst").read_text(encoding="utf-8")
 require(ledger, "Bootstrap phase ordering", "phase-order ledger")
 require(ledger, "Artifact-library phase", "artifact phase ledger")
