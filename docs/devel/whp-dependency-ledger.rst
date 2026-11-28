@@ -5408,8 +5408,8 @@ from QEMU artifact zlib.
 Cargo and native library closure
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
-The pinned sccacher `Cargo.toml <https://github.com/retrochristian5000/sccacher/blob/70b17450e9abcef89335221e93ef6d225f84fc36/Cargo.toml>`__ and
-`Cargo.lock <https://github.com/retrochristian5000/sccacher/blob/70b17450e9abcef89335221e93ef6d225f84fc36/Cargo.lock>`__ expose a registry graph with two explicitly pinned Git crates (tar and libc).
+The pinned sccacher `Cargo.toml <https://github.com/retrochristian5000/sccacher/blob/bb6dc3b0b4d5408d8262ba8242d97f5ce63cf5bd/Cargo.toml>`__ and
+`Cargo.lock <https://github.com/retrochristian5000/sccacher/blob/bb6dc3b0b4d5408d8262ba8242d97f5ce63cf5bd/Cargo.lock>`__ expose a registry graph with two explicitly pinned Git crates (tar and libc).
 ``tar`` 0.4.46 comes from the WHP
 `Rust-TAR fork <https://github.com/retrochristian5000/Rust-TAR/tree/e0127f17781a00f460330373a79196e3b5e30d56>`__
 at revision ``e0127f17781a00f460330373a79196e3b5e30d56``. It replaces registry tar 0.4.45 and
@@ -5439,9 +5439,20 @@ Rustix 1.1.5 is now an explicit Unix-only sccacher dependency with the
 process feature, reusing its existing locked package. Opt-in core-dump
 configuration uses typed resource-limit APIs, raises only the soft limit
 to the existing hard limit, and reports failures or a zero limit.
-Fatal-signal diagnostics write static messages without Rust formatting;
-the native sigaction ABI and previous-disposition restoration remain in
-place. Windows behavior is unchanged. This improves diagnosis rather
+Fatal-signal diagnostics write static messages without Rust formatting.
+The shared stable libc Darwin sigaction declaration agrees with the
+public XNU header's handler union, mask and flags. Preserve existing
+non-default dispositions (including Rust's alternate-stack handlers)
+instead of replacing and restoring them. Default-only diagnostics use
+an explicitly initialized mask, the one-argument C handler ABI, and
+SA_ONSTACK; registration failures are reported. The diagnostic explicitly
+restores SIG_DFL and re-delivers the signal, so an externally raised signal
+is not swallowed. Re-delivery can lose original siginfo. No mutable global
+handler records are needed. Startup is the sole registration boundary.
+CI compares libc size, alignment, offsets and flags against the installed
+macOS SDK and verifies delivery and custom-handler preservation in isolated
+subprocesses. No change to libc's stable ABI or its pin is required.
+Windows behavior is unchanged. This improves diagnosis rather
 than establishing the cause of any GLib SIGSEGV.
 
 Rustix 1.1.5 also enables its mm feature. Unix archive hashing uses an
