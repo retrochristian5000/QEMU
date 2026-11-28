@@ -1491,7 +1491,7 @@ vte = not_found
 if get_option('gtk') \
              .disable_auto_if(not have_system) \
              .require(whp_glib_prefix == '',
-                      error_message: 'Managed GLib requires GTK disabled until a matching GTK build is available') \ \
+                      error_message: 'Managed GLib requires GTK disabled until a matching GTK build is available') \
              .require(pixman.found(),
                       error_message: 'cannot enable GTK if pixman is not available') \
              .allowed()
