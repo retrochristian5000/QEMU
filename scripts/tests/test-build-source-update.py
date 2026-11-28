@@ -273,6 +273,7 @@ def test_dtc_reconciles_after_host_tools():
         env["WHP_DTC_GIT_TRACE"] = str(trace)
         env["SOURCE_DIR"] = str(root)
         env["WHP_DTC_FETCH_MISSING"] = "0"
+        env["QEMU_DOWNLOAD_DEPENDENCIES"] = "1"
         late = ["/bin/sh", "-c",
                 '. "$WHP_SHARED_SHELL"\n' + block]
         env["WHP_SHARED_SHELL"] = str(SHARED_SHELL)
@@ -314,8 +315,21 @@ def test_dtc_reconciles_after_host_tools():
             assert git("rev-parse", "HEAD", cwd=checkout) == old_revision
             assert marker.read_text().strip() == legacy
 
-        # Internal libfdt must still reconcile and reject unsafe changes.
+        # Even an explicit prefetch request cannot bypass disabled downloads.
         env["QEMU_FDT_MODE"] = "internal"
+        env["WHP_DTC_FETCH_MISSING"] = "1"
+        env["QEMU_DOWNLOAD_DEPENDENCIES"] = "0"
+        skipped = subprocess.run(late, cwd=root, env=env,
+                                 stdout=subprocess.PIPE,
+                                 stderr=subprocess.PIPE, text=True,
+                                 check=True)
+        assert "reconciling pinned wrap" not in skipped.stderr
+        assert git("rev-parse", "HEAD", cwd=checkout) == old_revision
+        assert marker.read_text().strip() == legacy
+        assert not trace.exists(), trace
+
+        # Internal libfdt must still reconcile and reject unsafe changes.
+        env["QEMU_DOWNLOAD_DEPENDENCIES"] = "1"
         env["WHP_DTC_FETCH_MISSING"] = "0"
         first = subprocess.run(late, cwd=root, env=env,
                                stdout=subprocess.PIPE, stderr=subprocess.PIPE,
