@@ -590,7 +590,7 @@ endif
 glib_cflags = []
 glib_link_args = []
 if whp_glib_prefix != ''
-  glib_link_args += ['-Wl,-rpath,' + whp_glib_prefix / 'lib']
+  glib_link_args += ['-Wl,-rpath,' + (whp_glib_prefix / 'lib')]
   message('WHP GLib provider: ' + whp_glib_prefix)
 endif
 if enable_modules

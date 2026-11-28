@@ -5,6 +5,8 @@ on:
     branches: [master]
     paths:
       - 'scripts/ensure-make.py'
+      - 'scripts/ensure-glib.py'
+      - 'scripts/tests/test-glib-bootstrap.py'
       - 'scripts/tests/test-make-gnulib-cache.py'
       - 'scripts/macos-build-hygiene.bash'
       - 'scripts/whp-build/host-libraries.sh'
@@ -15,6 +17,8 @@ on:
   pull_request:
     paths:
       - 'scripts/ensure-make.py'
+      - 'scripts/ensure-glib.py'
+      - 'scripts/tests/test-glib-bootstrap.py'
       - 'scripts/tests/test-make-gnulib-cache.py'
       - 'scripts/macos-build-hygiene.bash'
       - 'scripts/whp-build/host-libraries.sh'
@@ -44,4 +48,6 @@ jobs:
           sh -n scripts/whp-build/host-libraries.sh
           bash -n build.sh
           python3 scripts/tests/test-make-gnulib-cache.py
+          python3 -m py_compile scripts/ensure-glib.py
+          python3 scripts/tests/test-glib-bootstrap.py -v
           python3 scripts/tests/test-macos-managed-library-metadata.py -v

@@ -15,6 +15,17 @@ spec.loader.exec_module(glib)
 
 
 class BootstrapTest(unittest.TestCase):
+    def test_apple_ar_without_version_option(self):
+        import subprocess
+        with tempfile.TemporaryDirectory() as directory:
+            tool = Path(directory) / "ar"
+            tool.touch()
+            with mock.patch.object(glib, "run", side_effect=
+                                   subprocess.CalledProcessError(1, [str(tool)])):
+                result = glib.tool_identity([str(tool)])
+            self.assertEqual(result["path"], str(tool.resolve()))
+            self.assertEqual(result["version"], "")
+
     def test_native_array(self):
         self.assertEqual(glib.machine_array(["cc", "-arch", "arm64e"]),
                          "['cc', '-arch', 'arm64e']")

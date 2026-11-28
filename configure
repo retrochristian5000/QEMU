@@ -2087,6 +2087,11 @@ if test "$skip_meson" = no; then
     fi
   fi
 
+  # Record selection intent before setup, so an interrupted configuration
+  # also clears the private search path on the next system-provider run.
+  if test -n "$whp_glib_prefix"; then
+    printf '%s\n' "$whp_glib_prefix" > .whp-glib-provider
+  fi
   run_meson() {
     NINJA=$ninja $meson setup "$@" "$PWD" "$source_path"
   }
@@ -2094,9 +2099,7 @@ if test "$skip_meson" = no; then
   if test "$?" -ne 0 ; then
       error_exit "meson setup failed"
   fi
-  if test -n "$whp_glib_prefix"; then
-    printf '%s\n' "$whp_glib_prefix" > .whp-glib-provider
-  else
+  if test -z "$whp_glib_prefix"; then
     rm -f .whp-glib-provider
   fi
   # An explicit internal provider must resolve the exact WHP DTC Git pin

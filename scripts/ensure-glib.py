@@ -70,6 +70,21 @@ def command(value):
     return [str(Path(exe).absolute()), *argv[1:]]
 
 
+def tool_identity(tool):
+    # Apple's cctools ar has no portable --version option. The executable
+    # identity still distinguishes updates without rejecting Apple ar.
+    executable = Path(tool[0]).resolve()
+    stat = executable.stat()
+    try:
+        version = run([*tool, "--version"])
+    except subprocess.CalledProcessError:
+        version = ""
+    return {
+        "argv": tool, "path": str(executable), "size": stat.st_size,
+        "mtime_ns": stat.st_mtime_ns, "version": version,
+    }
+
+
 def pinned_source(parent, relative, git, allow_init):
     target = parent / relative
     entry = run([*git, "-C", str(parent), "ls-tree", "HEAD", "--",
@@ -171,7 +186,7 @@ def bootstrap(args):
     identity = {
         "schema": 1, "source": str(source), "glib": revision, "gvdb": gvdb,
         "host": [platform.system(), platform.machine()],
-        "tools": [(tool, run([*tool, "--version"]))
+        "tools": [tool_identity(tool)
                   for tool in (cc, ar, pc, meson, ninja)],
         "cflags": cflags, "ldflags": ldflags,
         "environment": {key: os.environ.get(key, "") for key in (
@@ -193,14 +208,24 @@ def bootstrap(args):
         if directory.resolve() != directory:
             raise RuntimeError(f"refusing symlinked GLib build path: {directory}")
     marker = prefix / ".whp-glib-bootstrap"
+    if marker.is_symlink():
+        raise RuntimeError(f"refusing symlinked GLib marker: {marker}")
     if marker.is_file() and marker.read_text(encoding="utf-8") == manifest:
-        probe(pc, cc, cflags, ldflags, prefix)
-        print(f"WHP GLib: reusing {revision[:12]} at {prefix}", file=sys.stderr)
-        return prefix
+        try:
+            probe(pc, cc, cflags, ldflags, prefix)
+        except (OSError, RuntimeError, subprocess.CalledProcessError):
+            print("WHP GLib: cached installation failed validation; "
+                  "repairing the existing build", file=sys.stderr)
+            marker.unlink()
+        else:
+            print(f"WHP GLib: reusing {revision[:12]} at {prefix}", file=sys.stderr)
+            return prefix
 
     work.parent.mkdir(parents=True, exist_ok=True)
     prefix.mkdir(parents=True, exist_ok=True)
     native = work.parent / (key + ".ini")
+    if native.is_symlink():
+        raise RuntimeError(f"refusing symlinked native file: {native}")
     native.write_text(
         "[binaries]\nc = " + machine_array(cc) +
         "\nar = " + machine_array(ar) +
@@ -210,7 +235,7 @@ def bootstrap(args):
         encoding="utf-8",
     )
     env = pc_environment()
-    for key in ("CC", "AR", "CFLAGS", "CPPFLAGS", "LDFLAGS"):
+    for key in ("CC", "AR", "CFLAGS", "CPPFLAGS", "LDFLAGS", "DESTDIR"):
         env.pop(key, None)
     if len(ninja) != 1:
         raise RuntimeError("Ninja must name one executable")
@@ -231,9 +256,14 @@ def bootstrap(args):
     run([*meson, "install", "-C", str(work), "--no-rebuild"],
         env=env, capture=False)
     probe(pc, cc, cflags, ldflags, prefix)
-    temp_marker = marker.with_suffix(".new")
-    temp_marker.write_text(manifest, encoding="utf-8")
-    temp_marker.replace(marker)
+    with tempfile.NamedTemporaryFile(mode="w", encoding="utf-8",
+                                     dir=prefix, delete=False) as stamp:
+        stamp.write(manifest)
+        temp_marker = Path(stamp.name)
+    try:
+        temp_marker.replace(marker)
+    finally:
+        temp_marker.unlink(missing_ok=True)
     return prefix
 
 

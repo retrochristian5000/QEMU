@@ -573,12 +573,23 @@ local stale_ppc_config=""
 local stale_i386_config=""
 local host_tag=""
 local meson_gitlink=""
+local glib_source
+local glib_selected_prefix=""
+local glib_cache_missing=0
 
 # BUILD_DIR is persistent state, not scratch space.  Establish ownership before
 # configuration so a source checkout or host ABI can never silently take over
 # another tree.
 whp_configure_validate_build_tree_owner || return 1
 meson_gitlink="$(whp_configure_meson_identity)" || return 1
+if [[ -f "$BUILD_DIR/.whp-glib-provider" ]]; then
+    IFS= read -r glib_selected_prefix < "$BUILD_DIR/.whp-glib-provider" || return 1
+    if [[ "$glib_selected_prefix" != "$BUILD_DIR"/deps/glib/* ||
+          ! -f "$glib_selected_prefix/.whp-glib-bootstrap" ||
+          ! -f "$glib_selected_prefix/lib/pkgconfig/glib-2.0.pc" ]]; then
+        glib_cache_missing=1
+    fi
+fi
 # Resolve indexed Clang PGO data before Meson configures -Db_pgo=use.
 # Keep this inside the validated, WHP-owned QEMU build directory.
 if [[ "${QEMU_HOST_PGO:-off}" == use ]]; then
@@ -792,6 +803,7 @@ fi
 } > "$config_candidate"
 
 if [[ ! -f "$BUILD_DIR/build.ninja" ]] ||
+   [[ "$glib_cache_missing" == 1 ]] ||
    [[ ! -f "$config_file" ]] ||
    ! cmp -s "$config_candidate" "$config_file"; then
     # The selected QEMU artifact CC may differ from the earlier host seed.
