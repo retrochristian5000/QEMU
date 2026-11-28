@@ -20,7 +20,7 @@ main:
 xed_capture_start:
     movl (%eax,%ecx,4), %edx
     movw -2(%eax), %di
-    addr16 movl (%bx,%si), %ebp
+    movl (%bx,%si), %ebp
     movl %ebp, 4(%eax)
     .globl xed_capture_end
 xed_capture_end:

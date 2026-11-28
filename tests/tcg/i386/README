@@ -124,7 +124,18 @@ selected short linear-PC range. The controlled xed-memory system test
 uses the existing boot.S flat GDT and exercises SIB, signed displacement,
 16-bit address override, 16-bit operand override and a store.
 
-Build the i386-softmmu guest tests and plugins:
+For the complete automated check from a configured i386-softmmu build:
+
+    make check-xed-live XED_KIT=/absolute/path/to/xed-kit
+
+Set XED_CAPTURE_PLUGIN to the actual plugin path if the host uses a
+different library suffix, and XED_NM to the preferred nm executable.
+The runner resolves the guest's symbol range, sets a 60-second guest
+timeout, requires a successful exit and exactly four expected access
+records, and passes those records to the XED address reference.
+It creates only a temporary log and does not open a VM disk image.
+
+For manual diagnostics, build the i386-softmmu guest tests and plugins:
 
     make build-tcg-tests-i386-softmmu test-plugins
 

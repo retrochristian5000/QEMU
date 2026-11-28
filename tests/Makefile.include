@@ -173,6 +173,21 @@ check-xed:
 	    "$(BUILD_DIR)/tests/xed/xed-reference" "$(XED_MODE)" "$(XED_STACK)" "$(XED_CHIP)" < "$(XED_TRACE)"; \
 	fi
 
+# Run only the known flat-mode capture guest with a native XED kit.
+XED_NM ?= nm
+XED_CAPTURE_PLUGIN ?= $(BUILD_DIR)/tests/tcg/plugins/libxed-capture.so
+
+.PHONY: check-xed-live
+check-xed-live: check-xed build-tcg-tests-i386-softmmu test-plugins
+	$(PYTHON) "$(SRC_PATH)/tests/xed/run-capture.py" \
+	    --qemu "$(BUILD_DIR)/qemu-system-i386" \
+	    --guest "$(BUILD_DIR)/tests/tcg/i386-softmmu/xed-memory" \
+	    --plugin "$(XED_CAPTURE_PLUGIN)" \
+	    --reference "$(BUILD_DIR)/tests/xed/xed-reference" \
+	    --nm "$(XED_NM)"
+
+.ninja-goals.check-xed-live = qemu-system-i386 test-plugins
+
 # Consolidated targets
 
 .PHONY: check check-clean

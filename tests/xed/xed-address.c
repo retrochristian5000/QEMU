@@ -197,6 +197,11 @@ int xed_ref_compare_addresses(xed_machine_mode_enum_t mode,
         }
         records++;
         hex = strtok(NULL, delim);
+        if (!strcmp(tag, "XEDCAPTURE_ERROR")) {
+            fprintf(stderr, "TCG capture error in record %zu\n", records);
+            failures++;
+            continue;
+        }
         memory_record = !strcmp(tag, "XEDMEM");
         valid = (memory_record || !strcmp(tag, "XEDAGEN")) && hex &&
                 parse_u32(strtok(NULL, delim), &observed);
