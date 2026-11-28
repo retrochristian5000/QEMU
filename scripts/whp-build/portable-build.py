@@ -666,6 +666,9 @@ def build_plan(argv: List[str]) -> Tuple[pathlib.Path, pathlib.Path, List[str], 
         append_unique(targets, target)
 
     configure_args: List[str] = [f'--prefix={prefix}']
+    configure_args.append('--enable-download' if
+                          values['QEMU_DOWNLOAD_DEPENDENCIES'] == 'y'
+                          else '--disable-download')
     configure_args.extend(qemu_c_standard_configure_args(values))
     configure_args.extend(qemu_cxx_standard_configure_args(values))
     if targets:
