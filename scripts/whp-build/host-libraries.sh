@@ -81,6 +81,10 @@ whp_prepare_qemu_host_libraries()
     # LLVM did not promote CC; otherwise keep the two prefixes isolated.
     whp_prepare_zlib_phase artifact
 
+    # GLib is prepared by configure after the final host ABI and Meson
+    # selection, including the portable entry path. Do not bootstrap it
+    # here before the macOS SDK/architecture wrapper or native Meson exists.
+
     BOOTSTRAP_SDL=${BOOTSTRAP_SDL:-auto}
     case "$BOOTSTRAP_SDL" in
         y) BOOTSTRAP_SDL=1 ;;

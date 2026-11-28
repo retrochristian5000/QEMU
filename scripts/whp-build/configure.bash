@@ -763,6 +763,18 @@ fi
     printf 'QEMU_HOST_MODULES=%s\n' "${QEMU_HOST_MODULES:-auto}"
     printf 'WHP_MESON_PROVIDER=%s\n' "${WHP_MESON_PROVIDER:-fork}"
     printf 'WHP_MESON_GITLINK=%s\n' "$meson_gitlink"
+    printf 'BOOTSTRAP_GLIB=%s\n' "${BOOTSTRAP_GLIB:-0}"
+    if [[ "${BOOTSTRAP_GLIB:-0}" != 0 && "${BOOTSTRAP_GLIB:-0}" != n ]]; then
+        # Include actual source state as well as the recorded parent gitlink.
+        "${GIT:-git}" -C "$SOURCE_DIR" ls-tree HEAD -- toolchains/glib || return 1
+        for glib_source in toolchains/glib toolchains/glib/subprojects/gvdb; do
+            if [[ -e "$SOURCE_DIR/$glib_source/.git" ]]; then
+                "${GIT:-git}" -C "$SOURCE_DIR/$glib_source" rev-parse HEAD || return 1
+                "${GIT:-git}" -C "$SOURCE_DIR/$glib_source" status --porcelain --untracked-files=normal || return 1
+            fi
+        done
+        printf 'WHP_GLIB_SYSTEM_VERSION=%s\n' "$("${PKG_CONFIG:-pkg-config}" --modversion glib-2.0 2>/dev/null || true)"
+    fi
     printf 'WHP_DTC_FETCH_MISSING=%s\n' "${WHP_DTC_FETCH_MISSING:-0}"
     printf 'BUILD_OPENBIOS=%s\n' "$BUILD_OPENBIOS"
     printf 'OPENBIOS_CROSS_COMPILE=%s\n' "$OPENBIOS_CROSS_COMPILE"

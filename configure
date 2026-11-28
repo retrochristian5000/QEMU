@@ -2052,12 +2052,52 @@ if test "$skip_meson" = no; then
     unset dtc_prefetch
   fi
 
+  # GLib is a host library. Use the already selected native compiler,
+  # SDK, Python, Meson and Ninja, not the firmware/guest toolchain.
+  whp_glib_policy="${BOOTSTRAP_GLIB:-0}"
+  case "$whp_glib_policy" in
+    y) whp_glib_policy=1 ;;
+    n) whp_glib_policy=0 ;;
+    0|1|auto) ;;
+    *) error_exit "BOOTSTRAP_GLIB must be 0, 1, or auto" ;;
+  esac
+  whp_glib_prefix=
+  if test "$whp_glib_policy" != 0; then
+    if test "$cross_compile" = yes || test "$static" = yes; then
+      error_exit "Managed GLib currently requires a native shared-library QEMU build; use BOOTSTRAP_GLIB=0 for cross/static builds"
+    fi
+    whp_glib_init=
+    test "$download" != disabled && whp_glib_init=--allow-source-init
+    whp_glib_prefix=$($python "$source_path/scripts/ensure-glib.py" \
+      --build-dir "$PWD" --mode "$whp_glib_policy" $whp_glib_init \
+      --meson "$meson" --ninja "$ninja" --cc "$cc" --ar "$ar" \
+      --pkg-config "$pkg_config" --cflags="$CFLAGS $CPU_CFLAGS" \
+      --ldflags="$LDFLAGS") || error_exit "Managed GLib preparation failed"
+  fi
+  # Persist the selected search path as a Meson option, not merely an
+  # environment variable (which an existing Meson cache can ignore).
+  meson_option_add "-Dwhp_glib_prefix=$whp_glib_prefix"
+  if test -n "$whp_glib_prefix" || test -f .whp-glib-provider; then
+    whp_glib_pc_path=$($python -c 'import os,sys; p=sys.argv[1]; print(repr(([p+"/lib/pkgconfig"] if p else [])+[x for x in os.environ.get("PKG_CONFIG_PATH","").split(os.pathsep) if x]))' "$whp_glib_prefix") ||
+      error_exit "Could not construct managed GLib pkg-config path"
+    meson_option_add "-Dpkg_config_path=$whp_glib_pc_path"
+    # Meson otherwise retains dependency objects from a previous provider.
+    if test -n "$meson_reconfigure"; then
+      meson_reconfigure="$meson_reconfigure --clearcache"
+    fi
+  fi
+
   run_meson() {
     NINJA=$ninja $meson setup "$@" "$PWD" "$source_path"
   }
   eval run_meson $meson_reconfigure $meson_options
   if test "$?" -ne 0 ; then
       error_exit "meson setup failed"
+  fi
+  if test -n "$whp_glib_prefix"; then
+    printf '%s\n' "$whp_glib_prefix" > .whp-glib-provider
+  else
+    rm -f .whp-glib-provider
   fi
   # An explicit internal provider must resolve the exact WHP DTC Git pin
   # and its Meson wrap checksum. This is read-only: no reset, reconfigure,
@@ -2120,6 +2160,7 @@ preserve_env OBJCFLAGS
 preserve_env OBJCOPY
 preserve_env PATH
 preserve_env WHP_MESON_PROVIDER
+preserve_env BOOTSTRAP_GLIB
 preserve_env PKG_CONFIG
 preserve_env PKG_CONFIG_LIBDIR
 preserve_env PKG_CONFIG_PATH

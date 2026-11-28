@@ -583,7 +583,16 @@ have_xen_pci_passthrough = get_option('xen_pci_passthrough') \
 glib_req_ver = '>=2.66.0'
 glib_pc = dependency('glib-2.0', version: glib_req_ver, required: true,
                     method: 'pkg-config')
+whp_glib_prefix = get_option('whp_glib_prefix')
+if whp_glib_prefix != '' and glib_pc.get_variable(pkgconfig: 'prefix') != whp_glib_prefix
+  error('Selected glib-2.0 does not belong to the managed WHP GLib prefix')
+endif
 glib_cflags = []
+glib_link_args = []
+if whp_glib_prefix != ''
+  glib_link_args += ['-Wl,-rpath,' + whp_glib_prefix / 'lib']
+  message('WHP GLib provider: ' + whp_glib_prefix)
+endif
 if enable_modules
   gmodule = dependency('gmodule-export-2.0', version: glib_req_ver, required: true,
                        method: 'pkg-config')
@@ -592,6 +601,10 @@ elif get_option('plugins')
                        method: 'pkg-config')
 else
   gmodule = not_found
+endif
+
+if whp_glib_prefix != '' and gmodule.found() and gmodule.get_variable(pkgconfig: 'prefix') != whp_glib_prefix
+  error('Selected GModule does not belong to the managed WHP GLib prefix')
 endif
 
 # This workaround is required due to a bug in pkg-config file for glib as it
@@ -623,6 +636,7 @@ endif
 
 glib = declare_dependency(dependencies: [glib_pc, gmodule],
                           compile_args: glib_cflags,
+                          link_args: glib_link_args,
                           version: glib_pc.version())
 
 # Check whether glib has gslice, which we have to avoid for correctness.
@@ -643,6 +657,9 @@ gdbus_codegen_error = '@0@ requires gdbus-codegen, please install libgio'
 if not get_option('gio').auto() or have_system
   gio = dependency('gio-2.0', required: get_option('gio'),
                    method: 'pkg-config')
+  if whp_glib_prefix != '' and gio.found() and gio.get_variable(pkgconfig: 'prefix') != whp_glib_prefix
+    error('Selected GIO does not belong to the managed WHP GLib prefix')
+  endif
   if gio.found() and not cc.links('''
     #include <gio/gio.h>
     int main(void)
@@ -656,10 +673,18 @@ if not get_option('gio').auto() or have_system
     gio = not_found
   endif
   if gio.found()
-    gdbus_codegen = find_program('gdbus-codegen',
-                                 required: get_option('gio'))
+    if whp_glib_prefix != ''
+      gdbus_codegen = find_program(whp_glib_prefix / 'bin/gdbus-codegen',
+                                   required: get_option('gio'))
+    else
+      gdbus_codegen = find_program('gdbus-codegen',
+                                   required: get_option('gio'))
+    endif
     gio_unix = dependency('gio-unix-2.0', required: get_option('gio'),
                           method: 'pkg-config')
+    if whp_glib_prefix != '' and gio_unix.found() and gio_unix.get_variable(pkgconfig: 'prefix') != whp_glib_prefix
+      error('Selected GIO Unix does not belong to the managed WHP GLib prefix')
+    endif
     gio = declare_dependency(dependencies: [gio, gio_unix],
                              version: gio.version())
   endif
@@ -1465,6 +1490,8 @@ vte = not_found
 
 if get_option('gtk') \
              .disable_auto_if(not have_system) \
+             .require(whp_glib_prefix == '',
+                      error_message: 'Managed GLib requires GTK disabled until a matching GTK build is available') \ \
              .require(pixman.found(),
                       error_message: 'cannot enable GTK if pixman is not available') \
              .allowed()

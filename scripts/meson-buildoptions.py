@@ -30,6 +30,7 @@ import sys
 SKIP_OPTIONS = {
     "default_devices",
     "qom_shared",
+    "whp_glib_prefix",
     "fuzzing_engine",
     "tool_list",
 }

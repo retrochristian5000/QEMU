@@ -928,6 +928,8 @@ def main(argv: List[str]) -> int:
         # these validated menu settings for QEMU's existing configure logic,
         # including the optional pre-Meson DTC prefetch path.
         os.environ['WHP_MESON_PROVIDER'] = values['WHP_MESON_PROVIDER']
+        os.environ['BOOTSTRAP_GLIB'] = {'n': '0', 'y': '1', 'auto': 'auto'}[
+            values['BOOTSTRAP_GLIB']]
         os.environ['WHP_DTC_FETCH_MISSING'] = (
             '1' if values['WHP_DTC_FETCH_MISSING'] == 'y' else '0'
         )

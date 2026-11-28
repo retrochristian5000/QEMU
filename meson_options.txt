@@ -38,6 +38,8 @@ option('coroutine_backend', type: 'combo',
        value: 'auto', description: 'coroutine backend to use')
 option('gdb', type: 'string', value: '',
        description: 'Path to GDB')
+option('whp_glib_prefix', type: 'string', value: '',
+       description: 'Validated private WHP GLib installation prefix')
 option('qom_shared', type: 'boolean', value: false,
        description: 'Experimental private Darwin QOM dynamic library')
 option('tool_list', type : 'array', value : [],

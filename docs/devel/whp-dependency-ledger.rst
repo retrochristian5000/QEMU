@@ -1286,11 +1286,12 @@ Pinned GLib bootstrap prerequisites and early consumers
 The recorded ``toolchains/glib`` gitlink points at the editable WHP
 ``retrochristian5000/Glib`` fork.  Its pinned source currently identifies
 itself as GLib 2.89.3 (development series), with Meson >= 1.4.0 and a
-C11-capable host compiler.  Source availability is *not* evidence that the
-normal build calls an ``ensure-glib.py`` helper: it does not.  QEMU's
-``meson.build`` independently requires ``glib-2.0 >= 2.66.0``.
-Prefer an already working provider instead of automatically replacing it
-with an experimental fork.
+C11-capable host compiler. QEMU's ``meson.build`` independently requires
+``glib-2.0 >= 2.66.0``. The optional ``scripts/ensure-glib.py`` stage runs
+from configure after the final native compiler, SDK, Python, Meson and
+Ninja are selected. The default remains ``BOOTSTRAP_GLIB=0`` (installed
+provider); ``auto`` keeps a usable installed provider and otherwise builds
+the fork; ``1`` explicitly selects the fork and fails if it cannot be built.
 
 For a specifically requested GLib *source* build, trace these roles:
 
@@ -1339,18 +1340,33 @@ JACK client, Perl/Autotools and firmware bootstrap paths show no
 consumers if those forks or profiles change.  Do not infer absence
 from generic repository search alone.
 
-If a managed GLib fallback becomes necessary, it must be ordered
-**after** independent Git/compiler/SDK, Meson/Ninja/Python and its real
-library providers, but **before** QEMU's own Meson dependency probe.
-QEMU's build-tree ``pyvenv`` is created by QEMU configure and cannot
-be an assumed prerequisite for an earlier GLib build.  Keep the GLib
-installation in an ABI-specific private prefix and verify its
-``glib-2.0.pc``, generated ``glibconfig.h``, library architecture,
-runtime loader paths and optional gmodule/GIO contract.  Cache identity
-must include the effective GLib gitlink descendant, compiler/SDK and
-selected source wraps.  Never mix bootstrap zlib with target/host
-artifact zlib or redirect GTK's Homebrew pkg-config to a development
-GLib merely because the submodule is initialized.
+The managed fallback is ordered **after** independent Git/compiler/SDK,
+Meson/Ninja/Python and artifact zlib, but **before** QEMU's own Meson
+dependency probe. It uses the selected Meson, including the configure
+``pyvenv`` when that provider was explicitly chosen. The shared GLib
+installation lives under ``BUILD_DIR/deps/glib/<identity>``; no global
+installation is performed. The helper checks package origin, generated
+headers, link/run compatibility and loaded library paths. Its identity
+includes the actual pinned GLib/GVDB commits, compiler flags, SDK, tools
+and selected dependency metadata. Missing source submodules can be
+initialized only when configure permits downloads; Meson wraps always
+use nodownload. Install libffi, PCRE2, zlib and any other required host
+providers first. The fork currently supports native shared-library Linux
+and macOS builds only; cross/static builds must use the normal provider.
+
+For an explicit fork build from the normal entry point::
+
+  BOOTSTRAP_GLIB=1 MACOS_ENABLE_GTK=0 ./build.sh
+
+Or from an existing native configured build directory, run configure
+with its normal arguments and ``BOOTSTRAP_GLIB=1``. GTK auto-selection is
+disabled when using the private fork; explicitly enabled GTK is rejected
+because an independently installed GTK may load the system GLib.
+QEMU verifies the selected GLib/GModule/GIO pkg-config prefixes and
+selects the matching gdbus-codegen. The private installation uses an
+absolute runtime path and must be retained while using its QEMU build.
+Switching providers clears cached Meson dependency results without
+deleting build outputs. No guest firmware or VM disk is changed.
 
 Pinned Meson source boundary
 ---------------------------
