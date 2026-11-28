@@ -270,6 +270,17 @@ history fails without moving the checkout.  Bootstrap never uses
 pin still requires an explicit, separately pushed QEMU gitlink commit;
 compiler and LLDB success requires separate compilation and test evidence.
 
+Current LLVM pin handoff
+~~~~~~~~~~~~~~~~~~~~~~~~
+
+The LLVM gitlink advances from ``af1b3f705d166035bb85385f1fdaaf8e98371c06``
+to ``38478b487dcb39b753eb03945dd0f6d15cc8120d``, a verified fast-forward of
+13 commits. This includes GNU-style Clang prefix and library search
+handling, i586 firmware target and linker compatibility changes, and
+Mach-O LLD relocation and output-layout corrections. The source commit
+is published on the LLVM fork's ``main``. Native build and regression
+results are separate from successful pin propagation.
+
 Dependency states
 -----------------
 
