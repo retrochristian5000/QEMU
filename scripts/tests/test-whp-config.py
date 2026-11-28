@@ -157,6 +157,46 @@ class WhpConfigTests(unittest.TestCase):
         with self.assertRaises(ValueError):
             mod.validate_value(mod.OPTION_BY_KEY['WHP_MESON_PROVIDER'], 'system')
 
+    def test_dependency_download_policy(self):
+        mod = load_module()
+        values = mod.default_values()
+        self.assertEqual(values['QEMU_DOWNLOAD_DEPENDENCIES'], 'y')
+        self.assertIn("QEMU_DOWNLOAD_DEPENDENCIES='1'",
+                      mod.shell_assignments(mod.ConfigState(values), {}))
+        values['QEMU_DOWNLOAD_DEPENDENCIES'] = 'n'
+        self.assertIn("QEMU_DOWNLOAD_DEPENDENCIES='0'",
+                      mod.shell_assignments(mod.ConfigState(values), {}))
+        env = os.environ.copy()
+        env['WHP_PORTABLE_PROBE_ONLY'] = '1'
+        for value, expected, rejected in (
+            ('1', '--enable-download', '--disable-download'),
+            ('0', '--disable-download', '--enable-download'),
+        ):
+            env['QEMU_DOWNLOAD_DEPENDENCIES'] = value
+            result = subprocess.run(
+                [sys.executable, str(PORTABLE_BUILD_TOOL), 'qemu-system-i386'],
+                text=True, capture_output=True, check=True, env=env,
+            )
+            self.assertIn(f'CONFIGURE_ARG={expected}', result.stdout)
+            self.assertNotIn(f'CONFIGURE_ARG={rejected}', result.stdout)
+
+    def test_configure_wrap_mode_tracks_download_policy(self):
+        configure = (ROOT / 'configure').read_text(encoding='utf-8')
+        block = configure.split(
+            '  # Meson retains built-in options across reconfiguration.', 1
+        )[1].split('  test "$default_feature"', 1)[0]
+        # Execute the actual configure branch, without downloading anything.
+        block = '\n' + block.split('\n', 1)[1]
+        for policy, mode in (('disabled', 'nodownload'),
+                             ('enabled', 'default')):
+            result = subprocess.run(
+                ['/bin/sh', '-c',
+                 'meson_option_add() { printf "%s\\n" "$1"; }\n' + block],
+                env={**os.environ, 'download': policy},
+                text=True, capture_output=True, check=True,
+            )
+            self.assertEqual(result.stdout.strip(), f'--wrap-mode={mode}')
+
     def test_fork_meson_default_does_not_install_unrelated_venv_meson(self):
         configure = (ROOT / 'configure').read_text(encoding='utf-8')
         selector = 'case "${WHP_MESON_PROVIDER:-fork}" in'
