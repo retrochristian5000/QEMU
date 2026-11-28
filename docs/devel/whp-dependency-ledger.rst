@@ -1345,7 +1345,15 @@ For a specifically requested GLib *source* build, trace these roles:
 * **Build tools:** native C/SDK, Python 3, Meson >= 1.4.0, Ninja and
   pkg-config; also a usable thread and iconv provider.  GLib's
   ``meson.build`` disables strict aliasing for correctness.
-* **Library inputs:** libffi >= 3.0.0, PCRE2 >= 10.32 and zlib.
+* **Library inputs:** libffi >= 3.4.8, PCRE2 >= 10.42 and zlib.
+  The baseline admits libffi's ARM64 pointer-authentication corrections
+  and retires the older PCRE2 floor. The checksummed Meson fallbacks
+  are libffi 3.8.0, PCRE2 10.49 and zlib 1.3.2 (matching the QEMU zlib
+  fork's current source version). The Apple SLJIT compatibility patch
+  remains applied. Newer libffi 3.8.2 has upstream ABI fixes but lacks
+  a verified WrapDB package at this review; do not treat the fallback
+  as the latest upstream release. Existing system zlib remains eligible
+  when a managed artifact zlib was not selected.
   GVDB is a required GLib Meson subproject.  Its ``subprojects/``
   contains upstream wrap fallbacks for libffi, PCRE2, zlib and GVDB;
   missing wrap sources are possible network/download edges, not permission
@@ -1443,11 +1451,11 @@ For an explicit fork build from the normal entry point::
 
   BOOTSTRAP_GLIB=1 MACOS_ENABLE_GTK=0 ./build.sh
 
-For a diagnostic build with GLib's atomic, thread and conversion tests enabled::
+For a diagnostic build with GLib's atomic, thread, conversion, regex, closure and signal tests enabled::
 
   BOOTSTRAP_GLIB=1 WHP_GLIB_TESTS=1 MACOS_ENABLE_GTK=0 ./build.sh
 
-The test profile has a separate cache identity and runs the three native
+The test profile has a separate cache identity and runs the six native
 tests before installation and before writing the completion marker.
 A per-identity advisory lock excludes concurrent bootstrap writers;
 a busy cache reports an error instead of overlapping an existing build.
@@ -4238,8 +4246,8 @@ does not enable TSan integration.
 
 Existing consumers can inform provider admission:
 
-* GLib at 0dea7d82931aa4aef5ba038018e4193e9c050caf requires libffi
-  >= 3.0.0 and has its existing Meson provider path.
+* GLib at 103594dbc8de5ca8d370a45a29d16e9b758ba375 requires libffi
+  >= 3.4.8 and has its existing Meson provider path.
 * Python at 40d301451ca7c05e6f5e1df2613697e7a4a2549f probes libffi
   including an Apple SDK path. Modules/_ctypes/callbacks.c prepares
   closures and checks ffi_prep_closure_loc availability on Apple;

@@ -22,7 +22,7 @@ import tempfile
 ROOT = Path(__file__).resolve().parents[1]
 MODULES = ("glib-2.0", "gobject-2.0", "gio-2.0", "gio-unix-2.0",
            "gmodule-2.0", "gmodule-export-2.0", "gmodule-no-export-2.0")
-INPUTS = ("libffi >= 3.0.0", "libpcre2-8 >= 10.32", "zlib")
+INPUTS = ("libffi >= 3.4.8", "libpcre2-8 >= 10.42", "zlib")
 SEARCH_ENV = (
     "CPATH", "C_INCLUDE_PATH", "CPLUS_INCLUDE_PATH", "OBJC_INCLUDE_PATH",
     "LIBRARY_PATH", "LD_LIBRARY_PATH", "LD_PRELOAD", "DYLD_LIBRARY_PATH",
@@ -358,7 +358,7 @@ def bootstrap(args):
     artifact_zlib = os.environ.get("WHP_ZLIB_PREFIX", "")
     verify_artifact_zlib(inputs, artifact_zlib)
     identity = {
-        "schema": 6, "source": str(source), "glib": revision, "gvdb": gvdb,
+        "schema": 7, "source": str(source), "glib": revision, "gvdb": gvdb,
         "host": [platform.system(), platform.machine()],
         "tools": [tool_identity(tool)
                   for tool in (cc, ar, pc, meson, ninja)],
@@ -444,7 +444,8 @@ def prepare_cache(args, source, revision, manifest, prefix, work, cc, ar, pc,
     if run_tests:
         run([*meson, "test", "-C", str(work), "--no-rebuild",
              "--print-errorlogs", "--num-processes", str(jobs),
-             "atomic", "thread", "convert"], env=env, capture=False)
+             "atomic", "thread", "convert", "regex", "closure", "signals"],
+             env=env, capture=False)
     run([*meson, "install", "-C", str(work), "--no-rebuild"],
         env=env, capture=False)
     probe(pc, cc, consumer_cflags, consumer_ldflags, prefix)

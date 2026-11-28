@@ -317,8 +317,8 @@ def main() -> int:
 
     for needle in (
         "Pinned GLib bootstrap prerequisites and early consumers",
-        "GLib 2.89.3", "Meson >= 1.4.0", "libffi >= 3.0.0",
-        "PCRE2 >= 10.32", "GVDB", "MACOS_ENABLE_GTK=1",
+        "GLib 2.89.3", "Meson >= 1.4.0", "libffi >= 3.4.8",
+        "PCRE2 >= 10.42", "GVDB", "MACOS_ENABLE_GTK=1",
         "native: true, static: false", "pyvenv",
     ):
         if needle not in ledger:

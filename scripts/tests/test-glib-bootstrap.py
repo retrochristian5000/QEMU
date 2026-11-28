@@ -152,9 +152,13 @@ class BootstrapTest(unittest.TestCase):
         self.assertIn('--consumer-cflags="$EXTRA_CFLAGS"', configure)
         self.assertIn('--consumer-ldflags="$EXTRA_LDFLAGS"', configure)
 
+    def test_dependency_version_contract(self):
+        self.assertEqual(glib.INPUTS,
+                         ("libffi >= 3.4.8", "libpcre2-8 >= 10.42", "zlib"))
+
     def test_missing_pkg_config_provider_is_deferred(self):
         def pkg_config(argv, **kwargs):
-            if argv[-1] == "libffi >= 3.0.0":
+            if argv[-1] == "libffi >= 3.4.8":
                 raise subprocess.CalledProcessError(1, argv)
             return {"--exists": "", "--modversion": "1.2.3",
                     "--cflags": "-I/host/include -lprovider",
@@ -163,7 +167,7 @@ class BootstrapTest(unittest.TestCase):
         with mock.patch.object(glib, "run", side_effect=pkg_config):
             inputs = glib.dependency_inputs(["pkg-config"])
         self.assertEqual(inputs[0], {
-            "requirement": "libffi >= 3.0.0", "pkg_config": "unavailable",
+            "requirement": "libffi >= 3.4.8", "pkg_config": "unavailable",
         })
         self.assertEqual(inputs[1]["version"], "1.2.3")
         self.assertEqual(inputs[2]["pcfiledir"], "/host/lib/pkgconfig")
@@ -245,7 +249,7 @@ class BootstrapTest(unittest.TestCase):
                 marker = prefix / ".whp-glib-bootstrap"
                 identity = json.loads(marker.read_text())
                 self.assertEqual(identity["inputs"], inputs)
-                self.assertEqual(identity["schema"], 6)
+                self.assertEqual(identity["schema"], 7)
                 args.consumer_cflags = "-I/opt/homebrew/include/glib-2.0"
                 with self.assertRaisesRegex(RuntimeError, "conflicts"):
                     glib.bootstrap(args)
@@ -274,7 +278,9 @@ class BootstrapTest(unittest.TestCase):
                 calls = [call.args[0] for call in run.call_args_list]
                 test_call = next(call for call in calls if call[:2] ==
                                  ["meson", "test"])
-                self.assertEqual(test_call[-3:], ["atomic", "thread", "convert"])
+                self.assertEqual(test_call[-6:],
+                                 ["atomic", "thread", "convert", "regex",
+                                  "closure", "signals"])
                 self.assertLess(calls.index(test_call),
                                 next(i for i, call in enumerate(calls)
                                      if call[:2] == ["meson", "install"]))
