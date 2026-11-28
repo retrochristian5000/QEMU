@@ -190,7 +190,7 @@ static void exit_cpu(unsigned int cpu_index, void *userdata)
     }
 }
 
-static void finish(qemu_plugin_id_t id, void *userdata)
+static void finish(void *userdata)
 {
     qemu_plugin_scoreboard_free(states);
     g_hash_table_destroy(encodings);
