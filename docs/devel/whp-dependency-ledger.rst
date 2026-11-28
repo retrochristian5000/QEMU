@@ -5408,8 +5408,8 @@ from QEMU artifact zlib.
 Cargo and native library closure
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
-The pinned sccacher `Cargo.toml <https://github.com/retrochristian5000/sccacher/blob/8b2307e9adf49d7cac24de88704d3505f2d3d7b3/Cargo.toml>`__ and
-`Cargo.lock <https://github.com/retrochristian5000/sccacher/blob/8b2307e9adf49d7cac24de88704d3505f2d3d7b3/Cargo.lock>`__ expose a registry graph with two explicitly pinned Git crates (tar and libc).
+The pinned sccacher `Cargo.toml <https://github.com/retrochristian5000/sccacher/blob/4dbb579ed12dcb932a119c2e83213f1d27316680/Cargo.toml>`__ and
+`Cargo.lock <https://github.com/retrochristian5000/sccacher/blob/4dbb579ed12dcb932a119c2e83213f1d27316680/Cargo.lock>`__ expose a registry graph with two explicitly pinned Git crates (tar and libc).
 ``tar`` 0.4.46 comes from the WHP
 `Rust-TAR fork <https://github.com/retrochristian5000/Rust-TAR/tree/e0127f17781a00f460330373a79196e3b5e30d56>`__
 at revision ``e0127f17781a00f460330373a79196e3b5e30d56``. It replaces registry tar 0.4.45 and
@@ -5505,6 +5505,20 @@ resolved fork provider and sccache/TAR dependency edges. Rustix may use
 its raw Linux backend instead of libc. This is a Rust FFI binding
 provider, not a replacement for the host's native C runtime. Initial
 Cargo acquisition also requires the pinned libc Git source.
+
+Native compiler identification preserves a true signal-terminated wait
+status as ProcessError, rejects partial compiler-identification output
+after a signal, and does not retry Rust-to-C detection or insert an
+unsupported-compiler entry for a signaled probe. The existing compile
+response transports the signal and both output streams. Client diagnostics
+name SIGSEGV, SIGBUS, SIGILL and SIGABRT using native libc constants
+rather than Linux-specific signal numbers. A genuine normal exit 139
+remains a normal exit; actual SIGSEGV maps to shell status 139. Darwin
+SIGBUS is 10 while Linux ARM64/x86-64 SIGBUS is 7. The wire format and
+existing distributed execution behavior are unchanged. The local-cache
+CI checks both detection and response propagation, plus direct linker
+signal termination. These changes do not infer a child signal from a
+daemon IPC disconnect, or identify the original GLib crash site.
 
 A lockfile entry alone does not prove feature or target activation.
 Verify the selected graph with cargo tree --locked --no-default-features.
