@@ -20,7 +20,7 @@ main:
 
     .code16
 real_blob:
-    /* Establish 16-bit segment caches before clearing PE. */
+    /* Establish 16-bit address widths and an extended data/stack limit. */
     movw $0x20, %ax
     movw %ax, %ds
     movw %ax, %es
@@ -88,7 +88,10 @@ test_gdt:
     .quad 0x00cf9b000000ffff /* flat 32-bit code */
     .quad 0x00cf93000000ffff /* flat 32-bit data */
     .quad 0x00009b007000ffff /* 16-bit code at 0x7000 */
-    .quad 0x000093000000ffff /* 16-bit data at 0 */
+    /* B=0, G=1: a 16-bit stack with an extended cached segment limit.
+     * Isolate stack-address wrapping from segment-limit exceptions.
+     */
+    .quad 0x008f93000000ffff /* 16-bit data, 4 GiB limit */
 test_gdt_end:
 test_gdtr:
     .word test_gdt_end - test_gdt - 1
