@@ -1056,9 +1056,21 @@ static void test_i440fx_timing_config(void)
     qobject_unref(reply);
     g_assert_nonnull(dev);
     g_assert_cmphex(qpci_config_readl(dev, PCI_VENDOR_ID), ==, 0x12378086);
+    g_assert_cmphex(qpci_config_readb(dev, PCI_LATENCY_TIMER), ==, 0);
     g_assert_cmphex(qpci_config_readb(dev, 0x53), ==, 0x80);
     g_assert_cmphex(qpci_config_readb(dev, 0x58), ==, 0x10);
+    g_assert_cmphex(qpci_config_readb(dev, 0x70), ==, 0);
     g_assert_cmphex(qpci_config_readb(dev, 0x71), ==, 0x10);
+
+    /* Intel 290549-001, sections 3.2.8 and 3.2.21. */
+    qpci_config_writeb(dev, PCI_LATENCY_TIMER, 0x07);
+    qpci_config_writeb(dev, 0x70, 0x07);
+    g_assert_cmphex(qpci_config_readb(dev, PCI_LATENCY_TIMER), ==, 0);
+    g_assert_cmphex(qpci_config_readb(dev, 0x70), ==, 0);
+    qpci_config_writeb(dev, PCI_LATENCY_TIMER, 0xff);
+    qpci_config_writeb(dev, 0x70, 0xff);
+    g_assert_cmphex(qpci_config_readb(dev, PCI_LATENCY_TIMER), ==, 0xf8);
+    g_assert_cmphex(qpci_config_readb(dev, 0x70), ==, 0xf8);
 
     qpci_config_writeb(dev, 0x53, 0x55);
     qpci_config_writeb(dev, 0x58, 0xff);
@@ -1068,8 +1080,10 @@ static void test_i440fx_timing_config(void)
     g_assert_cmphex(qpci_config_readb(dev, 0x71), ==, 0x1f);
 
     qtest_system_reset(qts);
+    g_assert_cmphex(qpci_config_readb(dev, PCI_LATENCY_TIMER), ==, 0);
     g_assert_cmphex(qpci_config_readb(dev, 0x53), ==, 0x80);
     g_assert_cmphex(qpci_config_readb(dev, 0x58), ==, 0x10);
+    g_assert_cmphex(qpci_config_readb(dev, 0x70), ==, 0);
     g_assert_cmphex(qpci_config_readb(dev, 0x71), ==, 0x10);
 
     g_free(dev);
