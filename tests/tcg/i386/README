@@ -80,3 +80,36 @@ truncated instruction bytes and instructions that should fault on the
 chosen chip, are candidates for investigation, not proof of a TCG bug.
 This checks decoder metadata, not MMU accesses, segment limits or actual
 instruction execution. No XED downloads are performed by the build.
+
+Effective-address reference
+---------------------------
+
+check-xed also runs fixed MOV address vectors in real16 and legacy32 modes.
+The separate --agen interface compares a supplied observed linear address
+with the XED effective offset plus the selected guest segment base:
+
+    make check-xed XED_KIT=/absolute/path/to/xed-kit \
+        XED_ADDRESS_TRACE=addresses.txt XED_MODE=real16 XED_STACK=16 \
+        XED_CHIP=pentium_mmx
+
+Each non-comment line has this exact format (all numeric fields are hex,
+without a 0x prefix, in the stated order):
+
+    XEDAGEN bytes linear EAX ECX EDX EBX ESP EBP ESI EDI CS DS ES SS FS GS
+
+The last six fields are selectors for ordinary real16 mode or cached
+segment bases for legacy16/legacy32. The address is linear, before paging
+or A20 masking. See tests/xed/address-*.txt for hand-calculated fixtures.
+XED receives zero segment bases/selectors during address generation, so
+its legacy 16-bit linear-sum limitations do not truncate the offset plus
+segment base. Unsupported instructions and missing/malformed state fail
+the check; they are not silently accepted.
+
+The current interface intentionally covers scalar MOV with one explicit
+memory operand, not LEA, implicit stack/string operands, unreal mode,
+segment-limit checks or physical-address translation. The existing
+XEDTRACE plugin emits translation bytes/lengths only; it does not capture
+the execution-time register or segment state needed by XEDAGEN.
+Supply observed addresses and matching pre-instruction state from a
+controlled guest test or debugger; do not feed a normal XEDTRACE log to
+--agen. These fixed vectors are reference checks, not TCG observations.

@@ -4,9 +4,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
-#include <xed-interface.h>
-
-enum { MAX_BYTES = 15 };
+#include "xed-reference.h"
 
 static int hex_digit(char c)
 {
@@ -22,7 +20,7 @@ static int hex_digit(char c)
     return -1;
 }
 
-static unsigned parse_bytes(const char *hex, xed_uint8_t *bytes)
+unsigned xed_ref_parse_bytes(const char *hex, xed_uint8_t *bytes)
 {
     size_t len = strlen(hex);
     if (!len || len % 2 || len > MAX_BYTES * 2) {
@@ -39,7 +37,7 @@ static unsigned parse_bytes(const char *hex, xed_uint8_t *bytes)
     return (unsigned)(len / 2);
 }
 
-static xed_error_enum_t decode(xed_decoded_inst_t *inst,
+xed_error_enum_t xed_ref_decode(xed_decoded_inst_t *inst,
                                xed_machine_mode_enum_t mode,
                                xed_address_width_enum_t stack,
                                xed_chip_enum_t chip,
@@ -76,11 +74,11 @@ static int selftest(void)
     for (size_t i = 0; i < sizeof(cases) / sizeof(cases[0]); i++) {
         xed_uint8_t bytes[MAX_BYTES];
         xed_decoded_inst_t inst;
-        unsigned len = parse_bytes(cases[i].hex, bytes);
+        unsigned len = xed_ref_parse_bytes(cases[i].hex, bytes);
         xed_address_width_enum_t stack =
             cases[i].mode == XED_MACHINE_MODE_LEGACY_32 ?
             XED_ADDRESS_WIDTH_32b : XED_ADDRESS_WIDTH_16b;
-        xed_error_enum_t err = decode(&inst, cases[i].mode, stack,
+        xed_error_enum_t err = xed_ref_decode(&inst, cases[i].mode, stack,
                                        XED_CHIP_PENTIUMMMX, bytes, len);
         if (err != XED_ERROR_NONE ||
             xed_decoded_inst_get_length(&inst) != len ||
@@ -126,12 +124,12 @@ static int compare_trace(xed_machine_mode_enum_t mode,
         if (!strchr(line, '\n') ||
             sscanf(line, "XEDTRACE %" SCNx64 " %zu %30s %c",
                    &pc, &length, hex, &extra) != 3 ||
-            !(len = parse_bytes(hex, bytes)) || length != len) {
+            !(len = xed_ref_parse_bytes(hex, bytes)) || length != len) {
             fprintf(stderr, "Malformed/unavailable trace record %zu\n", records);
             mismatches++;
             continue;
         }
-        err = decode(&inst, mode, stack, chip, bytes, len);
+        err = xed_ref_decode(&inst, mode, stack, chip, bytes, len);
         if (err != XED_ERROR_NONE) {
             fprintf(stderr, "0x%" PRIx64 ": XED %s (%s)\n",
                     pc, xed_error_enum_t2str(err), hex);
@@ -167,6 +165,11 @@ int main(int argc, char **argv)
     if (argc == 2 && !strcmp(argv[1], "--selftest")) {
         return selftest();
     }
+    bool address_mode = argc == 5 && !strcmp(argv[1], "--agen");
+    if (address_mode) {
+        argv++;
+        argc--;
+    }
     if (argc != 4) {
         goto usage;
     }
@@ -193,11 +196,14 @@ int main(int argc, char **argv)
     } else {
         goto usage;
     }
+    if (address_mode) {
+        return xed_ref_compare_addresses(mode, stack, chip);
+    }
     return compare_trace(mode, stack, chip);
 
 usage:
-    fprintf(stderr, "Usage: %s --selftest | "
-            "{real16|legacy16|legacy32} {16|32} "
-            "{pentium|pentium_mmx} < trace.log\n", argv[0]);
+    fprintf(stderr, "Usage: xed-reference --selftest | "
+            "[--agen] {real16|legacy16|legacy32} {16|32} "
+            "{pentium|pentium_mmx} < trace.log\n");
     return EXIT_FAILURE;
 }

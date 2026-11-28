@@ -1,0 +1,13 @@
+# XEDAGEN bytes linear EAX ECX EDX EBX ESP EBP ESI EDI CS DS ES SS FS GS
+# Real-mode segment fields are selectors; all values hexadecimal.
+# BX+SI wraps to 0x10, then DS:0x10 -> 0x20010.
+XEDAGEN 8b00 20010 0 0 0 fff0 0 0 20 0 700 2000 3000 4000 5000 6000
+# BP+SI selects SS, and a DS override selects DS instead.
+XEDAGEN 8b02 40120 0 0 0 0 0 100 20 0 700 2000 3000 4000 5000 6000
+XEDAGEN 3e8b02 20120 0 0 0 0 0 100 20 0 700 2000 3000 4000 5000 6000
+# 32-bit address override; EAX+negative displacement.
+XEDAGEN 678b40f0 20020 30 0 0 0 0 0 0 0 700 2000 3000 4000 5000 6000
+# Segment override and operand-size override.
+XEDAGEN 64668b00 50030 0 0 0 10 0 0 20 0 700 2000 3000 4000 5000 6000
+# Linear address above 1 MiB before A20 masking.
+XEDAGEN 8b00 100010 0 0 0 20 0 0 0 0 700 ffff 3000 4000 5000 6000

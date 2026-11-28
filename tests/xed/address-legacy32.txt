@@ -1,0 +1,14 @@
+# XEDAGEN bytes linear EAX ECX EDX EBX ESP EBP ESI EDI CS DS ES SS FS GS
+# Protected-mode segment fields are cached bases, not selectors.
+# EAX+negative disp8.
+XEDAGEN 8b40f0 12340020 30 0 0 0 0 0 0 0 0 12340000 0 20000000 30000000 40000000
+# EBP+ECX*4+disp8 defaults to SS.
+XEDAGEN 8b448d10 2000011c 0 3 0 0 0 100 0 0 0 12340000 0 20000000 30000000 40000000
+# FS override, SIB, same offset.
+XEDAGEN 648b448d10 3000011c 0 3 0 0 0 100 0 0 0 12340000 0 20000000 30000000 40000000
+# Address override wraps BX+SI at 16 bits, not the linear address.
+XEDAGEN 678b00 12340010 0 0 0 fff0 0 0 20 0 0 12340000 0 20000000 30000000 40000000
+# 32-bit effective offset wrap, followed by segment-base addition.
+XEDAGEN 8b4020 12340010 fffffff0 0 0 0 0 0 0 0 0 12340000 0 20000000 30000000 40000000
+# 32-bit linear wrap after segment-base addition.
+XEDAGEN 8b00 10 30 0 0 0 0 0 0 0 0 ffffffe0 0 20000000 30000000 40000000

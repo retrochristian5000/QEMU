@@ -157,8 +157,16 @@ check-xed:
 	$(XED_CC) -std=c11 -Wall -Wextra -Werror -O2 \
 	    -I"$(XED_KIT)/include/xed" \
 	    "$(SRC_PATH)/tests/xed/xed-reference.c" \
+	    "$(SRC_PATH)/tests/xed/xed-address.c" \
 	    "$(XED_KIT)/lib/libxed.a" -o "$(BUILD_DIR)/tests/xed/xed-reference"
 	"$(BUILD_DIR)/tests/xed/xed-reference" --selftest
+	"$(BUILD_DIR)/tests/xed/xed-reference" --agen real16 16 pentium_mmx \
+	    < "$(SRC_PATH)/tests/xed/address-real16.txt"
+	"$(BUILD_DIR)/tests/xed/xed-reference" --agen legacy32 32 pentium_mmx \
+	    < "$(SRC_PATH)/tests/xed/address-legacy32.txt"
+	@if test -n "$(XED_ADDRESS_TRACE)"; then \
+	    "$(BUILD_DIR)/tests/xed/xed-reference" --agen "$(XED_MODE)" "$(XED_STACK)" "$(XED_CHIP)" < "$(XED_ADDRESS_TRACE)"; \
+	fi
 	@if test -n "$(XED_TRACE)"; then \
 	    "$(BUILD_DIR)/tests/xed/xed-reference" "$(XED_MODE)" "$(XED_STACK)" "$(XED_CHIP)" < "$(XED_TRACE)"; \
 	fi
