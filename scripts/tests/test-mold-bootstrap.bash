@@ -158,9 +158,15 @@ grep -Fq -- ' -fuse-ld=lld ' "$log"
     LD="$NATIVE_LLVM_DIR/bin/ld64.lld"
     LDFLAGS="-fuse-ld=lld --ld-path=$LD"
     whp_linker_flags_compatible lld
-    ! whp_linker_flags_compatible system
+    if whp_linker_flags_compatible system; then
+        printf 'error: system policy accepted managed LLD flags\n' >&2
+        exit 1
+    fi
     LDFLAGS="-fuse-ld=lld --ld-path=/foreign/ld64.lld"
-    ! whp_linker_flags_compatible lld
+    if whp_linker_flags_compatible lld; then
+        printf 'error: managed LLD policy accepted a foreign linker path\n' >&2
+        exit 1
+    fi
 )
 
 QEMU_HOST_LINKER=system

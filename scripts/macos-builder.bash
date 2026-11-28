@@ -13,6 +13,7 @@ fi
 : "${WHP_BUILD_BASH:?WHP_BUILD_BASH is required}"
 
 source "$SOURCE_DIR/scripts/whp-build/common.bash"
+source "$SOURCE_DIR/scripts/whp-build/prepare-mold.bash"
 source "$SCRIPT_DIR/macos-build-hygiene.bash"
 source "$SCRIPT_DIR/macos-arch-policy.bash"
 
@@ -465,6 +466,10 @@ native_macho_lld=0
 if [[ "${NATIVE_LLVM_LDFLAG:-}" == -fuse-ld=lld &&
       -n "${NATIVE_LLVM_DIR:-}" &&
       "${LD:-}" == "$NATIVE_LLVM_DIR/bin/ld64.lld" ]]; then
+    if ! whp_linker_flags_compatible lld; then
+        printf 'error: native Mach-O LLD conflicts with an inherited linker override\n' >&2
+        exit 1
+    fi
     native_macho_lld=1
     if [[ "${NATIVE_LLVM_READ_WORKERS:-0}" != 0 ]]; then
         printf 'warning: NATIVE_LLVM_READ_WORKERS is ignored; global configure LDFLAGS must not contain --read-workers\n' >&2
