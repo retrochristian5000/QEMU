@@ -38,6 +38,11 @@ test-i386-ret-imm16: CFLAGS += -march=pentium -ffreestanding -fno-pie -fno-stack
 test-i386-ret-imm16: LDFLAGS += -nostdlib
 run-test-i386-ret-imm16: QEMU_OPTS += -cpu pentium_mmx
 
+# Check ENTER allocation size and nesting without a hosted libc.
+test-i386-enter-imm16: CFLAGS += -march=pentium -ffreestanding -fno-pie -fno-stack-protector
+test-i386-enter-imm16: LDFLAGS += -nostdlib
+run-test-i386-enter-imm16: QEMU_OPTS += -cpu pentium_mmx
+
 test-aes: CFLAGS += -O -msse2 -maes
 test-aes: test-aes-main.c.inc
 run-test-aes: QEMU_OPTS += -cpu max
