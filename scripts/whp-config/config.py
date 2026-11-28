@@ -146,8 +146,8 @@ OPTIONS = (
     # independent toggle. Legacy BOOTSTRAP_SCCACHE profiles migrate below.
     Option('COMPILER_CACHE', 'Host features', 'Compiler cache', 'choice',
            'auto', ('auto', 'ccache', 'sccache', 'managed-sccache', 'none')),
-    Option('QEMU_HOST_LINKER', 'Host features', 'QEMU host linker', 'choice', 'auto', ('auto', 'system', 'lld', 'mold')),
-    Option('BOOTSTRAP_MOLD', 'Host features', 'Bootstrap/use WHP mold', 'choice', 'auto', ('auto', 'y', 'n')),
+    Option('QEMU_HOST_LINKER', 'Host features', 'QEMU host linker (system = compiler default)', 'choice', 'auto', ('auto', 'system', 'lld', 'mold')),
+    Option('BOOTSTRAP_MOLD', 'Host features', 'Managed mold bootstrap/use (Bash runner)', 'choice', 'auto', ('auto', 'y', 'n')),
     Option('WHP_MESON_PROVIDER', 'Host features', 'QEMU Meson provider', 'choice', 'fork', ('venv', 'fork')),
     Option('QEMU_FDT_MODE', 'Host features', 'QEMU libfdt provider', 'choice', 'auto', ('auto', 'system', 'internal', 'enabled', 'disabled')),
     Option('WHP_DTC_FETCH_MISSING', 'Host features', 'Prefetch missing pinned DTC checkout', 'bool', 'n'),
@@ -299,6 +299,12 @@ def validate_combinations(values: Dict[str, str]) -> None:
         raise ValueError(
             'QEMU_TSAN=y cannot be combined with QEMU_ASAN=y or QEMU_UBSAN=y; '
             'disable ThreadSanitizer or the other sanitizers'
+        )
+    linker = values['QEMU_HOST_LINKER']
+    if linker in ('system', 'lld') and values['BOOTSTRAP_MOLD'] == 'y':
+        raise ValueError(
+            f'QEMU_HOST_LINKER={linker} conflicts with BOOTSTRAP_MOLD=y; '
+            'select auto or n for managed mold, or select mold or auto as linker'
         )
     if values['QEMU_HOST_LTO'] == 'n' and values['QEMU_HOST_LTO_MODE'] != 'auto':
         raise ValueError(
@@ -459,11 +465,14 @@ def shell_assignments(state: ConfigState, environ: Dict[str, str]) -> str:
     effective = dict(state.values)
     for key in ('QEMU_TSAN', 'QEMU_ASAN', 'QEMU_UBSAN',
                 'QEMU_HOST_LTO', 'QEMU_HOST_LTO_MODE',
+                'QEMU_HOST_LINKER', 'BOOTSTRAP_MOLD',
                 'BOOTSTRAP_NATIVE_LLVM', 'NATIVE_LLVM_ENABLE_LLDB',
                 'NATIVE_LLVM_VALIDATE_ASAN', 'NATIVE_LLVM_ASAN_AUTO_DEBUG'):
         if key in environ:
             raw = environ[key] or OPTION_BY_KEY[key].default
             effective[key] = {'1': 'y', '0': 'n'}.get(raw, raw)
+            if key in ('QEMU_HOST_LINKER', 'BOOTSTRAP_MOLD'):
+                validate_value(OPTION_BY_KEY[key], effective[key])
     validate_combinations(effective)
     lines: List[str] = []
     for option in OPTIONS:
