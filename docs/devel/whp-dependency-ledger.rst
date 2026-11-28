@@ -5408,8 +5408,8 @@ from QEMU artifact zlib.
 Cargo and native library closure
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
-The pinned sccacher `Cargo.toml <https://github.com/retrochristian5000/sccacher/blob/bb6dc3b0b4d5408d8262ba8242d97f5ce63cf5bd/Cargo.toml>`__ and
-`Cargo.lock <https://github.com/retrochristian5000/sccacher/blob/bb6dc3b0b4d5408d8262ba8242d97f5ce63cf5bd/Cargo.lock>`__ expose a registry graph with two explicitly pinned Git crates (tar and libc).
+The pinned sccacher `Cargo.toml <https://github.com/retrochristian5000/sccacher/blob/e76c5734f5633c56b5d954ec0883169f6a08401a/Cargo.toml>`__ and
+`Cargo.lock <https://github.com/retrochristian5000/sccacher/blob/e76c5734f5633c56b5d954ec0883169f6a08401a/Cargo.lock>`__ expose a registry graph with two explicitly pinned Git crates (tar and libc).
 ``tar`` 0.4.46 comes from the WHP
 `Rust-TAR fork <https://github.com/retrochristian5000/Rust-TAR/tree/e0127f17781a00f460330373a79196e3b5e30d56>`__
 at revision ``e0127f17781a00f460330373a79196e3b5e30d56``. It replaces registry tar 0.4.45 and
@@ -5444,8 +5444,14 @@ The shared stable libc Darwin sigaction declaration agrees with the
 public XNU header's handler union, mask and flags. Preserve existing
 non-default dispositions (including Rust's alternate-stack handlers)
 instead of replacing and restoring them. Default-only diagnostics use
-an explicitly initialized mask, the one-argument C handler ABI, and
-SA_ONSTACK; registration failures are reported. The diagnostic explicitly
+an explicitly initialized mask and SA_ONSTACK; registration failures are
+reported. On macOS the diagnostic uses the three-argument SA_SIGINFO
+callback, checks the pointer and signal number, and writes the original
+si_code using bounded stack storage before redelivery. Other Unix targets
+retain the one-argument callback. The SDK siginfo regression checks
+size, alignment, public field offsets and a C-initialized sample,
+including libc's opaque-tail si_value accessor. It does not assume
+sender or fault-address fields are valid for every signal. The diagnostic explicitly
 restores SIG_DFL and re-delivers the signal, so an externally raised signal
 is not swallowed. Re-delivery can lose original siginfo. No mutable global
 handler records are needed. Startup is the sole registration boundary.
