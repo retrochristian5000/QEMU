@@ -326,9 +326,11 @@ each downstream consumer:
   ancestry tests.  Verify only source interfaces and ABI actually consumed.
   The pre-Python POSIX ``whp_git_submodule_prepare`` helper distinguishes
   Git ``merge-base --is-ancestor`` exit status 0 (yes), 1 (no), and errors
-  (abort). A failed Git ancestry query or pinned-object inspection must never
-  masquerade as an ordinary negative condition and trigger retries, bounded
-  fetches or a checkout. ``test-submodule-ancestor-status.py`` exercises
+  (abort). Pinned-object inspection uses Git cat-file batch-check records,
+  not cat-file -e exit codes (which may return 128 for a missing object).
+  Only an explicit missing record permits one online pin fetch, followed
+  by reinspection. A failed query or wrong object type never triggers fetch
+  or checkout. ``test-submodule-ancestor-status.py`` exercises
   these cases offline alongside descendant preservation and forward updates.
 * ``graph``: let QEMU configure, Meson, or Ninja resolve the dependency;
   do not impose a duplicate pre-configuration source pin check.

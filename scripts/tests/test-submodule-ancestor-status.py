@@ -25,8 +25,20 @@ case "$*" in
     *" rev-parse HEAD")
         cat "$TEST_HEAD"
         exit 0 ;;
-    *" cat-file -e "*)
-        exit "$TEST_CAT_STATUS" ;;
+    *" cat-file --batch-check="*)
+        IFS= read -r object
+        [ "$object" = "$TEST_PIN" ] || exit 88
+        [ "$TEST_CAT_STATUS" = 0 ] || exit "$TEST_CAT_STATUS"
+        case "$TEST_OBJECT" in
+            missing)
+                if grep -q ' fetch ' "$TEST_TRACE"; then
+                    printf '%s commit\n' "$object"
+                else
+                    printf '%s missing\n' "$object"
+                fi ;;
+            *) printf '%s %s\n' "$object" "$TEST_OBJECT" ;;
+        esac
+        exit 0 ;;
     *" merge-base --is-ancestor "*)
         case "$TEST_MODE" in
             fatal_first) exit 128 ;;
@@ -82,12 +94,12 @@ class SubmoduleAncestorStatusTests(unittest.TestCase):
         self.wrapper.write_text(FAKE_GIT, encoding="utf-8")
         self.wrapper.chmod(0o755)
 
-    def run_prepare(self, mode, *, access="online", cat_status="0"):
+    def run_prepare(self, mode, *, access="online", cat_status="0", object_type="commit"):
         env = os.environ.copy()
         env.update(
             TEST_TRACE=str(self.trace), TEST_PIN=PIN, TEST_CURRENT=CURRENT,
             TEST_MODULE=str(self.submodule), TEST_HEAD=str(self.head),
-            TEST_MODE=mode, TEST_CAT_STATUS=cat_status,
+            TEST_MODE=mode, TEST_CAT_STATUS=cat_status, TEST_OBJECT=object_type,
         )
         result = subprocess.run(
             ["/bin/sh", "-c",
@@ -125,6 +137,26 @@ class SubmoduleAncestorStatusTests(unittest.TestCase):
         self.assertNotIn("merge-base", trace)
         self.assert_no_unsafe_actions(trace)
 
+    def test_missing_pin_is_fetched_and_rechecked(self):
+        result, trace = self.run_prepare("fast_forward", object_type="missing")
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(trace.count(" fetch "), 1)
+        self.assertEqual(trace.count(" cat-file --batch-check="), 2)
+        self.assertEqual(self.head.read_text(encoding="utf-8").strip(), PIN)
+
+    def test_missing_pin_offline_does_not_fetch(self):
+        result, trace = self.run_prepare("fast_forward", access="offline",
+                                         object_type="missing")
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("pin history missing for offline submodule", result.stderr)
+        self.assert_no_unsafe_actions(trace)
+
+    def test_non_commit_object_is_not_fetched(self):
+        result, trace = self.run_prepare("fast_forward", object_type="blob")
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("unexpected pinned object record", result.stderr)
+        self.assert_no_unsafe_actions(trace)
+
     def test_valid_descendant_is_preserved_without_fetch(self):
         result, trace = self.run_prepare("descendant", access="offline")
         self.assertEqual(result.returncode, 0, result.stderr)
@@ -151,6 +183,31 @@ class SubmoduleAncestorStatusTests(unittest.TestCase):
         self.assertIn("Git ancestry probe failed", result.stderr)
         self.assertEqual(trace.count(" fetch "), 1)
         self.assertNotIn("submodule update", trace)
+
+
+class RealGitPinTests(unittest.TestCase):
+    def test_missing_pin_is_not_a_fatal_git_query(self):
+        with tempfile.TemporaryDirectory(prefix="whp-real-pin-") as directory:
+            repo = Path(directory)
+            subprocess.run(["git", "init", "-q", str(repo)], check=True)
+            missing = "a" * 40
+            result = subprocess.run(
+                ["/bin/sh", "-c",
+                 '. "$1"; whp_git_pin_presence git "$2" "$3"',
+                 "pin-test", str(HELPER), str(repo), missing],
+                text=True, capture_output=True, check=True)
+            self.assertEqual(result.stdout.strip(), "missing")
+            subprocess.run(["git", "-C", str(repo), "-c", "user.name=Test",
+                            "-c", "user.email=test@example.invalid", "commit",
+                            "-qm", "fixture", "--allow-empty"], check=True)
+            commit = subprocess.check_output(
+                ["git", "-C", str(repo), "rev-parse", "HEAD"], text=True).strip()
+            result = subprocess.run(
+                ["/bin/sh", "-c",
+                 '. "$1"; whp_git_pin_presence git "$2" "$3"',
+                 "pin-test", str(HELPER), str(repo), commit],
+                text=True, capture_output=True, check=True)
+            self.assertEqual(result.stdout.strip(), "present")
 
 
 if __name__ == "__main__":

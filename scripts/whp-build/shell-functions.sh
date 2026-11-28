@@ -115,6 +115,32 @@ whp_git_ancestry_relation()
     fi
 )
 
+# cat-file -e can return 128 for an ordinary missing object. Batch-check
+# instead returns a successful, explicit "<oid> missing" record. Reject
+# command failures, unexpected output and non-commit objects separately.
+whp_git_pin_presence()
+(
+    whp_git=$1
+    whp_target=$2
+    whp_pin=$3
+    if whp_record=$(printf '%s\n' "$whp_pin" |
+        "$whp_git" -C "$whp_target" cat-file --batch-check='%(objectname) %(objecttype)'); then
+        case "$whp_record" in
+            "$whp_pin commit") printf '%s\n' present ;;
+            "$whp_pin missing") printf '%s\n' missing ;;
+            *)
+                printf 'error: unexpected pinned object record in %s: %s\n' \
+                    "$whp_target" "$whp_record" >&2
+                return 1 ;;
+        esac
+    else
+        whp_status=$?
+        printf 'error: cannot inspect pinned submodule commit %s (Git exit %s)\n' \
+            "$whp_target" "$whp_status" >&2
+        return 1
+    fi
+)
+
 # Shared rollback guard for pre-Python bootstrap and standalone shell lanes.
 # A gitlink is a reproducibility baseline, not permission to rewind an
 # initialized checkout containing newer descendant commits.
@@ -195,22 +221,19 @@ whp_git_submodule_prepare()
         fi
         whp_current=$("$whp_git" -C "$whp_target" rev-parse HEAD) || return 1
         if [ "$whp_current" != "$whp_pin" ]; then
-            # Missing pinned history (exit 1) may be fetched in online mode;
-            # an actual Git failure must not be turned into a fetch request.
-            if "$whp_git" -C "$whp_target" cat-file -e "$whp_pin^{commit}" 2>/dev/null; then
-                :
-            else
-                whp_status=$?
-                if [ "$whp_status" -ne 1 ]; then
-                    printf 'error: cannot inspect pinned submodule commit %s (Git exit %s)\n' \
-                        "$whp_path" "$whp_status" >&2
-                    return 1
-                fi
+            whp_presence=$(whp_git_pin_presence "$whp_git" "$whp_target" "$whp_pin") || return 1
+            if [ "$whp_presence" = missing ]; then
                 if [ "$whp_access" = offline ]; then
                     printf 'error: pin history missing for offline submodule %s\n' "$whp_path" >&2
                     return 1
                 fi
                 "$whp_git" -C "$whp_target" fetch --no-tags --no-recurse-submodules origin "$whp_pin" || return 1
+                whp_presence=$(whp_git_pin_presence "$whp_git" "$whp_target" "$whp_pin") || return 1
+                if [ "$whp_presence" != present ]; then
+                    printf 'error: pinned commit %s still missing after fetch for %s\n' \
+                        "$whp_pin" "$whp_path" >&2
+                    return 1
+                fi
             fi
             whp_pin_is_ancestor=$(whp_git_ancestry_relation \
                 "$whp_git" "$whp_target" "$whp_pin" "$whp_current") || return 1
