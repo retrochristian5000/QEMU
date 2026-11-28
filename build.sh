@@ -747,9 +747,12 @@ whp_prepare_git_dependent_cache()
 # incremental build would skip configure. Keep absent DTC Meson-lazy unless
 # the user explicitly enables the menuconfig prefetch switch. A system or
 # disabled libfdt provider never needs the internal DTC checkout.
+QEMU_DOWNLOAD_DEPENDENCIES=$(whp_require_binary_switch QEMU_DOWNLOAD_DEPENDENCIES "${QEMU_DOWNLOAD_DEPENDENCIES:-1}") || exit 1
+export QEMU_DOWNLOAD_DEPENDENCIES
 WHP_DTC_FETCH_MISSING=$(whp_require_binary_switch WHP_DTC_FETCH_MISSING "${WHP_DTC_FETCH_MISSING:-0}") || exit 1
 export WHP_DTC_FETCH_MISSING
-if [ "${WHP_SHELL_PROBE_ONLY:-0}" != 1 ] &&
+if [ "$QEMU_DOWNLOAD_DEPENDENCIES" = 1 ] &&
+   [ "${WHP_SHELL_PROBE_ONLY:-0}" != 1 ] &&
    [ "${WHP_PORTABLE_PROBE_ONLY:-0}" != 1 ] &&
    [ -f "$SOURCE_DIR/subprojects/dtc.wrap" ] &&
    [ "${QEMU_FDT_MODE:-auto}" != system ] &&
