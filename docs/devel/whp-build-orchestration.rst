@@ -194,6 +194,25 @@ Use ``-NoSourceUpdate`` as the PowerShell spelling of a one-run
 ``WHP_SOURCE_UPDATE=0`` override.  All other WHP environment variables and
 positional targets are passed through to ``build.sh``.
 
+QEMU dependency downloads
+-------------------------
+
+``QEMU_DOWNLOAD_DEPENDENCIES`` defaults to ``y`` in both menuconfig
+frontends. Both build runners explicitly pass ``--enable-download`` or
+``--disable-download`` to QEMU configure. Configure also explicitly resets
+Meson's wrap mode on incremental reconfiguration; an earlier offline build
+cannot retain ``nodownload`` after downloads are enabled again.
+
+Set the menu option to ``n`` (or ``QEMU_DOWNLOAD_DEPENDENCIES=0`` in the
+launcher environment) to use locally available QEMU configure dependencies.
+The pre-configure DTC network reconciliation is skipped in that mode;
+configure retains its own offline DTC checks. Missing dependencies remain
+errors instead of silently fetching. The independent DTC prefetch choice
+still controls whether to prefetch rather than letting Meson fetch on demand.
+This is not a global offline switch: parent source refresh, firmware and
+managed toolchain bootstraps retain their separate policies. The managed
+GLib helper retains its own wrap restrictions and host-provider checks.
+
 Host linker selection
 ---------------------
 
