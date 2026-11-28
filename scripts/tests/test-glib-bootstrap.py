@@ -181,6 +181,31 @@ class BootstrapTest(unittest.TestCase):
             self.assertFalse(any(arg.startswith(f"-D{option}=")
                                  for arg in glib.MESON_PROFILE))
 
+    def test_cache_lock_excludes_other_writers(self):
+        with tempfile.TemporaryDirectory() as directory:
+            work = Path(directory) / "identity"
+            lock = work.parent / (work.name + ".lock")
+            with glib.cache_lock(work):
+                with self.assertRaisesRegex(RuntimeError, "already being prepared"):
+                    with glib.cache_lock(work):
+                        self.fail("second writer acquired the same cache")
+                with glib.cache_lock(work.parent / "other-identity"):
+                    pass
+            self.assertTrue(lock.is_file())
+            with glib.cache_lock(work):
+                pass
+
+    def test_cache_lock_refuses_symlinks(self):
+        with tempfile.TemporaryDirectory() as directory:
+            work = Path(directory) / "identity"
+            target = work.parent / "target"
+            target.write_text("unchanged")
+            (work.parent / (work.name + ".lock")).symlink_to(target)
+            with self.assertRaises(OSError):
+                with glib.cache_lock(work):
+                    self.fail("symlinked lock accepted")
+            self.assertEqual(target.read_text(), "unchanged")
+
     def test_wrap_mode_and_cache_reuse(self):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
@@ -205,7 +230,7 @@ class BootstrapTest(unittest.TestCase):
                 marker = prefix / ".whp-glib-bootstrap"
                 identity = json.loads(marker.read_text())
                 self.assertEqual(identity["inputs"], inputs)
-                self.assertEqual(identity["schema"], 4)
+                self.assertEqual(identity["schema"], 5)
                 args.consumer_cflags = "-I/opt/homebrew/include/glib-2.0"
                 with self.assertRaisesRegex(RuntimeError, "conflicts"):
                     glib.bootstrap(args)
@@ -234,7 +259,7 @@ class BootstrapTest(unittest.TestCase):
                 calls = [call.args[0] for call in run.call_args_list]
                 test_call = next(call for call in calls if call[:2] ==
                                  ["meson", "test"])
-                self.assertEqual(test_call[-2:], ["atomic", "thread"])
+                self.assertEqual(test_call[-3:], ["atomic", "thread", "convert"])
                 self.assertLess(calls.index(test_call),
                                 next(i for i, call in enumerate(calls)
                                      if call[:2] == ["meson", "install"]))

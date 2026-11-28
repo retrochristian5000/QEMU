@@ -1443,12 +1443,16 @@ For an explicit fork build from the normal entry point::
 
   BOOTSTRAP_GLIB=1 MACOS_ENABLE_GTK=0 ./build.sh
 
-For a diagnostic build with GLib's atomic and thread tests enabled::
+For a diagnostic build with GLib's atomic, thread and conversion tests enabled::
 
   BOOTSTRAP_GLIB=1 WHP_GLIB_TESTS=1 MACOS_ENABLE_GTK=0 ./build.sh
 
-The test profile has a separate cache identity and runs the two native
+The test profile has a separate cache identity and runs the three native
 tests before installation and before writing the completion marker.
+A per-identity advisory lock excludes concurrent bootstrap writers;
+a busy cache reports an error instead of overlapping an existing build.
+Inherited C++, Objective-C and Objective-C++ tool settings also contribute
+to the cache identity.
 The normal lightweight build remains unchanged. Managed builds reject
 explicit external GLib include, library and runtime search paths in
 compiler flags and search environments. QEMU-only extra flags are
@@ -4223,7 +4227,7 @@ does not enable TSan integration.
 
 Existing consumers can inform provider admission:
 
-* GLib at 1889ca4387092eaa787f411976afb9b9e8d05c07 requires libffi
+* GLib at 0dea7d82931aa4aef5ba038018e4193e9c050caf requires libffi
   >= 3.0.0 and has its existing Meson provider path.
 * Python at 40d301451ca7c05e6f5e1df2613697e7a4a2549f probes libffi
   including an Apple SDK path. Modules/_ctypes/callbacks.c prepares

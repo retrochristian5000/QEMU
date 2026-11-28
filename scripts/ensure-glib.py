@@ -3,6 +3,8 @@
 """Build the pinned GLib fork as an isolated native QEMU host library."""
 
 import argparse
+from contextlib import contextmanager
+import fcntl
 import hashlib
 import json
 import os
@@ -12,6 +14,7 @@ import re
 import shlex
 import shutil
 import signal
+import stat
 import subprocess
 import sys
 import tempfile
@@ -276,6 +279,26 @@ def wrap_mode(allow_download):
     return "default" if allow_download else "nodownload"
 
 
+@contextmanager
+def cache_lock(work):
+    """Serialize writers for one cache identity without deleting the lock."""
+    lock = work.parent / (work.name + ".lock")
+    fd = os.open(lock, os.O_RDWR | os.O_CREAT | os.O_NOFOLLOW | os.O_NONBLOCK,
+                 0o600)
+    try:
+        if not stat.S_ISREG(os.fstat(fd).st_mode):
+            raise RuntimeError(f"GLib cache lock is not a regular file: {lock}")
+        try:
+            fcntl.flock(fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
+        except BlockingIOError as exc:
+            raise RuntimeError(
+                f"GLib cache is already being prepared: {work}"
+            ) from exc
+        yield
+    finally:
+        os.close(fd)
+
+
 def bootstrap(args):
     if platform.system() not in ("Linux", "Darwin"):
         raise RuntimeError("managed GLib supports native Linux and macOS")
@@ -318,7 +341,7 @@ def bootstrap(args):
     _, gvdb = pinned_source(source, "subprojects/gvdb", git,
                             args.allow_source_init)
     identity = {
-        "schema": 4, "source": str(source), "glib": revision, "gvdb": gvdb,
+        "schema": 5, "source": str(source), "glib": revision, "gvdb": gvdb,
         "host": [platform.system(), platform.machine()],
         "tools": [tool_identity(tool)
                   for tool in (cc, ar, pc, meson, ninja)],
@@ -328,7 +351,8 @@ def bootstrap(args):
         "environment": {key: os.environ.get(key, "") for key in (
             "SDKROOT", "DEVELOPER_DIR", "MACOSX_DEPLOYMENT_TARGET",
             "PKG_CONFIG_PATH", "PKG_CONFIG_LIBDIR", "PKG_CONFIG_SYSROOT_DIR",
-            "CC_LD", "PATH", *SEARCH_ENV)},
+            "CC_LD", "CXX", "CXXFLAGS", "CXX_LD", "OBJC", "OBJCFLAGS",
+            "OBJCXX", "OBJCXXFLAGS", "PATH", *SEARCH_ENV)},
         "inputs": dependency_inputs(pc),
         # Download permission is not a library ABI input. Online and offline
         # runs can reuse an identical validated installation.
@@ -342,6 +366,17 @@ def bootstrap(args):
     for directory in (prefix, work):
         if directory.resolve() != directory:
             raise RuntimeError(f"refusing symlinked GLib build path: {directory}")
+    work.parent.mkdir(parents=True, exist_ok=True)
+    with cache_lock(work):
+        return prepare_cache(args, source, revision, manifest, prefix, work,
+                             cc, ar, pc, meson, ninja, cflags, ldflags,
+                             consumer_cflags, consumer_ldflags, profile,
+                             run_tests)
+
+
+def prepare_cache(args, source, revision, manifest, prefix, work, cc, ar, pc,
+                  meson, ninja, cflags, ldflags, consumer_cflags,
+                  consumer_ldflags, profile, run_tests):
     marker = prefix / ".whp-glib-bootstrap"
     if marker.is_symlink():
         raise RuntimeError(f"refusing symlinked GLib marker: {marker}")
@@ -359,9 +394,8 @@ def bootstrap(args):
             print(f"WHP GLib: reusing {revision[:12]} at {prefix}", file=sys.stderr)
             return prefix
 
-    work.parent.mkdir(parents=True, exist_ok=True)
     prefix.mkdir(parents=True, exist_ok=True)
-    native = work.parent / (key + ".ini")
+    native = work.parent / (work.name + ".ini")
     if native.is_symlink():
         raise RuntimeError(f"refusing symlinked native file: {native}")
     native.write_text(
@@ -392,7 +426,7 @@ def bootstrap(args):
     if run_tests:
         run([*meson, "test", "-C", str(work), "--no-rebuild",
              "--print-errorlogs", "--num-processes", str(jobs),
-             "atomic", "thread"], env=env, capture=False)
+             "atomic", "thread", "convert"], env=env, capture=False)
     run([*meson, "install", "-C", str(work), "--no-rebuild"],
         env=env, capture=False)
     probe(pc, cc, consumer_cflags, consumer_ldflags, prefix)
