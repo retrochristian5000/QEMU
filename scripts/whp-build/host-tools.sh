@@ -5,8 +5,8 @@
 . "$SOURCE_DIR/scripts/whp-build/native-tool-prefix.sh"
 whp_native_tool_prefix_init || exit 1
 
-# build.sh selects and logs the host Git seed once, before its early
-# source updater (or here, when an opt-out/probe skipped that stage).
+# build.sh selects and logs the host Git seed once, before its first
+# Git consumer (source updater, bundled Python, or host tools).
 # Do not select or log a second Git identity: the initial bootstrap zlib
 # must use exactly the same seed as the parent source updater.
 if [ "${WHP_GIT_SEED_SELECTED:-0}" != 1 ] ||
@@ -513,7 +513,12 @@ if [ -n "${SED:-}" ]; then
     SED=$WHP_SED_EXPLICIT
     unset WHP_SED_EXPLICIT
 else
-    WHP_HOST_SED=$("$SOURCE_DIR/seeds/sed.sh" --print-seed 2>/dev/null || true)
+    # The launcher admitted the root sed before Python; do not run a
+    # second provider search after other host-tool PATH promotions.
+    WHP_HOST_SED=${WHP_SED_SEED:-}
+    if [ -z "$WHP_HOST_SED" ]; then
+        WHP_HOST_SED=$("$SOURCE_DIR/seeds/sed.sh" --print-seed 2>/dev/null || true)
+    fi
     if ! whp_sed_usable "$WHP_HOST_SED"; then
         printf 'error: QEMU sed.sh could not resolve a working host sed seed\n' >&2
         exit 1

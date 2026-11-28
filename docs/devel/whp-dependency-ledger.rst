@@ -1751,6 +1751,12 @@ rejects a missing interpreter. Without installed Python, the shell
 normal build still reaches the existing ``scripts/bootstrap-python.sh``.
 That builder owns the pinned Git revision, independent host C/GNU Make
 roots, interpreter install health, cache identity, and rollback.
+When a bundled Python build is needed, the launcher admits and publishes
+its root Git before invoking it, even if source refresh was skipped.
+Host-tool preparation reuses that selection. Installed-Python menuconfig
+still does not require Git. The shared literal seed-bin directory is
+published by the AWK phase only, and the later sed promotion starts from
+the root sed admitted before Python.
 
 Tests: ``scripts/tests/test-python-seed-adapter.bash``, plus the
 existing no-Python menu/fallback and Windows launcher tests. The

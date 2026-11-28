@@ -198,8 +198,8 @@ WHP_SOURCE_UPDATE=$(whp_require_auto_switch WHP_SOURCE_UPDATE "${WHP_SOURCE_UPDA
 
 # The parent updater runs before Python and managed host tools. When a refresh
 # is requested, bind and report the real seed Git before the updater starts.
-# Other builds select it at the later host-tool boundary, leaving standalone
-# shell menuconfig and read-only probes independent of Git.
+# Other builds select it before the first actual Git consumer (bundled
+# Python or host tools), leaving installed-Python menuconfig independent.
 WHP_GIT_SEED_SELECTED=0
 whp_select_seed_git()
 {
@@ -355,8 +355,9 @@ if [ ! -x "$WHP_GREP_BIN_DIR/grep" ]; then
     exit 1
 fi
 WHP_GREP_LOCKED=1
-PATH="$WHP_GREP_BIN_DIR:$PATH"
-export WHP_GREP_SEED WHP_GREP_LOCKED GREP PATH
+# The AWK stage already published this shared bridge directory.
+# Do not prepend it again when admitting another bridge.
+export WHP_GREP_SEED WHP_GREP_LOCKED GREP
 printf 'QEMU seed grep: %s\n' "$WHP_GREP_SEED" >&2
 unset WHP_GREP_BIN_DIR
 
@@ -505,6 +506,12 @@ if [ -z "${PYTHON:-}" ]; then
             'error: Python 3.9 or newer is required, but BOOTSTRAP_PYTHON=0 disables the bundled fallback.' \
             'Install Python, set PYTHON, or enable the WHP Python bootstrap.' >&2
         exit 1
+    fi
+    # Bundled Python consumes pinned Git sources even when the parent
+    # refresh was disabled or skipped. Publish the same root Git that
+    # subsequent host tools will use, rather than rediscovering it.
+    if [ "$WHP_GIT_SEED_SELECTED" != 1 ]; then
+        whp_select_seed_git || exit 1
     fi
     PYTHON=$(/bin/sh "$SOURCE_DIR/scripts/bootstrap-python.sh") || exit 1
     if ! whp_python_usable "$PYTHON"; then
@@ -694,8 +701,8 @@ export BOOTSTRAP_SCCACHE
 # here so its environment mutations preserve dependency order. It prepares the
 # isolated bootstrap-zlib edge before managed Git, while QEMU's artifact zlib,
 # SDL, and JACK remain in the later compiler-selected library phase.
-# If source refresh was disabled or skipped, select Git only when downstream
-# managed host tools actually need it; never probe the seed twice per run.
+# If neither source refresh nor bundled Python needed Git, select it here.
+# Never select a second root Git during the same launcher invocation.
 if [ "$WHP_GIT_SEED_SELECTED" != 1 ]; then
     whp_select_seed_git || exit 1
 fi

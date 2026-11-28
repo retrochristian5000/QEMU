@@ -348,6 +348,57 @@ for tool, helper in (
         if probe not in block:
             raise SystemExit(f"error: forced {tool} guard blocks probe-only mode")
 
+# A skipped parent refresh must not defer Git until after bundled Python.
+# Exercise the actual launcher branch with a fake source tree and counters.
+git_selection = build[build.index("whp_select_seed_git()\n"):
+                      build.index("\nWHP_SOURCE_UPDATE_SKIP=0")]
+python_start = build.index('if [ -z "${PYTHON:-}" ]; then\n    if [ "$BOOTSTRAP_PYTHON" = 0 ]')
+python_end = build.index('\nif [ -z "${PYTHON:-}" ]; then', python_start + 1)
+python_branch = build[python_start:python_end]
+late_start = build.index('if [ "$WHP_GIT_SEED_SELECTED" != 1 ]; then',
+                         build.index("# If neither source refresh"))
+late_end = build.index("\nfi", late_start) + len("\nfi")
+late_branch = build[late_start:late_end]
+import tempfile
+with tempfile.TemporaryDirectory() as directory:
+    fixture = pathlib.Path(directory)
+    (fixture / "seeds").mkdir()
+    (fixture / "scripts").mkdir()
+    seed = fixture / "seeds/git.sh"
+    seed.write_text('#!/bin/sh\nprintf "git\\n" >> "$TRACE"\nprintf "/usr/bin/git\\n"\n',
+                    encoding="utf-8")
+    seed.chmod(0o700)
+    (fixture / "scripts/bootstrap-python.sh").write_text(
+        '#!/bin/sh\n[ "$WHP_GIT_SEED" = /usr/bin/git ] || exit 1\n'
+        'printf "python\\n" >> "$TRACE"\nprintf "/fake/python\\n"\n',
+        encoding="utf-8")
+    for refresh, python, expected in (
+        (0, "", ["git", "python"]),
+        (1, "", ["git", "python"]),
+        (0, "/installed/python", ["git"]),
+    ):
+        trace = fixture / "trace"
+        trace.write_text("", encoding="utf-8")
+        command = (
+            'set -eu\nWHP_GIT_SEED_SELECTED=0\n'
+            'whp_python_usable() { return 0; }\n' + git_selection + '\n'
+            'if [ "$REFRESH" = 1 ]; then whp_select_seed_git; fi\n'
+            + python_branch + '\n' + late_branch + '\n'
+        )
+        env = dict(os.environ, SOURCE_DIR=str(fixture), TRACE=str(trace),
+                   REFRESH=str(refresh), PYTHON=python, BOOTSTRAP_PYTHON="auto")
+        subprocess.run(["/bin/sh", "-c", command], env=env,
+                       text=True, capture_output=True, check=True)
+        if trace.read_text(encoding="utf-8").splitlines() != expected:
+            raise SystemExit("error: Git seed must precede Python and be selected once")
+    if build.index('exec /bin/sh "$WHP_MENUCONFIG_SHELL"') > python_start:
+        raise SystemExit("error: standalone menuconfig must precede Git/Python bootstrap")
+
+require(host_tools, 'WHP_HOST_SED=${WHP_SED_SEED:-}',
+        "reuse of the previously admitted sed")
+if 'PATH="$WHP_GREP_BIN_DIR:$PATH"' in build:
+    raise SystemExit("error: duplicate seed-bin PATH publication")
+
 # CPython is a bootstrap prerequisite for Python-driven host tools.
 # Validate its native archive pair on cache miss before source preparation.
 python_bootstrap = (ROOT / "scripts/bootstrap-python.sh").read_text(
