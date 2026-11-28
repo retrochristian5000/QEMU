@@ -5408,8 +5408,8 @@ from QEMU artifact zlib.
 Cargo and native library closure
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
-The pinned sccacher `Cargo.toml <https://github.com/retrochristian5000/sccacher/blob/335b23185b7ec720321aa0b83aa62fafd3561df4/Cargo.toml>`__ and
-`Cargo.lock <https://github.com/retrochristian5000/sccacher/blob/335b23185b7ec720321aa0b83aa62fafd3561df4/Cargo.lock>`__ expose a registry graph with one explicitly pinned Git crate:
+The pinned sccacher `Cargo.toml <https://github.com/retrochristian5000/sccacher/blob/70b17450e9abcef89335221e93ef6d225f84fc36/Cargo.toml>`__ and
+`Cargo.lock <https://github.com/retrochristian5000/sccacher/blob/70b17450e9abcef89335221e93ef6d225f84fc36/Cargo.lock>`__ expose a registry graph with one explicitly pinned Git crate:
 ``tar`` 0.4.46 from the WHP
 `Rust-TAR fork <https://github.com/retrochristian5000/Rust-TAR/tree/e0127f17781a00f460330373a79196e3b5e30d56>`__
 at revision ``e0127f17781a00f460330373a79196e3b5e30d56``. It replaces registry tar 0.4.45 and
@@ -5464,6 +5464,18 @@ before allocation. The wire format, default startup timeout, Windows
 notification path and Tokio runtime for asynchronous server/compiler I/O
 remain unchanged. Local-cache CI covers socket readiness, timeout, EOF,
 length validation and the listener handshake.
+
+The workspace now patches crates.io libc to the WHP libc-RUST fork at
+stable release 0.2.189 (ef0906e20828777175f65caa7e681a0ce33c559a).
+The fork's main branch declares 1.0.0-alpha.5 and is intentionally not
+selected. A workspace-wide patch keeps direct and transitive 0.2
+consumers on a single resolved package, rather than adding an independent
+Git-only direct libc dependency. The lockfile retains its 538 entries;
+the libc source changes, not its version. Local-cache CI checks the
+resolved fork provider and sccache/TAR dependency edges. Rustix may use
+its raw Linux backend instead of libc. This is a Rust FFI binding
+provider, not a replacement for the host's native C runtime. Initial
+Cargo acquisition also requires the pinned libc Git source.
 
 A lockfile entry alone does not prove feature or target activation.
 Verify the selected graph with cargo tree --locked --no-default-features.
