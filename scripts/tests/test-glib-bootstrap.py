@@ -68,6 +68,13 @@ class BootstrapTest(unittest.TestCase):
             with self.assertRaises(subprocess.CalledProcessError):
                 glib.dependency_inputs(["pkg-config"])
 
+    def test_managed_profile_excludes_optional_instrumentation(self):
+        for option in ("sysprof", "libelf", "oss_fuzz"):
+            self.assertIn(f"-D{option}=disabled", glib.MESON_PROFILE)
+        for option in ("selinux", "libmount", "xattr", "file_monitor_backend"):
+            self.assertFalse(any(arg.startswith(f"-D{option}=")
+                                 for arg in glib.MESON_PROFILE))
+
     def test_wrap_mode_and_cache_reuse(self):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
@@ -88,7 +95,11 @@ class BootstrapTest(unittest.TestCase):
                 setup = run.call_args_list[0].args[0]
                 self.assertIn("--wrap-mode=default", setup)
                 marker = prefix / ".whp-glib-bootstrap"
-                self.assertEqual(json.loads(marker.read_text())["inputs"], inputs)
+                identity = json.loads(marker.read_text())
+                self.assertEqual(identity["inputs"], inputs)
+                self.assertEqual(identity["profile"], list(glib.MESON_PROFILE))
+                for option in identity["profile"]:
+                    self.assertIn(option, setup)
                 args.allow_download = False
                 args.allow_source_init = False
                 run.reset_mock()

@@ -1339,12 +1339,47 @@ For a specifically requested GLib *source* build, trace these roles:
   contains upstream wrap fallbacks for libffi, PCRE2, zlib and GVDB;
   missing wrap sources are possible network/download edges, not permission
   to fetch them silently during offline bootstrap.
-* **Optional/conditional:** gettext/libintl or its fallback, xattr,
-  SELinux, libmount, DTrace/SystemTap, tests, documentation, translations
-  and gobject-introspection.  The latter depends on GLib itself; an
-  initial library bootstrap must break that cycle with
-  ``-Dintrospection=disabled``.  ``-Dtests=false`` and
-  ``-Ddocumentation=false`` avoid unrelated build costs.
+* **Required platform providers:** threads and iconv on non-Windows hosts;
+  libc gettext/intl or a compatible libintl provider, with the pinned
+  proxy-libintl fallback. Disabling NLS only disables translation catalogs,
+  not the runtime gettext interface. Native math, realtime, dynamic loader,
+  resolver and atomic libraries are used as platform/compiler probes require.
+  Darwin builds can use Objective-C/Objective-C++ and Apple Foundation,
+  CoreFoundation, AppKit and Carbon frameworks; these are SDK dependencies,
+  not additional source checkouts. Windows has its own iconv and Win32
+  library paths.
+* **Optional production edges:** Linux libmount >= 2.23 and libselinux >= 2.2,
+  xattr (libc or an external provider), file-monitor backends (including
+  libinotify on supported BSD paths), and Bash completion. Keep GIO's
+  filesystem, security and monitor capabilities under upstream selection
+  rules. Sysprof capture >= 3.38 has a pinned Git fallback; libelf >= 0.8.12
+  or a compatible native libelf supports the gresource inspection utility.
+  Neither is needed by the managed QEMU host profile, which explicitly
+  disables both and OSS-Fuzz. Standalone GLib defaults remain independent.
+* **Build-only/developer edges:** native Python generates headers and GDBus
+  code; preserve the installed gdbus-codegen and its Python modules for
+  QEMU's D-Bus consumers. GObject Introspection >= 1.80 (g-ir-scanner and
+  the pkg-config dependency) itself depends on GLib. Disable GIR generation
+  to break that cycle. GI-Docgen >= 2026.1 has a Git wrap for API reference
+  builds, and docutils (rst2man/rst2html5) serves documentation.
+  Translation generation uses GNU gettext tools; DTrace/SystemTap are
+  optional instrumentation. Tests may use dbus-1 >= 1.2.14, dbus-daemon,
+  xmllint, msgfmt, Valgrind, objcopy, ld, platform libutil and lint tools.
+  The managed profile disables tests, installed tests, documentation,
+  man pages, NLS, DTrace, SystemTap, introspection and OSS-Fuzz.
+* **Remaining compiled components:** ``subdir('girepository')`` is
+  unconditional in the audited GLib fork, even with introspection disabled.
+  It builds the bundled CMPH sources (23 C files), internal static
+  libraries, GIRepository shared library and typelib utilities. These are
+  not additional network dependencies but do add build/install work. No
+  direct QEMU GIRepository package consumer was found in repository search.
+  Do not remove public libraries or tools before a separately validated
+  opt-out exists. GLib also builds GThread, resource/schema compilers,
+  GIO tools and GSettings; these are distinct from optional wrap downloads.
+* **Cache boundary:** the managed helper fingerprints its exact Meson
+  profile. A profile change cannot reuse an installation built with
+  different feature settings. The download permission itself remains
+  independent of the cache identity.
 * **Source-of-truth distinction:** pinned ``meson.build``,
   ``meson.options`` and wrap files outrank legacy ``INSTALL.md``
   wording about a ``configure`` script.

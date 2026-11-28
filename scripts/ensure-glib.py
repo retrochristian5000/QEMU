@@ -18,6 +18,15 @@ ROOT = Path(__file__).resolve().parents[1]
 MODULES = ("glib-2.0", "gobject-2.0", "gio-2.0", "gio-unix-2.0",
            "gmodule-2.0", "gmodule-export-2.0", "gmodule-no-export-2.0")
 INPUTS = ("libffi >= 3.0.0", "libpcre2-8 >= 10.32", "zlib")
+# Keep the optional host-tool profile and its cache identity in one place.
+# Do not disable GIO filesystem/security backends or public core APIs.
+MESON_PROFILE = (
+    "--default-library=shared", "--buildtype=release",
+    "-Dtests=false", "-Dinstalled_tests=false", "-Ddocumentation=false",
+    "-Dintrospection=disabled", "-Dman-pages=disabled", "-Dnls=disabled",
+    "-Ddtrace=disabled", "-Dsystemtap=disabled", "-Dmultiarch=false",
+    "-Dsysprof=disabled", "-Dlibelf=disabled", "-Doss_fuzz=disabled",
+)
 PROBE = r"""
 #define _GNU_SOURCE
 #include <glib.h>
@@ -212,7 +221,7 @@ def bootstrap(args):
     _, gvdb = pinned_source(source, "subprojects/gvdb", git,
                             args.allow_source_init)
     identity = {
-        "schema": 2, "source": str(source), "glib": revision, "gvdb": gvdb,
+        "schema": 3, "source": str(source), "glib": revision, "gvdb": gvdb,
         "host": [platform.system(), platform.machine()],
         "tools": [tool_identity(tool)
                   for tool in (cc, ar, pc, meson, ninja)],
@@ -224,7 +233,7 @@ def bootstrap(args):
         "inputs": dependency_inputs(pc),
         # Download permission is not a library ABI input. Online and offline
         # runs can reuse an identical validated installation.
-        "policy": "shared,meson-fallbacks,no-tests,no-docs,no-introspection",
+        "profile": list(MESON_PROFILE),
     }
     manifest = json.dumps(identity, sort_keys=True, indent=2) + "\n"
     key = hashlib.sha256(manifest.encode()).hexdigest()[:24]
@@ -275,11 +284,7 @@ def bootstrap(args):
           f"(wrap-mode={mode})", file=sys.stderr)
     run([*setup, str(work), str(source), "--native-file", str(native),
          "--prefix", str(prefix), "--libdir", "lib", "--bindir", "bin",
-         "--default-library=shared", "--buildtype=release",
-         f"--wrap-mode={mode}", "-Dtests=false", "-Dinstalled_tests=false",
-         "-Ddocumentation=false", "-Dintrospection=disabled",
-         "-Dman-pages=disabled", "-Dnls=disabled", "-Ddtrace=disabled",
-         "-Dsystemtap=disabled", "-Dmultiarch=false"], env=env, capture=False)
+         f"--wrap-mode={mode}", *MESON_PROFILE], env=env, capture=False)
     jobs = max(1, int(os.environ.get("JOBS") or min(os.cpu_count() or 1, 8)))
     run([*ninja, "-C", str(work), "-j", str(jobs)], env=env, capture=False)
     run([*meson, "install", "-C", str(work), "--no-rebuild"],
