@@ -113,6 +113,22 @@ static inline gpointer g_memdup2_qemu(gconstpointer mem, gsize byte_size)
 }
 #define g_memdup2(m, s) g_memdup2_qemu(m, s)
 
+/*
+ * GLib 2.70 renamed g_spawn_check_exit_status() to clarify that its
+ * argument is a wait status, not an exit code. Keep the 2.66 baseline.
+ */
+static inline gboolean
+g_spawn_check_wait_status_qemu(gint wait_status, GError **error)
+{
+#if GLIB_CHECK_VERSION(2, 70, 0)
+    return g_spawn_check_wait_status(wait_status, error);
+#else
+    return g_spawn_check_exit_status(wait_status, error);
+#endif
+}
+#define g_spawn_check_wait_status(status, err) \
+    g_spawn_check_wait_status_qemu(status, err)
+
 static inline bool
 qemu_g_test_slow(void)
 {
