@@ -239,6 +239,17 @@ validate_saved_configuration()
             'Cannot save: QEMU_TSAN=y conflicts with QEMU_ASAN=y or QEMU_UBSAN=y' >&2
         return 1
     fi
+    linker=$(menu_value_or_default QEMU_HOST_LINKER auto)
+    mold_policy=$(menu_value_or_default BOOTSTRAP_MOLD auto)
+    case "$linker:$mold_policy" in
+        system:y|lld:y)
+            printf 'Cannot save: QEMU_HOST_LINKER=%s conflicts with BOOTSTRAP_MOLD=y\n' \
+                "$linker" >&2
+            printf '%s\n' \
+                'Select auto or n for managed mold, or select mold or auto as linker.' >&2
+            return 1
+            ;;
+    esac
     if [ "$lto" = n ] && [ "$lto_mode" != auto ]; then
         printf 'Cannot save: QEMU_HOST_LTO_MODE=%s conflicts with QEMU_HOST_LTO=n\n' \
             "$lto_mode" >&2
