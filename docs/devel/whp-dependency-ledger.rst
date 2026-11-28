@@ -5408,8 +5408,8 @@ from QEMU artifact zlib.
 Cargo and native library closure
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
-The pinned sccacher `Cargo.toml <https://github.com/retrochristian5000/sccacher/blob/e76c5734f5633c56b5d954ec0883169f6a08401a/Cargo.toml>`__ and
-`Cargo.lock <https://github.com/retrochristian5000/sccacher/blob/e76c5734f5633c56b5d954ec0883169f6a08401a/Cargo.lock>`__ expose a registry graph with two explicitly pinned Git crates (tar and libc).
+The pinned sccacher `Cargo.toml <https://github.com/retrochristian5000/sccacher/blob/8b2307e9adf49d7cac24de88704d3505f2d3d7b3/Cargo.toml>`__ and
+`Cargo.lock <https://github.com/retrochristian5000/sccacher/blob/8b2307e9adf49d7cac24de88704d3505f2d3d7b3/Cargo.lock>`__ expose a registry graph with two explicitly pinned Git crates (tar and libc).
 ``tar`` 0.4.46 comes from the WHP
 `Rust-TAR fork <https://github.com/retrochristian5000/Rust-TAR/tree/e0127f17781a00f460330373a79196e3b5e30d56>`__
 at revision ``e0127f17781a00f460330373a79196e3b5e30d56``. It replaces registry tar 0.4.45 and
@@ -5451,7 +5451,19 @@ si_code using bounded stack storage before redelivery. Other Unix targets
 retain the one-argument callback. The SDK siginfo regression checks
 size, alignment, public field offsets and a C-initialized sample,
 including libc's opaque-tail si_value accessor. It does not assume
-sender or fault-address fields are valid for every signal. The diagnostic explicitly
+sender or fault-address fields are valid for every signal.
+Darwin machine-context diagnostics inspect only the callback's ucontext
+metadata (uc_mcsize and uc_mcontext), classifying missing, misaligned,
+undersized, base-sized and extended contexts. No saved machine-register
+values are read, changed or retained; a base-sized label is not a proof
+of pointer validity. The SDK regression compares ucontext and mcontext
+size, alignment and offsets, including ARM thread, exception and NEON
+state and Intel thread, exception and floating-point state. On ARM64 it
+also compares the SDK's opaque pointer-field mode; this is a layout
+check, not an ARM64e pointer-authentication execution test. Extended
+Intel context variants are not treated as base register layouts.
+Existing runtime handlers remain preserved; the stable libc source
+revision and Cargo lockfile are unchanged. The diagnostic explicitly
 restores SIG_DFL and re-delivers the signal, so an externally raised signal
 is not swallowed. Re-delivery can lose original siginfo. No mutable global
 handler records are needed. Startup is the sole registration boundary.
