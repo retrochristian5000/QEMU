@@ -1443,6 +1443,17 @@ For an explicit fork build from the normal entry point::
 
   BOOTSTRAP_GLIB=1 MACOS_ENABLE_GTK=0 ./build.sh
 
+For a diagnostic build with GLib's atomic and thread tests enabled::
+
+  BOOTSTRAP_GLIB=1 WHP_GLIB_TESTS=1 MACOS_ENABLE_GTK=0 ./build.sh
+
+The test profile has a separate cache identity and runs the two native
+tests before installation and before writing the completion marker.
+The normal lightweight build remains unchanged. A directly signaled
+child or status 139 (possible wrapped SIGSEGV) aborts provider fallback
+and cache repair, reporting the failed command; ordinary probe failures
+retain the previous recovery behavior.
+
 Or from an existing native configured build directory, run configure
 with its normal arguments and ``BOOTSTRAP_GLIB=1``. GTK auto-selection is
 disabled when using the private fork; explicitly enabled GTK is rejected

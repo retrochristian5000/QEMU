@@ -10,6 +10,7 @@ from pathlib import Path
 import platform
 import shlex
 import shutil
+import signal
 import subprocess
 import sys
 import tempfile
@@ -69,6 +70,31 @@ def run(command, *, env=None, capture=True):
     return result.stdout.strip() if capture else ""
 
 
+def is_signal_failure(exc):
+    return isinstance(exc, subprocess.CalledProcessError) and (
+        exc.returncode < 0 or exc.returncode == 128 + signal.SIGSEGV
+    )
+
+
+def describe_failure(exc):
+    if not isinstance(exc, subprocess.CalledProcessError):
+        return str(exc)
+    argv = exc.cmd
+    command_text = argv if isinstance(argv, str) else shlex.join(argv)
+    if exc.returncode < 0:
+        number = -exc.returncode
+        try:
+            name = signal.Signals(number).name
+        except ValueError:
+            name = "unknown signal"
+        status = f"terminated by signal {number} ({name})"
+    elif exc.returncode == 128 + signal.SIGSEGV:
+        status = f"exited with status {exc.returncode} (possible wrapped SIGSEGV)"
+    else:
+        status = f"exited with status {exc.returncode}"
+    return f"{command_text}: {status}"
+
+
 def command(value):
     argv = shlex.split(value)
     if not argv:
@@ -86,7 +112,9 @@ def tool_identity(tool):
     stat = executable.stat()
     try:
         version = run([*tool, "--version"])
-    except subprocess.CalledProcessError:
+    except subprocess.CalledProcessError as exc:
+        if is_signal_failure(exc):
+            raise
         version = ""
     return {
         "argv": tool, "path": str(executable), "size": stat.st_size,
@@ -204,12 +232,22 @@ def bootstrap(args):
     pc = command(args.pkg_config)
     cflags = shlex.split(args.cflags) + shlex.split(os.environ.get("CPPFLAGS", ""))
     ldflags = shlex.split(args.ldflags)
+    test_setting = os.environ.get("WHP_GLIB_TESTS", "0")
+    if test_setting not in ("0", "1"):
+        raise RuntimeError("WHP_GLIB_TESTS must be 0 or 1")
+    run_tests = test_setting == "1"
+    if run_tests and args.mode != "1":
+        raise RuntimeError("WHP_GLIB_TESTS=1 requires BOOTSTRAP_GLIB=1")
+    profile = tuple("-Dtests=true" if run_tests and arg == "-Dtests=false"
+                    else arg for arg in MESON_PROFILE)
     if args.mode == "auto":
         try:
             probe(pc, cc, cflags, ldflags)
-        except (OSError, RuntimeError, subprocess.CalledProcessError):
+        except (OSError, RuntimeError, subprocess.CalledProcessError) as exc:
+            if is_signal_failure(exc):
+                raise
             print("WHP GLib: installed provider failed native probe; "
-                  "trying pinned fork", file=sys.stderr)
+                  f"trying pinned fork: {describe_failure(exc)}", file=sys.stderr)
         else:
             print("WHP GLib: installed provider is usable", file=sys.stderr)
             return None
@@ -233,7 +271,7 @@ def bootstrap(args):
         "inputs": dependency_inputs(pc),
         # Download permission is not a library ABI input. Online and offline
         # runs can reuse an identical validated installation.
-        "profile": list(MESON_PROFILE),
+        "profile": list(profile),
     }
     manifest = json.dumps(identity, sort_keys=True, indent=2) + "\n"
     key = hashlib.sha256(manifest.encode()).hexdigest()[:24]
@@ -249,9 +287,12 @@ def bootstrap(args):
     if marker.is_file() and marker.read_text(encoding="utf-8") == manifest:
         try:
             probe(pc, cc, cflags, ldflags, prefix)
-        except (OSError, RuntimeError, subprocess.CalledProcessError):
+        except (OSError, RuntimeError, subprocess.CalledProcessError) as exc:
+            if is_signal_failure(exc):
+                raise
             print("WHP GLib: cached installation failed validation; "
-                  "repairing the existing build", file=sys.stderr)
+                  f"repairing the existing build: {describe_failure(exc)}",
+                  file=sys.stderr)
             marker.unlink()
         else:
             print(f"WHP GLib: reusing {revision[:12]} at {prefix}", file=sys.stderr)
@@ -284,9 +325,13 @@ def bootstrap(args):
           f"(wrap-mode={mode})", file=sys.stderr)
     run([*setup, str(work), str(source), "--native-file", str(native),
          "--prefix", str(prefix), "--libdir", "lib", "--bindir", "bin",
-         f"--wrap-mode={mode}", *MESON_PROFILE], env=env, capture=False)
+         f"--wrap-mode={mode}", *profile], env=env, capture=False)
     jobs = max(1, int(os.environ.get("JOBS") or min(os.cpu_count() or 1, 8)))
     run([*ninja, "-C", str(work), "-j", str(jobs)], env=env, capture=False)
+    if run_tests:
+        run([*meson, "test", "-C", str(work), "--no-rebuild",
+             "--print-errorlogs", "--num-processes", str(jobs),
+             "atomic", "thread"], env=env, capture=False)
     run([*meson, "install", "-C", str(work), "--no-rebuild"],
         env=env, capture=False)
     probe(pc, cc, cflags, ldflags, prefix)
@@ -316,7 +361,8 @@ def main():
     try:
         prefix = bootstrap(parser.parse_args())
     except (OSError, RuntimeError, ValueError, subprocess.CalledProcessError) as exc:
-        print(f"error: WHP GLib bootstrap failed: {exc}", file=sys.stderr)
+        print(f"error: WHP GLib bootstrap failed: {describe_failure(exc)}",
+              file=sys.stderr)
         if isinstance(exc, subprocess.CalledProcessError) and exc.stderr:
             print(exc.stderr.strip(), file=sys.stderr)
         return 1

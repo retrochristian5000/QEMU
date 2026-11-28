@@ -4,6 +4,7 @@
 import argparse
 import importlib.util
 import json
+import signal
 import subprocess
 from pathlib import Path
 import tempfile
@@ -18,6 +19,45 @@ spec.loader.exec_module(glib)
 
 
 class BootstrapTest(unittest.TestCase):
+    def test_signal_diagnostics(self):
+        direct = subprocess.CalledProcessError(-signal.SIGSEGV,
+                                               ["clang", "file name.c"])
+        self.assertTrue(glib.is_signal_failure(direct))
+        self.assertIn("signal 11 (SIGSEGV)", glib.describe_failure(direct))
+        self.assertIn("'file name.c'", glib.describe_failure(direct))
+        wrapped = subprocess.CalledProcessError(128 + signal.SIGSEGV,
+                                                ["sccache", "clang"])
+        self.assertTrue(glib.is_signal_failure(wrapped))
+        self.assertIn("possible wrapped SIGSEGV", glib.describe_failure(wrapped))
+        ordinary = subprocess.CalledProcessError(1, ["cc"])
+        self.assertFalse(glib.is_signal_failure(ordinary))
+        self.assertIn("status 1", glib.describe_failure(ordinary))
+
+    def test_auto_probe_signal_does_not_fall_back(self):
+        args = argparse.Namespace(mode="auto", cc="cc", ar="ar",
+                                  pkg_config="pkg-config", cflags="", ldflags="")
+        for code in (-signal.SIGSEGV, 128 + signal.SIGSEGV):
+            with self.subTest(code=code), \
+                 mock.patch.dict(glib.os.environ, {"WHP_GLIB_TESTS": "0"}), \
+                 mock.patch.object(glib.platform, "system", return_value="Darwin"), \
+                 mock.patch.object(glib, "command", side_effect=lambda v: [v]), \
+                 mock.patch.object(glib, "probe", side_effect=
+                                   subprocess.CalledProcessError(code, ["cc"])), \
+                 mock.patch.object(glib, "pinned_source") as pinned:
+                with self.assertRaises(subprocess.CalledProcessError):
+                    glib.bootstrap(args)
+                pinned.assert_not_called()
+
+    def test_tool_identity_does_not_hide_signal(self):
+        with tempfile.TemporaryDirectory() as directory:
+            tool = Path(directory) / "clang"
+            tool.touch()
+            with mock.patch.object(glib, "run", side_effect=
+                                   subprocess.CalledProcessError(-signal.SIGSEGV,
+                                                                 [str(tool)])):
+                with self.assertRaises(subprocess.CalledProcessError):
+                    glib.tool_identity([str(tool)])
+
     def test_apple_ar_without_version_option(self):
         import subprocess
         with tempfile.TemporaryDirectory() as directory:
@@ -84,7 +124,8 @@ class BootstrapTest(unittest.TestCase):
                 meson="meson", ninja="ninja", cflags="", ldflags="",
             )
             inputs = [{"requirement": "zlib", "pkg_config": "unavailable"}]
-            with mock.patch.object(glib.platform, "system", return_value="Darwin"), \
+            with mock.patch.dict(glib.os.environ, {"WHP_GLIB_TESTS": "0"}), \
+                 mock.patch.object(glib.platform, "system", return_value="Darwin"), \
                  mock.patch.object(glib, "command", side_effect=lambda v: [v]), \
                  mock.patch.object(glib, "tool_identity", side_effect=lambda v: v), \
                  mock.patch.object(glib, "pinned_source", return_value=(root, "a" * 40)), \
@@ -105,6 +146,27 @@ class BootstrapTest(unittest.TestCase):
                 run.reset_mock()
                 self.assertEqual(glib.bootstrap(args), prefix)
                 run.assert_not_called()
+                with mock.patch.object(glib, "probe", side_effect=
+                                       subprocess.CalledProcessError(-signal.SIGSEGV,
+                                                                     ["probe"])):
+                    with self.assertRaises(subprocess.CalledProcessError):
+                        glib.bootstrap(args)
+                self.assertTrue(marker.is_file())
+                run.assert_not_called()
+                with mock.patch.dict(glib.os.environ, {"WHP_GLIB_TESTS": "1"}):
+                    tested_prefix = glib.bootstrap(args)
+                self.assertNotEqual(tested_prefix, prefix)
+                tested_identity = json.loads(
+                    (tested_prefix / ".whp-glib-bootstrap").read_text())
+                self.assertIn("-Dtests=true", tested_identity["profile"])
+                calls = [call.args[0] for call in run.call_args_list]
+                test_call = next(call for call in calls if call[:2] ==
+                                 ["meson", "test"])
+                self.assertEqual(test_call[-2:], ["atomic", "thread"])
+                self.assertLess(calls.index(test_call),
+                                next(i for i, call in enumerate(calls)
+                                     if call[:2] == ["meson", "install"]))
+                run.reset_mock()
                 # Invalidate only the fixture's completion marker to force a
                 # new setup with downloads disabled.
                 marker.unlink()
