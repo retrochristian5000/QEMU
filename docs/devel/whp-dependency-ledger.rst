@@ -5345,8 +5345,8 @@ from QEMU artifact zlib.
 Cargo and native library closure
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
-The pinned sccacher `Cargo.toml <https://github.com/retrochristian5000/sccacher/blob/96581b770a47d2de67e94229ff8baf2943e29f91/Cargo.toml>`__ and
-`Cargo.lock <https://github.com/retrochristian5000/sccacher/blob/96581b770a47d2de67e94229ff8baf2943e29f91/Cargo.lock>`__ expose a non-Git graph.
+The pinned sccacher `Cargo.toml <https://github.com/retrochristian5000/sccacher/blob/cbef7aeb85f97edbe57c280ff88aef8a48890ba6/Cargo.toml>`__ and
+`Cargo.lock <https://github.com/retrochristian5000/sccacher/blob/cbef7aeb85f97edbe57c280ff88aef8a48890ba6/Cargo.lock>`__ expose a non-Git graph.
 QEMU's ``scripts/ensure-sccache.py`` invokes Cargo with --locked,
 --release and --no-default-features for the local binary. The native
 compilation edges remain:
