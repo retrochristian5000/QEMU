@@ -5,6 +5,7 @@ on:
     branches: [master]
     paths:
       - 'build.sh'
+      - 'scripts/tests/test-build-launcher-permissions.sh'
       - 'seeds/git.sh'
       - 'seeds/cmake.sh'
       - 'scripts/whp-build/update-source.sh'
@@ -37,6 +38,7 @@ on:
   pull_request:
     paths:
       - 'build.sh'
+      - 'scripts/tests/test-build-launcher-permissions.sh'
       - 'seeds/git.sh'
       - 'seeds/cmake.sh'
       - 'scripts/whp-build/update-source.sh'
@@ -75,6 +77,8 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+      - name: Verify public build launcher permissions
+        run: sh scripts/tests/test-build-launcher-permissions.sh
       - name: Verify bootstrap phase order
         run: python3 scripts/tests/test-bootstrap-phase-order.py
       - name: Validate CMake seed and real downstream configure
