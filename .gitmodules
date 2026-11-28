@@ -179,6 +179,12 @@
 	branch = main
 	shallow = true
 
+[submodule "toolchains/gettext"]
+	path = toolchains/gettext
+	url = https://github.com/retrochristian5000/GNU-gettext.git
+	branch = master
+	shallow = true
+
 [submodule "toolchains/cmake"]
 	path = toolchains/cmake
 	url = https://github.com/retrochristian5000/CMake.git

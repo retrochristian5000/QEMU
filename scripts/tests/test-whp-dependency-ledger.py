@@ -39,7 +39,22 @@ def main() -> int:
             or meson.get("branch") != "master"):
         raise SystemExit("error: WHP Meson submodule points to an unexpected source")
 
+    gettext_section = 'submodule "toolchains/gettext"'
+    if gettext_section not in parser:
+        raise SystemExit("error: pinned GNU gettext source is not registered")
+    gettext = parser[gettext_section]
+    if (gettext.get("path") != "toolchains/gettext"
+            or gettext.get("url")
+            != "https://github.com/retrochristian5000/GNU-gettext.git"
+            or gettext.get("branch") != "master"):
+        raise SystemExit("error: unexpected GNU gettext source provider")
+
     required_contracts = {
+        "optional GNU gettext source boundary": (
+            "GNU gettext source boundary", "toolchains/gettext",
+            "autopull.sh", "autogen.sh", "AUTOPOINT",
+            "does not make gettext a universal build prerequisite",
+        ),
         "pinned Meson source boundary": (
             "Pinned Meson source boundary",
             "toolchains/meson",

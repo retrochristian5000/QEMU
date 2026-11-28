@@ -516,11 +516,45 @@ by the WHP account.
      - yes
      - Managed GNU M4 source; Autoconf consumes a validated GNU M4
        provider. Retain the independent seed until promotion.
+   * - ``toolchains/gettext``
+     - ``GNU-gettext``
+     - yes
+     - Pinned optional host-tool source; future managed provider for
+       autopoint, msgfmt, msgmerge and xgettext. Keep installed gettext
+       providers until a native bootstrap and consumer probes are validated.
    * - ``tests/whp-drivers``
      - ``WHP-Drivers``
      - yes
      - Conditional driver integration and validation source; not a
        mandatory host-tool or runtime dependency.
+
+GNU gettext source boundary
+--------------------------
+
+The pinned ``toolchains/gettext`` checkout is a maintainer source tree,
+not a release tarball. It does not include a generated top-level configure.
+The upstream ``autopull.sh`` stages gnulib and additional tree-sitter sources;
+``autogen.sh`` generates Autotools inputs and can modify the gnulib checkout.
+Do not invoke these scripts in the developer worktree or assume that QEMU
+configure download permission authorizes every auxiliary fetch. A future
+managed bootstrap must stage an isolated source copy, validate nested pins
+and secure transport (including the gnulib URL), and use independent host
+Autoconf, Automake, M4, sed, Make and other required tools. The new gitlink
+is lazy and does not make gettext a universal build prerequisite.
+
+GNU Make and GNU sed already consume a selected ``AUTOPOINT``; QEMU GTK
+localization uses ``xgettext`` and the Meson i18n module. GLib may need
+libintl separately: validating the host gettext executables does not prove
+that a target library has the required ABI. Do not promote an untested
+gettext binary or libintl into those consumers.
+
+To acquire just the recorded gettext source when needed::
+
+  git submodule update --init --checkout -- toolchains/gettext
+
+This initializes the parent gitlink without recursively downloading auxiliary
+sources or changing the tracked revision. A full native gettext build is a
+separate, conditional stage.
 
 Header provenance and dependency-interface checks
 -----------------------------------------------
