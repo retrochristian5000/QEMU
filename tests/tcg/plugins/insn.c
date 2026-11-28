@@ -21,6 +21,7 @@ static qemu_plugin_u64 insn_count;
 static bool do_inline;
 static bool do_size;
 static bool do_trace;
+static bool xed_trace;
 static GArray *sizes;
 
 typedef struct {
@@ -145,6 +146,26 @@ static void vcpu_tb_trans(struct qemu_plugin_tb *tb, void *userdata)
 
     for (i = 0; i < n; i++) {
         struct qemu_plugin_insn *insn = qemu_plugin_tb_get_insn(tb, i);
+
+        if (xed_trace) {
+            uint8_t bytes[15];
+            size_t len = qemu_plugin_insn_size(insn);
+            size_t got = len <= sizeof(bytes) ?
+                qemu_plugin_insn_data(insn, bytes, len) : 0;
+            g_autoptr(GString) line = g_string_new(NULL);
+
+            g_string_append_printf(line, "XEDTRACE %" PRIx64 " %zu ",
+                                   qemu_plugin_insn_vaddr(insn), len);
+            if (got != len || !got) {
+                g_string_append(line, "unavailable");
+            } else {
+                for (size_t j = 0; j < got; j++) {
+                    g_string_append_printf(line, "%02x", (unsigned)bytes[j]);
+                }
+            }
+            g_string_append_c(line, '\n');
+            qemu_plugin_outs(line->str);
+        }
 
         if (do_inline) {
             qemu_plugin_register_vcpu_insn_exec_inline_per_vcpu(
@@ -279,6 +300,12 @@ QEMU_PLUGIN_EXPORT int qemu_plugin_install(qemu_plugin_id_t id,
                 fprintf(stderr, "boolean argument parsing failed: %s\n", opt);
                 return -1;
             }
+        } else if (g_strcmp0(tokens[0], "xed-trace") == 0) {
+            if (!tokens[1] ||
+                !qemu_plugin_bool_parse(tokens[0], tokens[1], &xed_trace)) {
+                fprintf(stderr, "invalid xed-trace boolean: %s\n", opt);
+                return -1;
+            }
         } else if (g_strcmp0(tokens[0], "match") == 0) {
             parse_match(tokens[1]);
         } else if (g_strcmp0(tokens[0], "trace") == 0) {
@@ -290,6 +317,12 @@ QEMU_PLUGIN_EXPORT int qemu_plugin_install(qemu_plugin_id_t id,
             fprintf(stderr, "option parsing failed: %s\n", opt);
             return -1;
         }
+    }
+
+    if (xed_trace && strcmp(info->target_name, "i386") &&
+        strcmp(info->target_name, "x86_64")) {
+        fprintf(stderr, "xed-trace requires an x86 target\n");
+        return -1;
     }
 
     insn_count = qemu_plugin_scoreboard_u64(

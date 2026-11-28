@@ -42,3 +42,41 @@ sha1
 
 hello-i386
 ----------
+
+Intel XED reference checks
+--------------------------
+
+The external host tool in tests/xed is optional. It links an independently
+installed, native Intel XED static kit; it does not link QEMU, and the QEMU
+instruction plugin does not link XED. See https://github.com/intelxed/xed
+for the kit build instructions (including the separate mbuild dependency).
+
+From a configured QEMU build directory:
+
+    make check-xed XED_KIT=/absolute/path/to/xed-kit
+
+This checks instruction lengths, operand/address widths and unsigned
+immediates against fixed reference cases. A missing kit is an error when
+the target is explicitly invoked, not a normal build dependency.
+
+To compare TCG's reported translation lengths with XED, build the test
+plugins (make test-plugins), then run a controlled x86 guest with:
+
+    -plugin tests/tcg/plugins/libinsn.so,xed-trace=on -d plugin -D xed-trace.log
+
+Use the plugin's actual built filename on the host (e.g. libinsn.dylib on
+some macOS configurations). The plugin records guest instruction bytes,
+linear PC and length; it does not claim that each translation executed.
+
+    make check-xed XED_KIT=/absolute/path/to/xed-kit \
+        XED_TRACE=xed-trace.log XED_MODE=legacy32 XED_STACK=32 \
+        XED_CHIP=pentium_mmx
+
+Select real16, legacy16 or legacy32 and a stack width of 16 or 32.
+The chip is pentium or pentium_mmx. Only compare a trace (or a deliberately
+selected subset of records) from a known uniform code/stack mode; SeaBIOS
+switches modes and the plugin does not infer them. XED failures, including
+truncated instruction bytes and instructions that should fault on the
+chosen chip, are candidates for investigation, not proof of a TCG bug.
+This checks decoder metadata, not MMU accesses, segment limits or actual
+instruction execution. No XED downloads are performed by the build.

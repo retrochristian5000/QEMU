@@ -20,6 +20,7 @@ check-help:
 ifneq ($(filter $(all-check-targets), check-softfloat),)
 	@echo " $(MAKE) check-softfloat               Run FPU emulation tests"
 	@echo " $(MAKE) check-tcg                     Run TCG tests"
+	@echo " $(MAKE) check-xed XED_KIT=/path/to/kit  Run standalone Intel XED checks"
 	@echo " $(MAKE) run-tcg-tests-TARGET          Run TCG tests for a given target"
 	@echo
 	@echo "The variable TCG_TEST_FILTER will select the subset of matching tests."
@@ -140,6 +141,27 @@ check-functional:
 
 .PHONY: check-func check-func-quick
 check-func check-func-quick:
+
+# XED is an external host-side reference, never linked into QEMU or a plugin.
+XED_CC ?= cc
+XED_MODE ?= legacy32
+XED_STACK ?= 32
+XED_CHIP ?= pentium_mmx
+
+.PHONY: check-xed
+check-xed:
+	@test -n "$(XED_KIT)" && test -f "$(XED_KIT)/include/xed/xed-interface.h" && \
+	    test -f "$(XED_KIT)/lib/libxed.a" || { \
+	    echo "Set XED_KIT to a native Intel XED static installation kit." >&2; exit 1; }
+	@mkdir -p "$(BUILD_DIR)/tests/xed"
+	$(XED_CC) -std=c11 -Wall -Wextra -Werror -O2 \
+	    -I"$(XED_KIT)/include/xed" \
+	    "$(SRC_PATH)/tests/xed/xed-reference.c" \
+	    "$(XED_KIT)/lib/libxed.a" -o "$(BUILD_DIR)/tests/xed/xed-reference"
+	"$(BUILD_DIR)/tests/xed/xed-reference" --selftest
+	@if test -n "$(XED_TRACE)"; then \
+	    "$(BUILD_DIR)/tests/xed/xed-reference" "$(XED_MODE)" "$(XED_STACK)" "$(XED_CHIP)" < "$(XED_TRACE)"; \
+	fi
 
 # Consolidated targets
 
