@@ -326,10 +326,11 @@ static void test_storage_controller_descriptions(void)
 
 static void test_device_help_cli(void)
 {
-    const char *binary = qtest_qemu_binary("QTEST_QEMU_BINARY");
-    char *args[] = {
-        (char *)binary, "-device", "help", NULL,
-    };
+    g_autofree char *binary = g_strdup(qtest_qemu_binary("QTEST_QEMU_BINARY"));
+    char device_arg[] = "-device";
+    char help_arg[] = "help";
+    char text_help_arg[] = "help,window=off";
+    char *args[] = { binary, device_arg, help_arg, NULL };
     g_autofree char *plain = NULL;
     g_autofree char *explicit_text = NULL;
     g_autoptr(GError) err = NULL;
@@ -343,7 +344,7 @@ static void test_device_help_cli(void)
     g_assert_nonnull(strstr(plain, " devices:\n"));
     g_assert_nonnull(strstr(plain, "name \""));
 
-    args[2] = "help,window=off";
+    args[2] = text_help_arg;
     g_assert_true(g_spawn_sync(NULL, args, NULL, G_SPAWN_SEARCH_PATH,
                                NULL, NULL, &explicit_text, NULL,
                                &status, &err));
