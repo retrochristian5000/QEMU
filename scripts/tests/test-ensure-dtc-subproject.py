@@ -290,6 +290,8 @@ class EnsureDTCTest(unittest.TestCase):
               "WHP_SOURCE_UPDATE": "auto"}, "eligible"),
             ({"QEMU_FDT_MODE": "system"}, "skipped (QEMU_FDT_MODE=system)"),
             ({"QEMU_FDT_MODE": "disabled"}, "skipped (QEMU_FDT_MODE=disabled)"),
+            ({"QEMU_DOWNLOAD_DEPENDENCIES": "0", "WHP_DTC_FETCH_MISSING": "1"},
+             "skipped (QEMU_DOWNLOAD_DEPENDENCIES=0)"),
             ({"WHP_SOURCE_UPDATE": "0"},
              "skipped (WHP_SOURCE_UPDATE=0 and no explicit prefetch)"),
             ({"WHP_SOURCE_UPDATE": "0", "WHP_DTC_FETCH_MISSING": "1"},
@@ -301,6 +303,7 @@ class EnsureDTCTest(unittest.TestCase):
                 clean = {"CI": "false", "WHP_SOURCE_UPDATE_DONE": "0",
                          "WHP_SOURCE_UPDATE": "auto", "QEMU_FDT_MODE": "internal",
                          "WHP_DTC_FETCH_MISSING": "0",
+                         "QEMU_DOWNLOAD_DEPENDENCIES": "1",
                          "WHP_SHELL_PROBE_ONLY": "0",
                          "WHP_PORTABLE_PROBE_ONLY": "0"}
                 with mock.patch.dict(os.environ, {**clean, **env}):
