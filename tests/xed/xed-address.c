@@ -91,6 +91,7 @@ static bool parse_u32(const char *s, uint32_t *value)
  * own access-order contracts and must not be guessed here.
  */
 static bool check_address(const char *hex, uint32_t observed,
+                          unsigned access_bytes, char direction,
                           AddressState *state, xed_machine_mode_enum_t mode,
                           xed_address_width_enum_t stack, xed_chip_enum_t chip)
 {
@@ -114,6 +115,20 @@ static bool check_address(const char *hex, uint32_t observed,
         xed_decoded_inst_number_of_memory_operands(&inst) != 1) {
         fprintf(stderr, "Unsupported MOV address record: %s (%s)\n",
                 hex, xed_error_enum_t2str(err));
+        return false;
+    }
+
+    if (access_bytes &&
+        (xed_decoded_inst_get_memory_operand_length(&inst, 0) != access_bytes ||
+         (direction == 'r' &&
+          !xed_decoded_inst_mem_read(&inst, 0)) ||
+         (direction == 'w' &&
+          !xed_decoded_inst_mem_written(&inst, 0)))) {
+        fprintf(stderr, "%s: observed %c/%u bytes, XED %u bytes "
+                "(read=%u write=%u)\n", hex, direction, access_bytes,
+                xed_decoded_inst_get_memory_operand_length(&inst, 0),
+                (unsigned)xed_decoded_inst_mem_read(&inst, 0),
+                (unsigned)xed_decoded_inst_mem_written(&inst, 0));
         return false;
     }
 
@@ -168,8 +183,9 @@ int xed_ref_compare_addresses(xed_machine_mode_enum_t mode,
     while (fgets(line, sizeof(line), stdin)) {
         AddressState state = {0};
         char *tag, *hex;
-        uint32_t observed;
-        bool valid;
+        uint32_t observed, access_bytes = 0;
+        char direction = 0;
+        bool valid, memory_record;
 
         if (!strchr(line, '\n')) {
             fputs("Incomplete or oversized address record\n", stderr);
@@ -181,8 +197,21 @@ int xed_ref_compare_addresses(xed_machine_mode_enum_t mode,
         }
         records++;
         hex = strtok(NULL, delim);
-        valid = !strcmp(tag, "XEDAGEN") && hex &&
+        memory_record = !strcmp(tag, "XEDMEM");
+        valid = (memory_record || !strcmp(tag, "XEDAGEN")) && hex &&
                 parse_u32(strtok(NULL, delim), &observed);
+        if (valid && memory_record) {
+            char *access;
+            valid = parse_u32(strtok(NULL, delim), &access_bytes) &&
+                    (access_bytes == 1 || access_bytes == 2 ||
+                     access_bytes == 4);
+            access = strtok(NULL, delim);
+            valid = valid && access &&
+                    (!strcmp(access, "r") || !strcmp(access, "w"));
+            if (valid) {
+                direction = access[0];
+            }
+        }
         for (unsigned i = 0; valid && i < GPR_COUNT; i++) {
             valid = parse_u32(strtok(NULL, delim), &state.gpr[i]);
         }
@@ -198,7 +227,8 @@ int xed_ref_compare_addresses(xed_machine_mode_enum_t mode,
             failures++;
             continue;
         }
-        if (!check_address(hex, observed, &state, mode, stack, chip)) {
+        if (!check_address(hex, observed, access_bytes, direction,
+                           &state, mode, stack, chip)) {
             failures++;
         }
     }

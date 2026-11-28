@@ -164,6 +164,8 @@ check-xed:
 	    < "$(SRC_PATH)/tests/xed/address-real16.txt"
 	"$(BUILD_DIR)/tests/xed/xed-reference" --agen legacy32 32 pentium_mmx \
 	    < "$(SRC_PATH)/tests/xed/address-legacy32.txt"
+	"$(BUILD_DIR)/tests/xed/xed-reference" --agen legacy32 32 pentium_mmx \
+	    < "$(SRC_PATH)/tests/xed/memory-legacy32.txt"
 	@if test -n "$(XED_ADDRESS_TRACE)"; then \
 	    "$(BUILD_DIR)/tests/xed/xed-reference" --agen "$(XED_MODE)" "$(XED_STACK)" "$(XED_CHIP)" < "$(XED_ADDRESS_TRACE)"; \
 	fi

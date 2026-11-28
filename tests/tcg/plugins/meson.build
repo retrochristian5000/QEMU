@@ -18,6 +18,9 @@ if get_option('plugins')
     t += shared_module(fs.stem(i), files(i),
                        dependencies: plugins_deps)
   endforeach
+  # Explicitly invoked diagnostic; keep it out of the automatic plugin rotation.
+  t += shared_module('xed-capture', files('../../xed/xed-capture.c'),
+                     dependencies: plugins_deps)
 endif
 if t.length() > 0
   alias_target('test-plugins', t)

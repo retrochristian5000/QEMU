@@ -18,7 +18,7 @@ LDFLAGS=-Wl,-T$(LINK_SCRIPT) -Wl,-melf_i386
 CFLAGS+=-nostdlib -ggdb -O0 $(MINILIB_INC)
 LDFLAGS+=-static -nostdlib $(CRT_OBJS) $(MINILIB_OBJS) -lgcc
 
-TESTS+=$(MULTIARCH_TESTS) register-flags stack-address-wrap
+TESTS+=$(MULTIARCH_TESTS) register-flags stack-address-wrap xed-memory
 EXTRA_RUNS+=$(MULTIARCH_RUNS)
 
 # building head blobs
@@ -35,6 +35,9 @@ register-flags: $(I386_SYSTEM_SRC)/register-flags.c $(LINK_SCRIPT) $(CRT_OBJS) $
 	$(CC) $(CFLAGS) $(EXTRA_CFLAGS) $< -o $@ $(LDFLAGS)
 
 stack-address-wrap: $(I386_SYSTEM_SRC)/stack-address-wrap.S $(LINK_SCRIPT) $(CRT_OBJS) $(MINILIB_OBJS)
+	$(CC) $(CFLAGS) $(EXTRA_CFLAGS) $< -o $@ $(LDFLAGS)
+
+xed-memory: $(I386_SYSTEM_SRC)/xed-memory.S $(LINK_SCRIPT) $(CRT_OBJS) $(MINILIB_OBJS)
 	$(CC) $(CFLAGS) $(EXTRA_CFLAGS) $< -o $@ $(LDFLAGS)
 
 memory: CFLAGS+=-DCHECK_UNALIGNED=1

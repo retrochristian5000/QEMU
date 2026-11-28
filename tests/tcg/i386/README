@@ -113,3 +113,49 @@ the execution-time register or segment state needed by XEDAGEN.
 Supply observed addresses and matching pre-instruction state from a
 controlled guest test or debugger; do not feed a normal XEDTRACE log to
 --agen. These fixed vectors are reference checks, not TCG observations.
+
+Controlled TCG memory capture
+-----------------------------
+
+The GPL-only xed-capture plugin is separate from the XED executable and
+is not included in the automatic plugin test rotation. It captures the
+pre-instruction GPR values and completed memory accesses in an explicitly
+selected short linear-PC range. The controlled xed-memory system test
+uses the existing boot.S flat GDT and exercises SIB, signed displacement,
+16-bit address override, 16-bit operand override and a store.
+
+Build the i386-softmmu guest tests and plugins:
+
+    make build-tcg-tests-i386-softmmu test-plugins
+
+Use nm (or llvm-nm) on tests/tcg/i386-softmmu/xed-memory to find the
+hexadecimal xed_capture_start and xed_capture_end symbols. Supply those
+addresses without a 0x prefix, and use the actual plugin suffix built
+on the host, for example:
+
+    ./qemu-system-i386 -accel tcg -M pc -cpu pentium_mmx -smp 1 \
+        -display none -monitor none -serial none \
+        -device isa-debug-exit,iobase=0xf4,iosize=0x4 \
+        -kernel tests/tcg/i386-softmmu/xed-memory \
+        -plugin tests/tcg/plugins/libxed-capture.so,start=START,end=END \
+        -d plugin -D xed-memory.log
+
+A successful guest exits through the existing boot.S ACPI poweroff path.
+For the controlled test, the log must contain exactly four XEDMEM records
+and no XEDCAPTURE_ERROR records. Then compare:
+
+    make check-xed XED_KIT=/absolute/path/to/xed-kit \
+        XED_ADDRESS_TRACE=xed-memory.log XED_MODE=legacy32 XED_STACK=32
+
+XEDMEM has two additional fields after the observed linear address:
+access width in bytes (hex), and r or w. XED compares the decoded operand
+width and direction as well as the effective address. The existing
+XEDAGEN format remains supported. memory-legacy32.txt contains independent
+fixed fixtures, not a captured execution trace.
+
+The plugin verifies the expected selectors and protected-mode flag but
+cannot read every hidden segment base from the generic plugin API.
+The zero bases are a contract of this specific guest's GDT. Do not use
+this plugin on arbitrary firmware or guests with different descriptors,
+real/unreal modes, or implicit multi-access instructions. The range
+must contain only the explicit scalar MOV accesses under test.
