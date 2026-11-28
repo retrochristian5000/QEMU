@@ -886,6 +886,8 @@ Advanced options (experts only):
   --with-devices-ARCH=NAME override default configs/devices
   --enable-debug           enable common debug build options
   --cpu=CPU                Build for host CPU [$cpu]
+  --enable-download        allow missing QEMU dependencies to be downloaded (default)
+  --disable-download       use locally available QEMU dependencies only
   --disable-containers     don't use containers for cross-building
   --container-command=CMD  which container command to use [autodetect]
   --gdb=GDB-path           gdb to use for gdbstub tests [$gdb_bin]
@@ -2000,7 +2002,13 @@ if test "$skip_meson" = no; then
     meson_reconfigure=--reconfigure
   fi
 
-  test "$download" = "disabled" && meson_option_add "--wrap-mode=nodownload"
+  # Meson retains built-in options across reconfiguration. Explicitly
+  # restore downloads after an earlier offline configuration.
+  if test "$download" = disabled; then
+    meson_option_add "--wrap-mode=nodownload"
+  else
+    meson_option_add "--wrap-mode=default"
+  fi
   test "$default_feature" = no && meson_option_add -Dauto_features=disabled
   # Synchronize both modes on reconfiguration; Meson retains old options.
   if test "$static" = yes; then
