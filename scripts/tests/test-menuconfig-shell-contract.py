@@ -285,6 +285,10 @@ def check():
         # allowing an interactive reset and a subsequent successful save.
         for invalid, diagnostic in (
             ('QEMU_TSAN=y\nQEMU_ASAN=y\n', 'QEMU_TSAN=y'),
+            ('QEMU_HOST_LINKER=lld\nBOOTSTRAP_MOLD=y\n',
+             'QEMU_HOST_LINKER=lld conflicts with BOOTSTRAP_MOLD=y'),
+            ('QEMU_HOST_LINKER=system\nBOOTSTRAP_MOLD=y\n',
+             'QEMU_HOST_LINKER=system conflicts with BOOTSTRAP_MOLD=y'),
             ('QEMU_HOST_LTO=n\nQEMU_HOST_LTO_MODE=full\n',
              'QEMU_HOST_LTO_MODE=full'),
         ):
@@ -300,6 +304,8 @@ def check():
             assert "WHP_CONFIG_VERSION=3\n" in saved
             assert "QEMU_TSAN=y" not in saved
             assert "QEMU_HOST_LTO_MODE=full" not in saved
+            assert "QEMU_HOST_LINKER=auto\n" in saved
+            assert "BOOTSTRAP_MOLD=auto\n" in saved
 
     # The full semantic schema is checked by test-python-menu-fallback.py.
     # This fixture deliberately modifies only an *ephemeral* copy.
