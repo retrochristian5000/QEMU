@@ -35,14 +35,15 @@ BOOTSTRAP_SED|Host features|Bootstrap/use WHP GNU sed|choice|auto|auto,y,n|
 BOOTSTRAP_GIT|Host features|Bootstrap/use WHP Git|choice|auto|auto,y,n|
 BOOTSTRAP_NINJA|Host features|Bootstrap/use WHP Ninja|choice|auto|auto,y,n|
 BOOTSTRAP_CMAKE|Host features|Bootstrap/use WHP CMake|choice|auto|auto,y,n|
+BOOTSTRAP_GLIB|Host features|Bootstrap/use WHP GLib (development)|choice|n|auto,y,n|
 BOOTSTRAP_SDL|Host features|Bootstrap/use WHP SDL3|choice|auto|auto,y,n|
 BOOTSTRAP_JACK|Host features|Bootstrap/use WHP JACK|choice|auto|auto,y,n|
 BOOTSTRAP_ZLIB|Host features|Bootstrap/use WHP zlib|choice|auto|auto,y,n|
 BOOTSTRAP_LIBTOOL|Host features|Bootstrap/use WHP Libtool|choice|auto|auto,y,n|
 BOOTSTRAP_LIBISOFS|Host features|Bootstrap/use WHP libisofs|choice|auto|auto,y,n|
 COMPILER_CACHE|Host features|Compiler cache|choice|auto|auto,ccache,sccache,managed-sccache,none|
-QEMU_HOST_LINKER|Host features|QEMU host linker|choice|auto|auto,system,lld,mold|
-BOOTSTRAP_MOLD|Host features|Bootstrap/use WHP mold|choice|auto|auto,y,n|
+QEMU_HOST_LINKER|Host features|QEMU host linker (system = compiler default)|choice|auto|auto,system,lld,mold|
+BOOTSTRAP_MOLD|Host features|Managed mold bootstrap/use (Bash runner)|choice|auto|auto,y,n|
 WHP_MESON_PROVIDER|Host features|QEMU Meson provider|choice|fork|venv,fork|
 QEMU_FDT_MODE|Host features|QEMU libfdt provider|choice|auto|auto,system,internal,enabled,disabled|
 WHP_DTC_FETCH_MISSING|Host features|Prefetch missing pinned DTC checkout|bool|n||
