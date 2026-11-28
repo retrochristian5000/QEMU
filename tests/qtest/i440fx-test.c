@@ -374,10 +374,10 @@ static void add_firmware_test(const char *testpath,
     static const unsigned sizes[] = { 65536, 131072, 262144, 524288 };
 
     for (size_t i = 0; i < ARRAY_SIZE(sizes); i++) {
-        g_autofree char *path = g_strdup_printf("%s/%uKiB", testpath,
-                                                sizes[i] / 1024);
+        g_autofree char *case_path =
+            g_strdup_printf("%s/%uKiB", testpath, sizes[i] / 1024);
 
-        qtest_add(path, FirmwareTestFixture, GUINT_TO_POINTER(sizes[i]),
+        qtest_add(case_path, FirmwareTestFixture, GUINT_TO_POINTER(sizes[i]),
                   setup_fixture, test_i440fx_firmware, NULL);
     }
 }
