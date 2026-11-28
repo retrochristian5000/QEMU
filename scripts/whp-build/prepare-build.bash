@@ -578,6 +578,15 @@ whp_prepare_configure_args()
         -Dcpp_std="$QEMU_CXX_STANDARD"
     )
 
+    case "${QEMU_DOWNLOAD_DEPENDENCIES:-1}" in
+        1) configure_args+=(--enable-download) ;;
+        0) configure_args+=(--disable-download) ;;
+        *)
+            printf 'error: QEMU_DOWNLOAD_DEPENDENCIES must be 0 or 1\n' >&2
+            return 1
+            ;;
+    esac
+
     if [[ -n "$QEMU_TARGET_LIST" ]]; then
         configure_args+=(--target-list="$QEMU_TARGET_LIST")
     else
