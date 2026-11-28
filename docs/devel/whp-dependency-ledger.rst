@@ -5408,8 +5408,8 @@ from QEMU artifact zlib.
 Cargo and native library closure
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
-The pinned sccacher `Cargo.toml <https://github.com/retrochristian5000/sccacher/blob/55beed41e878333e9632f24878f3ea9af6aca599/Cargo.toml>`__ and
-`Cargo.lock <https://github.com/retrochristian5000/sccacher/blob/55beed41e878333e9632f24878f3ea9af6aca599/Cargo.lock>`__ expose a registry graph with one explicitly pinned Git crate:
+The pinned sccacher `Cargo.toml <https://github.com/retrochristian5000/sccacher/blob/45cb854412588241fa3fb77bae9e7318184e7956/Cargo.toml>`__ and
+`Cargo.lock <https://github.com/retrochristian5000/sccacher/blob/45cb854412588241fa3fb77bae9e7318184e7956/Cargo.lock>`__ expose a registry graph with one explicitly pinned Git crate:
 ``tar`` 0.4.46 from the WHP
 `Rust-TAR fork <https://github.com/retrochristian5000/Rust-TAR/tree/e0127f17781a00f460330373a79196e3b5e30d56>`__
 at revision ``e0127f17781a00f460330373a79196e3b5e30d56``. It replaces registry tar 0.4.45 and
@@ -5443,6 +5443,17 @@ Fatal-signal diagnostics write static messages without Rust formatting;
 the native sigaction ABI and previous-disposition restoration remain in
 place. Windows behavior is unchanged. This improves diagnosis rather
 than establishing the cause of any GLib SIGSEGV.
+
+Rustix 1.1.5 also enables its mm feature. Unix archive hashing uses an
+owned anonymous, non-executable mapping, reads the exact source length
+and changes the mapping to read-only before parsing. Length and observed
+timestamp changes cause a hashing error; this is not an atomic filesystem
+snapshot. RAII releases the allocation even on errors. The existing
+regular and Mach-O fat archive digest algorithms and non-Unix memmap2
+backend are preserved. Archive hashing runs in batches of two per call
+to limit simultaneous full-file snapshots; this is not a global memory
+limit. Tests cover source truncation after loading, invalid lengths,
+short/long reads and regular archive digest compatibility.
 
 A lockfile entry alone does not prove feature or target activation.
 Verify the selected graph with cargo tree --locked --no-default-features.
