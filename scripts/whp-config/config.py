@@ -148,6 +148,8 @@ OPTIONS = (
            'auto', ('auto', 'ccache', 'sccache', 'managed-sccache', 'none')),
     Option('QEMU_HOST_LINKER', 'Host features', 'QEMU host linker (system = compiler default)', 'choice', 'auto', ('auto', 'system', 'lld', 'mold')),
     Option('BOOTSTRAP_MOLD', 'Host features', 'Managed mold bootstrap/use (Bash runner)', 'choice', 'auto', ('auto', 'y', 'n')),
+    Option('QEMU_DOWNLOAD_DEPENDENCIES', 'Host features',
+           'Allow QEMU configure/Meson dependency downloads', 'bool', 'y'),
     Option('WHP_MESON_PROVIDER', 'Host features', 'QEMU Meson provider', 'choice', 'fork', ('venv', 'fork')),
     Option('QEMU_FDT_MODE', 'Host features', 'QEMU libfdt provider', 'choice', 'auto', ('auto', 'system', 'internal', 'enabled', 'disabled')),
     Option('WHP_DTC_FETCH_MISSING', 'Host features', 'Prefetch missing pinned DTC checkout', 'bool', 'n'),
