@@ -38,6 +38,40 @@ class MoldConfigTests(unittest.TestCase):
             output = config.shell_assignments(config.ConfigState(values), {})
             self.assertIn(f"QEMU_HOST_LINKER='{linker}'", output)
 
+    def test_linker_mold_policy_conflicts(self):
+        config = load_module(CONFIG_TOOL, 'whp_linker_conflict')
+        diagnostic = 'conflicts with BOOTSTRAP_MOLD=y'
+        for linker in ('auto', 'system', 'lld', 'mold'):
+            for policy in ('auto', 'y', 'n'):
+                with self.subTest(linker=linker, policy=policy):
+                    values = config.default_values()
+                    values['QEMU_HOST_LINKER'] = linker
+                    values['BOOTSTRAP_MOLD'] = policy
+                    state = config.ConfigState(values)
+                    with tempfile.TemporaryDirectory() as td:
+                        path = pathlib.Path(td) / '.whpconfig'
+                        path.write_text('original\n', encoding='utf-8')
+                        if linker in ('system', 'lld') and policy == 'y':
+                            with self.assertRaisesRegex(ValueError, diagnostic):
+                                config.save_config(path, state)
+                            self.assertEqual(path.read_text(), 'original\n')
+                            with self.assertRaisesRegex(ValueError, diagnostic):
+                                config.shell_assignments(state, {})
+                            config.shell_assignments(
+                                state, {'BOOTSTRAP_MOLD': '0'},
+                            )
+                            config.shell_assignments(
+                                state, {'QEMU_HOST_LINKER': 'auto'},
+                            )
+                        else:
+                            config.save_config(path, state)
+                            config.shell_assignments(state, {})
+        state = config.ConfigState(config.default_values())
+        with self.assertRaisesRegex(ValueError, diagnostic):
+            config.shell_assignments(state, {
+                'QEMU_HOST_LINKER': 'lld', 'BOOTSTRAP_MOLD': '1',
+            })
+
     def test_portable_system_does_not_inject_linker_flags(self):
         portable = load_module(PORTABLE_TOOL, 'portable_host_system')
         flags = []
