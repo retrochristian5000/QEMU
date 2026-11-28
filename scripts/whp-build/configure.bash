@@ -778,6 +778,8 @@ fi
     if [[ "${BOOTSTRAP_GLIB:-0}" != 0 && "${BOOTSTRAP_GLIB:-0}" != n ]]; then
         printf 'WHP_GLIB_TESTS=%s\n' "${WHP_GLIB_TESTS:-0}"
         printf 'WHP_ZLIB_PREFIX=%s\n' "${WHP_ZLIB_PREFIX:-}"
+        glib_gettext_identity="$("${PYTHON:-python3}" "$SOURCE_DIR/scripts/ensure-glib.py" --gettext-identity)" || return 1
+        printf 'WHP_GLIB_GETTEXT_IDENTITY=%s\n' "$glib_gettext_identity"
         # Include actual source state as well as the recorded parent gitlink.
         "${GIT:-git}" -C "$SOURCE_DIR" ls-tree HEAD -- toolchains/glib || return 1
         for glib_source in toolchains/glib toolchains/glib/subprojects/gvdb; do

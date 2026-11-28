@@ -1468,6 +1468,19 @@ overlays. Managed GLib rejects a missing or different pkg-config zlib
 when an artifact prefix was selected. The outer QEMU configure identity
 includes the artifact prefix and GLib diagnostic test switch so incremental
 builds cannot skip the required preparation stage.
+On native macOS, managed GLib discovers gettext using the already selected
+Homebrew executable and its formula-specific prefix. An explicit
+``WHP_GLIB_GETTEXT_PREFIX`` may select another installation. The resolved
+header and dylib paths, sizes and modification times enter both the
+outer configure identity and managed GLib cache identity. The GLib fork
+accepts ``-Dwhp_gettext_prefix=...``, links the exact libintl dylib and
+checks the gettext family of functions before building. A missing
+Homebrew installation retains normal Meson intl discovery; a selected
+incomplete provider fails clearly. No package installation, global
+compiler flag changes or forced Homebrew linking is performed. NLS catalog
+generation remains disabled in the managed lightweight profile; the
+gettext runtime dependency is separate.
+
 The normal lightweight build remains unchanged. Managed builds reject
 explicit external GLib include, library and runtime search paths in
 compiler flags and search environments. QEMU-only extra flags are
@@ -4268,7 +4281,7 @@ does not enable TSan integration.
 
 Existing consumers can inform provider admission:
 
-* GLib at 103594dbc8de5ca8d370a45a29d16e9b758ba375 requires libffi
+* GLib at b7be6b4756240b522516951ca25f9e2c28d06e04 requires libffi
   >= 3.4.8 and has its existing Meson provider path.
 * Python at e74ab1108e60ee3b63918ccd14695bcea866d7d0 probes libffi
   including an Apple SDK path. Modules/_ctypes/callbacks.c prepares

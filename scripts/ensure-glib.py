@@ -289,6 +289,47 @@ def verify_artifact_zlib(inputs, prefix):
         )
 
 
+def gettext_provider():
+    """Select an installed native gettext runtime without installing anything."""
+    explicit = os.environ.get("WHP_GLIB_GETTEXT_PREFIX", "")
+    provider = os.environ.get("WHP_MACOS_DEPENDENCY_PROVIDER", "")
+    if platform.system() != "Darwin":
+        if explicit:
+            raise RuntimeError("WHP_GLIB_GETTEXT_PREFIX requires native macOS")
+        return {}
+    if explicit:
+        prefix = Path(explicit)
+    elif provider == "homebrew":
+        brew = os.environ.get("WHP_HOMEBREW_BREW", "")
+        if not brew:
+            raise RuntimeError("Homebrew selected without an admitted brew executable")
+        result = run([*command(shlex.quote(brew)), "--prefix", "gettext"])
+        if not result:
+            raise RuntimeError("Homebrew returned an empty gettext prefix")
+        prefix = Path(result)
+        if not prefix.exists():
+            print("WHP GLib: Homebrew gettext is not installed; "
+                  "using normal Meson intl discovery", file=sys.stderr)
+            return {}
+    else:
+        return {}
+    if not prefix.is_absolute() or not prefix.is_dir():
+        raise RuntimeError(f"invalid gettext provider directory: {prefix}")
+    prefix = prefix.resolve()
+    files = {}
+    for relative in ("include/libintl.h", "lib/libintl.dylib"):
+        file = prefix / relative
+        if not file.is_file():
+            raise RuntimeError(f"incomplete gettext provider: missing {file}")
+        actual = file.resolve()
+        if not actual.is_relative_to(prefix):
+            raise RuntimeError(f"gettext provider file escapes prefix: {file}")
+        metadata = actual.stat()
+        files[relative] = {"path": str(actual), "size": metadata.st_size,
+                           "mtime_ns": metadata.st_mtime_ns}
+    return {"prefix": str(prefix), "files": files}
+
+
 def wrap_mode(allow_download):
     return "default" if allow_download else "nodownload"
 
@@ -357,8 +398,13 @@ def bootstrap(args):
     inputs = dependency_inputs(pc)
     artifact_zlib = os.environ.get("WHP_ZLIB_PREFIX", "")
     verify_artifact_zlib(inputs, artifact_zlib)
+    gettext = gettext_provider()
+    if gettext:
+        profile += ("-Dwhp_gettext_prefix=" + gettext["prefix"],)
+        print(f"WHP GLib: selected gettext runtime at {gettext['prefix']}",
+              file=sys.stderr)
     identity = {
-        "schema": 8, "source": str(source), "glib": revision, "gvdb": gvdb,
+        "schema": 9, "gettext": gettext, "source": str(source), "glib": revision, "gvdb": gvdb,
         "host": [platform.system(), platform.machine()],
         "tools": [tool_identity(tool)
                   for tool in (cc, ar, pc, meson, ninja, [sys.executable])],
@@ -464,6 +510,16 @@ def prepare_cache(args, source, revision, manifest, prefix, work, cc, ar, pc,
 
 
 def main():
+    # The outer configuration cache uses the same provider identity as
+    # the managed build. No dependency build or source checkout is needed.
+    if sys.argv[1:] == ["--gettext-identity"]:
+        try:
+            print(json.dumps(gettext_provider(), sort_keys=True))
+        except (OSError, RuntimeError, ValueError, subprocess.CalledProcessError) as exc:
+            print(f"error: WHP GLib gettext discovery failed: {describe_failure(exc)}",
+                  file=sys.stderr)
+            return 1
+        return 0
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--build-dir", required=True)
     parser.add_argument("--mode", required=True, choices=("auto", "1"))

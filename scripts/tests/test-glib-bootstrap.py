@@ -224,6 +224,45 @@ class BootstrapTest(unittest.TestCase):
                     self.fail("symlinked lock accepted")
             self.assertEqual(target.read_text(), "unchanged")
 
+    def test_gettext_provider_selection(self):
+        with tempfile.TemporaryDirectory(prefix="gettext fixture ") as directory:
+            prefix = Path(directory) / "Cellar/gettext/1.0"
+            (prefix / "include").mkdir(parents=True)
+            (prefix / "lib").mkdir()
+            (prefix / "include/libintl.h").write_text("header")
+            library = prefix / "lib/libintl.dylib"
+            library.write_text("library")
+            with mock.patch.object(glib.platform, "system", return_value="Darwin"), \
+                 mock.patch.dict(glib.os.environ, {
+                     "WHP_MACOS_DEPENDENCY_PROVIDER": "homebrew",
+                     "WHP_HOMEBREW_BREW": "/selected/brew",
+                 }, clear=True), \
+                 mock.patch.object(glib, "command", return_value=["/selected/brew"]), \
+                 mock.patch.object(glib, "run", return_value=str(prefix)) as run:
+                identity = glib.gettext_provider()
+                self.assertEqual(identity["prefix"], str(prefix.resolve()))
+                run.assert_called_once_with(["/selected/brew", "--prefix", "gettext"])
+                library.write_text("updated library")
+                self.assertNotEqual(glib.gettext_provider(), identity)
+                library.unlink()
+                with self.assertRaisesRegex(RuntimeError, "incomplete gettext"):
+                    glib.gettext_provider()
+                run.return_value = str(prefix / "missing")
+                self.assertEqual(glib.gettext_provider(), {})
+            with mock.patch.object(glib.platform, "system", return_value="Darwin"), \
+                 mock.patch.dict(glib.os.environ, {
+                     "WHP_MACOS_DEPENDENCY_PROVIDER": "system",
+                 }, clear=True), mock.patch.object(glib, "run") as run:
+                self.assertEqual(glib.gettext_provider(), {})
+                run.assert_not_called()
+            library.write_text("library")
+            with mock.patch.object(glib.platform, "system", return_value="Darwin"), \
+                 mock.patch.dict(glib.os.environ, {
+                     "WHP_GLIB_GETTEXT_PREFIX": str(prefix),
+                 }, clear=True), mock.patch.object(glib, "run") as run:
+                self.assertEqual(glib.gettext_provider()["prefix"], str(prefix.resolve()))
+                run.assert_not_called()
+
     def test_wrap_mode_and_cache_reuse(self):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
@@ -241,6 +280,7 @@ class BootstrapTest(unittest.TestCase):
                  mock.patch.object(glib, "tool_identity", side_effect=lambda v: v), \
                  mock.patch.object(glib, "pinned_source", return_value=(root, "a" * 40)), \
                  mock.patch.object(glib, "dependency_inputs", return_value=inputs), \
+                 mock.patch.object(glib, "gettext_provider", return_value={}), \
                  mock.patch.object(glib, "probe"), \
                  mock.patch.object(glib, "run", return_value="") as run:
                 prefix = glib.bootstrap(args)
@@ -249,12 +289,21 @@ class BootstrapTest(unittest.TestCase):
                 marker = prefix / ".whp-glib-bootstrap"
                 identity = json.loads(marker.read_text())
                 self.assertEqual(identity["inputs"], inputs)
-                self.assertEqual(identity["schema"], 8)
+                self.assertEqual(identity["schema"], 9)
+                self.assertEqual(identity["gettext"], {})
                 self.assertEqual(identity["python"]["version"], glib.sys.version)
                 native = Path(setup[setup.index("--native-file") + 1])
                 self.assertIn("python = " + glib.machine_array([glib.sys.executable]),
                               native.read_text(encoding="utf-8"))
                 self.assertIn([glib.sys.executable], identity["tools"])
+                with mock.patch.object(glib, "gettext_provider",
+                                       return_value={"prefix": "/selected/gettext"}):
+                    run.reset_mock()
+                    gettext_prefix = glib.bootstrap(args)
+                    self.assertNotEqual(gettext_prefix, prefix)
+                    self.assertIn("-Dwhp_gettext_prefix=/selected/gettext",
+                                  run.call_args_list[0].args[0])
+                run.reset_mock()
                 args.consumer_cflags = "-I/opt/homebrew/include/glib-2.0"
                 with self.assertRaisesRegex(RuntimeError, "conflicts"):
                     glib.bootstrap(args)
