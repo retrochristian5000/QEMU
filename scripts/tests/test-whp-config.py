@@ -197,6 +197,29 @@ class WhpConfigTests(unittest.TestCase):
             )
             self.assertEqual(result.stdout.strip(), f'--wrap-mode={mode}')
 
+    def test_docs_dependency_group_selection(self):
+        configure = (ROOT / 'configure').read_text(encoding='utf-8')
+        block = configure.split('# Conditionally ensure Sphinx is installed.', 1)[1]
+        block = block.split('# Probe for ninja', 1)[0]
+        for docs, download, modern, expected in (
+            ('enabled', 'enabled', 'yes', 'docs-modern'),
+            ('enabled', 'enabled', 'no', 'docs'),
+            ('enabled', 'disabled', 'yes', 'docs'),
+            ('auto', 'enabled', 'yes', 'docs'),
+            ('disabled', 'enabled', 'yes', ''),
+        ):
+            result = subprocess.run(
+                ['/bin/sh', '-c',
+                 'probe() { test "$modern" = yes; }\n'
+                 'ensure() { for arg; do last=$arg; done; printf "%s\\n" "$last"; }\n'
+                 + block],
+                env={**os.environ, 'docs': docs, 'download': download,
+                     'modern': modern, 'python': 'probe', 'mkvenv': 'ensure',
+                     'mkvenv_online_flag': '--online', 'source_path': str(ROOT)},
+                text=True, capture_output=True, check=True,
+            )
+            self.assertEqual(result.stdout.strip(), expected)
+
     def test_fork_meson_default_does_not_install_unrelated_venv_meson(self):
         configure = (ROOT / 'configure').read_text(encoding='utf-8')
         selector = 'case "${WHP_MESON_PROVIDER:-fork}" in'

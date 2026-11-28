@@ -68,7 +68,7 @@ def check_rust_wraps(errors: list[str]) -> None:
             )
 
 
-def python_installed_versions() -> dict[str, set[str]]:
+def python_installed_versions(group: str | None = None) -> dict[str, set[str]]:
     text = (ROOT / "pythondeps.toml").read_text(encoding="utf-8")
     installed: dict[str, set[str]] = {}
     section = ""
@@ -77,6 +77,9 @@ def python_installed_versions() -> dict[str, set[str]]:
         header = re.match(r"^\[([^]]+)\]\s*$", line)
         if header:
             section = header.group(1)
+            continue
+
+        if group is not None and section != group:
             continue
 
         entry = re.match(
@@ -97,7 +100,16 @@ def python_installed_versions() -> dict[str, set[str]]:
 def check_python_mirrors(errors: list[str]) -> None:
     installed = python_installed_versions()
 
+    modern_docs = python_installed_versions("docs-modern")
+    legacy_docs = python_installed_versions("docs")
+    # Only these two documentation groups are mutually exclusive.
+    # All other duplicate pins must agree.
     for name, versions in sorted(installed.items()):
+        allowed = modern_docs.get(name, set()) | legacy_docs.get(name, set())
+        if (name in ("sphinx", "sphinx-rtd-theme")
+                and name in modern_docs and name in legacy_docs
+                and versions == allowed):
+            continue
         if len(versions) > 1:
             errors.append(
                 f"pythondeps.toml: {name} has conflicting installed versions: "
@@ -105,17 +117,22 @@ def check_python_mirrors(errors: list[str]) -> None:
             )
 
     requirements = ROOT / "docs" / "requirements.txt"
+    mirrored_docs = set()
     for line in requirements.read_text(encoding="utf-8").splitlines():
         match = re.match(r"^\s*([A-Za-z0-9_.-]+)==([^\s#]+)", line)
         if not match:
             continue
         name, version = norm_name(match.group(1)), match.group(2)
-        expected = installed.get(name)
-        if expected and version not in expected:
+        mirrored_docs.add(name)
+        expected = modern_docs.get(name, set())
+        if expected != {version}:
             errors.append(
                 f"docs/requirements.txt: {name}=={version} != "
-                f"pythondeps.toml installed {', '.join(sorted(expected))}"
+                f"pythondeps.toml [docs-modern] installed {sorted(expected)}"
             )
+
+    for name in sorted(modern_docs.keys() - mirrored_docs):
+        errors.append(f"docs/requirements.txt: missing [docs-modern] pin {name}")
 
     wheel_dir = ROOT / "python" / "wheels"
     wheel_re = re.compile(r"^(?P<name>.+?)-(?P<version>\d[^-]*)-")

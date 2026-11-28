@@ -18,24 +18,31 @@
 #           presence of 'sphinx' in the system.
 
 [meson]
-# The install key should match the version in python/wheels/
+# The installed key should match the version in python/wheels/
 meson = { accepted = ">=1.5.0", installed = "1.11.1", canary = "meson" }
-pycotap = { accepted = ">=1.1.0", installed = "1.3.1" }
 
 [meson-rust]
-# The install key should match the version in python/wheels/
+# The installed key should match the version in python/wheels/
 meson = { accepted = ">=1.11.0", installed = "1.11.1", canary = "meson" }
 
 [docs]
-# Please keep the installed versions in sync with docs/requirements.txt
+# Compatibility group for older Python and offline/system providers.
 sphinx = { accepted = ">=3.4.3", installed = "6.2.1", canary = "sphinx-build" }
 sphinx_rtd_theme = { accepted = ">=0.5", installed = "1.2.2" }
+
+[docs-modern]
+# Explicit online documentation builds with Python >= 3.12.
+# Keep these installed versions in sync with docs/requirements.txt.
+sphinx = { accepted = ">=9.1.0,<10", installed = "9.1.0", canary = "sphinx-build" }
+sphinx_rtd_theme = { accepted = ">=3.1.0,<4", installed = "3.1.0" }
 
 # This test group is for dependencies required to run various tooling
 # and tests that should always be installed at configure time. It should
 # only include dependencies that can be guaranteed via configure from
 # system packages, or python packages we vendor.
 [tooling]
+# Functional tests use this runner independently of the Meson provider.
+pycotap = { accepted = ">=1.1.0", installed = "1.3.1" }
 "qemu.qmp" = { accepted = ">=0.0.5", installed = "0.0.6" }
 "qemu" = { path = "python/" }
 # NB: The following dependencies should be a little bit more modern than

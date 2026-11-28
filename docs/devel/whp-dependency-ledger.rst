@@ -1221,9 +1221,9 @@ at their owning consumer boundary.
      - Keep feature-conditional; do not require the generator for every
        QEMU build.
    * - Python environment groups
-     - ``pythondeps.toml`` separates ``[meson]`` (including
-       ``pycotap``), ``[meson-rust]``, ``[tooling]``,
-       ``[docs]``, and ``[functests]``.  The selected interpreter
+     - ``pythondeps.toml`` separates ``[meson]``, ``[meson-rust]``,
+       ``[tooling]`` (including ``pycotap`` independently of Meson),
+       ``[docs]``, ``[docs-modern]``, and ``[functests]``. The selected interpreter
        and its build-tree ``pyvenv`` own the installed modules.
      - QEMU configure creates venv before Meson
      - Never infer Python modules from unrelated ``pip`` or ``PATH``
@@ -1240,8 +1240,10 @@ at their owning consumer boundary.
        must report missing tools.  This is independent of optional
        sccache's higher Rust minimum (>= 1.91).
    * - Documentation and tests
-     - The ``[docs]`` environment contains Sphinx and its theme;
-       ``[functests]`` adds ``pygdbmi``.  Neither is a
+     - The ``[docs]`` group preserves compatibility with older Python and
+       installed documentation providers; explicit online documentation builds
+       on Python >= 3.12 use ``[docs-modern]``, matching the Read the Docs pins.
+       ``[functests]`` adds ``pygdbmi``. Neither is a
        prerequisite for building the ordinary emulator.
      - QEMU venv when the respective feature/suite is used
      - Delay these packages until the active documentation or testing

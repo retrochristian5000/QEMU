@@ -1056,9 +1056,16 @@ $mkvenv ensuregroup $mkvenv_online_flag \
 # Conditionally ensure Sphinx is installed.
 
 if test "$docs" != "disabled" ; then
+    docs_group=docs
+    # Keep automatic detection and offline builds compatible with installed
+    # documentation tools. Sphinx 9.1 needs Python 3.12 or newer.
+    if test "$docs" = enabled && test "$download" = enabled &&
+       $python -c 'import sys; sys.exit(sys.version_info < (3, 12))'; then
+        docs_group=docs-modern
+    fi
     if ! $mkvenv ensuregroup \
          $(test "$docs" = "enabled" && echo "$mkvenv_online_flag") \
-         ${source_path}/pythondeps.toml docs;
+         ${source_path}/pythondeps.toml "$docs_group";
     then
         if test "$docs" = "enabled" ; then
             exit 1
