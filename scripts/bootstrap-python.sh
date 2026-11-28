@@ -16,7 +16,7 @@ SOURCE_DIR=$(CDPATH= cd -- "$SCRIPT_DIR/.." && pwd)
 . "$SOURCE_DIR/scripts/whp-build/shell-functions.sh"
 PYTHON_SUBMODULE_PATH=${WHP_PYTHON_SUBMODULE_PATH:-toolchains/python-runtime}
 PYTHON_SOURCE_DIR="$SOURCE_DIR/$PYTHON_SUBMODULE_PATH"
-PYTHON_BOOTSTRAP_SCHEMA=4
+PYTHON_BOOTSTRAP_SCHEMA=5
 JOBS=${JOBS:-}
 if [ -n "${SED:-}" ] && [ -z "${WHP_SED_SEED:-}" ]; then
     WHP_SED_SEED=$SED
@@ -109,7 +109,10 @@ import ensurepip
 import sys
 import tomllib
 import venv
-if sys.version_info < (3, 9):
+import zlib
+if zlib.decompress(zlib.compress(b"whp-python-runtime")) != b"whp-python-runtime":
+    raise SystemExit(1)
+if sys.version_info < (3, 11):
     raise SystemExit(1)
 if Path(sys.prefix).resolve() != Path(sys.argv[1]).resolve():
     raise SystemExit(1)
@@ -263,6 +266,21 @@ case "$build_mode" in
     *) fail "unsupported bundled Python build mode: $build_mode" ;;
 esac
 
+# The SDK is a cache input, not just a cache-miss build prerequisite.
+if [ "$host_kernel" = Darwin ] && [ "$build_mode" = posix ]; then
+    . "$SOURCE_DIR/scripts/whp-build/macos-developer-tools.sh"
+    DEVELOPER_DIR=$(whp_apple_developer_root) ||
+        fail "cannot select the Apple developer root for Python bootstrap"
+    export DEVELOPER_DIR
+    if [ -z "${SDKROOT:-}" ]; then
+        SDKROOT=$(whp_apple_select_sdk) ||
+            fail "cannot select a native macOS SDK for Python bootstrap"
+        export SDKROOT
+    fi
+    whp_apple_require_current_sdk "$SDKROOT" ||
+        fail "bundled Python SDK does not match the selected developer tools"
+fi
+
 expected_marker=$(cat <<EOF
 PYTHON_BOOTSTRAP_SCHEMA=$PYTHON_BOOTSTRAP_SCHEMA
 PYTHON_GIT_COMMIT=$python_revision
@@ -271,6 +289,16 @@ HOST_ARCH=$host_arch
 BUILD_MODE=$build_mode
 BOOTSTRAP_CC=$bootstrap_cc
 BOOTSTRAP_CC_VERSION=$bootstrap_cc_version
+SDKROOT=${SDKROOT:-}
+DEVELOPER_DIR=${DEVELOPER_DIR:-}
+MACOSX_DEPLOYMENT_TARGET=${MACOSX_DEPLOYMENT_TARGET:-}
+PKG_CONFIG_PATH=${PKG_CONFIG_PATH:-}
+PKG_CONFIG_LIBDIR=${PKG_CONFIG_LIBDIR:-}
+PKG_CONFIG_SYSROOT_DIR=${PKG_CONFIG_SYSROOT_DIR:-}
+LIBFFI_CFLAGS=${LIBFFI_CFLAGS:-}
+LIBFFI_LIBS=${LIBFFI_LIBS:-}
+ZLIB_CFLAGS=${ZLIB_CFLAGS:-}
+ZLIB_LIBS=${ZLIB_LIBS:-}
 EOF
 )
 
@@ -306,14 +334,7 @@ fi
 # CPython's configure and Makefile must not rediscover target or mixed-family
 # archive tools from PATH. Match the actual selected Python host compiler.
 if [ "$build_mode" = posix ]; then
-    # Standalone bootstrap needs the same SDK used by its compiler and archive
-    # probes. The public build entry has already selected SDKROOT on macOS.
-    if [ "$host_kernel" = Darwin ] && [ -z "${SDKROOT:-}" ]; then
-        . "$SOURCE_DIR/scripts/whp-build/macos-developer-tools.sh"
-        SDKROOT=$(whp_apple_select_sdk) ||
-            fail "cannot select a native macOS SDK for Python bootstrap"
-        export SDKROOT
-    fi
+    # SDK selection was already admitted before the cache lookup.
     bootstrap_ar=$(WHP_CC_SEED="$bootstrap_cc" \
         /bin/sh "$SOURCE_DIR/seeds/ar.sh" --print-seed) ||
         fail "native ar seed unavailable for bundled Python"

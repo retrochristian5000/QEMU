@@ -52,7 +52,9 @@ import pip
 import sys
 import tomllib
 import venv
-assert sys.version_info >= (3, 9)
+import zlib
+assert sys.version_info >= (3, 11)
+assert zlib.decompress(zlib.compress(b"whp-python-runtime")) == b"whp-python-runtime"
 assert Path(sys.prefix).resolve() == Path(sys.argv[1]).resolve(), (sys.prefix, sys.argv[1])
 ' "$cache_root"
 
@@ -88,6 +90,11 @@ marker="$cache_root/.whp-python-runtime"
 grep -Fxq "PYTHON_GIT_COMMIT=$actual_revision" "$marker"
 grep -Eq '^BOOTSTRAP_CC=.+$' "$marker"
 grep -Eq '^BOOTSTRAP_CC_VERSION=.+$' "$marker"
+grep -Fxq 'PYTHON_BOOTSTRAP_SCHEMA=5' "$marker"
+for input in SDKROOT DEVELOPER_DIR MACOSX_DEPLOYMENT_TARGET PKG_CONFIG_PATH \
+    PKG_CONFIG_LIBDIR PKG_CONFIG_SYSROOT_DIR LIBFFI_CFLAGS LIBFFI_LIBS ZLIB_CFLAGS ZLIB_LIBS; do
+    grep -q "^$input=" "$marker"
+done
 
 python_path_reused="$(
     WHP_PYTHON_BOOTSTRAP_DIR="$cache_root" JOBS="${JOBS:-2}" \

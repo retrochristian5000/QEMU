@@ -249,7 +249,12 @@ class BootstrapTest(unittest.TestCase):
                 marker = prefix / ".whp-glib-bootstrap"
                 identity = json.loads(marker.read_text())
                 self.assertEqual(identity["inputs"], inputs)
-                self.assertEqual(identity["schema"], 7)
+                self.assertEqual(identity["schema"], 8)
+                self.assertEqual(identity["python"]["version"], glib.sys.version)
+                native = Path(setup[setup.index("--native-file") + 1])
+                self.assertIn("python = " + glib.machine_array([glib.sys.executable]),
+                              native.read_text(encoding="utf-8"))
+                self.assertIn([glib.sys.executable], identity["tools"])
                 args.consumer_cflags = "-I/opt/homebrew/include/glib-2.0"
                 with self.assertRaisesRegex(RuntimeError, "conflicts"):
                     glib.bootstrap(args)

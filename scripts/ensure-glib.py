@@ -358,10 +358,12 @@ def bootstrap(args):
     artifact_zlib = os.environ.get("WHP_ZLIB_PREFIX", "")
     verify_artifact_zlib(inputs, artifact_zlib)
     identity = {
-        "schema": 7, "source": str(source), "glib": revision, "gvdb": gvdb,
+        "schema": 8, "source": str(source), "glib": revision, "gvdb": gvdb,
         "host": [platform.system(), platform.machine()],
         "tools": [tool_identity(tool)
-                  for tool in (cc, ar, pc, meson, ninja)],
+                  for tool in (cc, ar, pc, meson, ninja, [sys.executable])],
+        "python": {"version": sys.version, "base_prefix": sys.base_prefix,
+                   "prefix": sys.prefix},
         "cflags": cflags, "ldflags": ldflags,
         "consumer_cflags": consumer_cflags,
         "consumer_ldflags": consumer_ldflags,
@@ -419,6 +421,7 @@ def prepare_cache(args, source, revision, manifest, prefix, work, cc, ar, pc,
     native.write_text(
         "[binaries]\nc = " + machine_array(cc) +
         "\nar = " + machine_array(ar) +
+        "\npython = " + machine_array([sys.executable]) +
         "\npkg-config = " + machine_array(pc) +
         "\n[built-in options]\nc_args = " + machine_array(cflags) +
         "\nc_link_args = " + machine_array(cflags + ldflags) + "\n",

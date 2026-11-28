@@ -414,6 +414,12 @@ for needle, label in (
 ):
     require(python_bootstrap, needle, label)
 
+if python_bootstrap.index('SDKROOT=$(whp_apple_select_sdk)') > python_bootstrap.index("expected_marker=$(cat"):
+    raise SystemExit("error: Python SDK must be resolved before cache identity")
+require(python_bootstrap, "SDKROOT=${SDKROOT:-}", "Python SDK cache identity")
+require(python_bootstrap, "LIBFFI_LIBS=${LIBFFI_LIBS:-}", "Python libffi cache identity")
+require(python_bootstrap, "ZLIB_LIBS=${ZLIB_LIBS:-}", "Python zlib cache identity")
+
 python_cache_hook = python_bootstrap.index(
     'cached_python=$(python_from_prefix "$TOOLCHAIN_DIR"'
 )

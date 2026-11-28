@@ -1759,6 +1759,16 @@ rejects a missing interpreter. Without installed Python, the shell
 normal build still reaches the existing ``scripts/bootstrap-python.sh``.
 That builder owns the pinned Git revision, independent host C/GNU Make
 roots, interpreter install health, cache identity, and rollback.
+The bundled Python fork retains its 3.16 development version, updates
+PCbuild OpenSSL source/binary tags to 3.5.9, and avoids compiling the
+deprecated libffi closure call on modern non-Apple-SDK providers.
+Its bootstrap checks zlib compression/decompression as well as tomllib
+(which requires Python 3.11 or newer for this bundled-runtime check).
+SDK and developer-root admission precede cache reuse, with SDK, deployment
+and explicit pkg-config/libffi/zlib inputs recorded in the marker. The
+managed GLib native machine file names the active Python interpreter and
+its cache identity includes Python's executable and runtime version.
+Installed Python seed policy remains separate.
 When a bundled Python build is needed, the launcher admits and publishes
 its root Git before invoking it, even if source refresh was skipped.
 Host-tool preparation reuses that selection. Installed-Python menuconfig
@@ -4248,7 +4258,7 @@ Existing consumers can inform provider admission:
 
 * GLib at 103594dbc8de5ca8d370a45a29d16e9b758ba375 requires libffi
   >= 3.4.8 and has its existing Meson provider path.
-* Python at 40d301451ca7c05e6f5e1df2613697e7a4a2549f probes libffi
+* Python at e74ab1108e60ee3b63918ccd14695bcea866d7d0 probes libffi
   including an Apple SDK path. Modules/_ctypes/callbacks.c prepares
   closures and checks ffi_prep_closure_loc availability on Apple;
   its Apple arm64 path rejects the obsolete closure fallback.
@@ -5358,7 +5368,7 @@ generators and guest firmware tools.
 Python extension providers
 ~~~~~~~~~~~~~~~~~~~~~~~~~~
 
-The pinned Python `configure.ac <https://github.com/retrochristian5000/Python/blob/40d301451ca7c05e6f5e1df2613697e7a4a2549f/configure.ac>`__
+The pinned Python `configure.ac <https://github.com/retrochristian5000/Python/blob/e74ab1108e60ee3b63918ccd14695bcea866d7d0/configure.ac>`__
 probes libffi (including an Apple SDK path), libmpdec, SQLite,
 Tcl/Tk, GDBM, zlib and bzip2, among other libraries. Map these to
 ctypes, decimal, sqlite3, tkinter, dbm.gnu and compressed-data
