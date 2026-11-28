@@ -68,6 +68,7 @@ struct I440FXState {
 #define I440FX_DRAMT    0x58
 #define I440FX_PAM      0x59
 #define I440FX_PAM_SIZE 7
+#define I440FX_MTT      0x70
 #define I440FX_CLT      0x71
 #define I440FX_SMRAM    0x72
 
@@ -80,13 +81,15 @@ struct I440FXState {
 #define I440FX_COREBOOT_RAM_SIZE 0x57
 
 /*
- * Intel 290549-001, sections 3.2.13, 3.2.17 and 3.2.22.
+ * Intel 290549-001, sections 3.2.8, 3.2.13, 3.2.17, 3.2.21 and 3.2.22.
  * These fields provide configuration readback, not cycle-accurate timing.
  */
 static void i440fx_reset_timing_config(PCIDevice *dev)
 {
+    dev->config[PCI_LATENCY_TIMER] = 0x00;
     dev->config[I440FX_DBC] = 0x80;
     dev->config[I440FX_DRAMT] = 0x10;
+    dev->config[I440FX_MTT] = 0x00;
     dev->config[I440FX_CLT] = 0x10;
 }
 
@@ -154,8 +157,10 @@ static void i440fx_realize(PCIDevice *dev, Error **errp)
 
     dev->config[I440FX_SMRAM] = 0x02;
     if (s->strict_timing_config && i440fx_is_native(dev)) {
+        dev->wmask[PCI_LATENCY_TIMER] = 0xf8;
         dev->wmask[I440FX_DBC] = 0xff;
         dev->wmask[I440FX_DRAMT] = 0x7f;
+        dev->wmask[I440FX_MTT] = 0xf8;
         dev->wmask[I440FX_CLT] = 0x1f;
         i440fx_reset_timing_config(dev);
     }
@@ -206,6 +211,11 @@ static int i440fx_post_load(void *opaque, int version_id)
 
     if (d->strict_reserved_config && i440fx_is_native(dev)) {
         i440fx_clear_reserved_config(dev);
+    }
+    if (d->strict_timing_config && i440fx_is_native(dev)) {
+        /* Older strict profiles could retain reserved MTT bits. */
+        dev->config[PCI_LATENCY_TIMER] &= dev->wmask[PCI_LATENCY_TIMER];
+        dev->config[I440FX_MTT] &= dev->wmask[I440FX_MTT];
     }
     i440fx_update_memory_mappings(d, dev->config[I440FX_SMRAM]);
     return 0;
