@@ -32,7 +32,7 @@ def main() -> int:
     awk_seed = 'WHP_AWK_SEED=$("$SOURCE_DIR/seeds/awk.sh" --print-seed)'
     require(build, awk_seed, "early POSIX AWK seed selection")
     require(build, "WHP_AWK_LOCKED=1", "validated AWK fast path")
-    require(build, 'PATH="$WHP_AWK_BIN_DIR:$PATH"', "literal AWK PATH binding")
+    require(build, 'whp_publish_tool_path "$WHP_AWK_BIN_DIR" managed', "literal AWK PATH binding")
     require(build, "export WHP_AWK_BOOTSTRAP_SEED WHP_AWK_SEED WHP_AWK_LOCKED AWK PATH",
             "same AWK for literal and variable calls")
     awk_shim = ROOT / "scripts/whp-build/seed-bin/awk"
@@ -46,8 +46,8 @@ def main() -> int:
     grep_seed = 'WHP_GREP_SEED=$("$SOURCE_DIR/seeds/grep.sh" --print-seed)'
     require(build, grep_seed, "early grep seed selection")
     require(build, "WHP_GREP_LOCKED=1", "validated grep fast path")
-    require(build, 'PATH="$WHP_GREP_BIN_DIR:$PATH"', "literal grep PATH binding")
-    require(build, "export WHP_GREP_SEED WHP_GREP_LOCKED GREP PATH",
+    require(build, 'WHP_GREP_BIN_DIR="$SOURCE_DIR/scripts/whp-build/seed-bin"', "shared literal grep PATH binding")
+    require(build, "export WHP_GREP_SEED WHP_GREP_LOCKED GREP",
             "same grep implementation for literal and variable calls")
     shim = ROOT / "scripts/whp-build/seed-bin/grep"
     if not shim.is_file():

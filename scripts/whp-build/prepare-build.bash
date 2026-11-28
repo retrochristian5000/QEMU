@@ -441,7 +441,7 @@ whp_prepare_host_tools()
                 export WHP_HOMEBREW_BREW HOMEBREW_PREFIX
                 whp_validate_homebrew_prefix_for_arch "$HOMEBREW_PREFIX" \
                     "$HOST_ARCH" "$MACOS_ALLOW_MIXED_HOMEBREW" || return 1
-                export PATH="$HOMEBREW_PREFIX/bin:$PATH"
+                whp_publish_tool_path "$HOMEBREW_PREFIX/bin" || return 1
                 homebrew_pc="$HOMEBREW_PREFIX/lib/pkgconfig:$HOMEBREW_PREFIX/share/pkgconfig"
                 PKG_CONFIG_PATH="$(whp_append_dependency_paths "${PKG_CONFIG_PATH:-}" "$homebrew_pc")" || return 1
                 export PKG_CONFIG_PATH
@@ -466,7 +466,7 @@ whp_prepare_host_tools()
                     return 1
                 fi
                 export MACPORTS_PREFIX
-                export PATH="$MACPORTS_PREFIX/bin:$PATH"
+                whp_publish_tool_path "$MACPORTS_PREFIX/bin" || return 1
                 # Prevent fallback to another manager's built-in pkg-config
                 # directories while allowing deliberate custom overlays.
                 export PKG_CONFIG="$macports_pc_tool"

@@ -30,6 +30,26 @@ whp_append_dependency_paths()
     printf '%s\n' "$whp_result"
 )
 
+# Publish validated managed tool directories independently of host discovery.
+# Later seed or package-manager directories must not shadow a promoted tool.
+# The launcher resets the session list; the builder inherits it on exec.
+whp_publish_tool_path()
+{
+    case "$1" in
+        ""|*:*) printf 'error: invalid tool directory: %s\n' "$1" >&2; return 1 ;;
+    esac
+    case "${2:-fallback}" in
+        managed)
+            WHP_ACTIVE_TOOL_DIRS=$(whp_append_dependency_paths "$1" "${WHP_ACTIVE_TOOL_DIRS:-}") || return 1
+            export WHP_ACTIVE_TOOL_DIRS ;;
+        fallback) ;;
+        *) printf 'error: invalid tool path role: %s\n' "$2" >&2; return 1 ;;
+    esac
+    PATH=$(whp_append_dependency_paths "${WHP_ACTIVE_TOOL_DIRS:-}" "$1${PATH:+:$PATH}") || return 1
+    export PATH
+    hash -r
+}
+
 # Resolve a command's parent directory without an external dirname process.
 # Callers pass executable file paths, not paths ending in a slash.
 whp_command_dir()

@@ -276,6 +276,53 @@ require(jack, 'command_path("clang", "CC"', "JACK artifact C compiler")
 require(jack, 'command_path("clang++", "CXX"', "JACK artifact C++ compiler")
 require(jack, 'build_env = "CC_FOR_BUILD"', "JACK seed fallback")
 
+# A managed executable must retain PATH precedence when a later seed or
+# package-manager bin directory contains another implementation.
+import tempfile
+with tempfile.TemporaryDirectory(prefix="whp-tool-promotion-") as directory:
+    root = pathlib.Path(directory)
+    dirs = [root / name for name in ("seed", "managed", "brew", "later")]
+    for item in dirs:
+        item.mkdir()
+        executable = item / "whp-test-tool"
+        executable.write_text("#!/bin/sh\nprintf '%s\\n' " + item.name + "\n",
+                              encoding="utf-8")
+        executable.chmod(0o700)
+    result = subprocess.run(
+        ["/bin/sh", "-c", '''
+            set -eu
+            . "$1"
+            WHP_ACTIVE_TOOL_DIRS=
+            PATH="$2:$PATH"
+            whp_publish_tool_path "$3" managed
+            whp-test-tool
+            whp_publish_tool_path "$4"
+            whp-test-tool
+            whp_publish_tool_path "$5" managed
+            whp_publish_tool_path "$4"
+            whp-test-tool
+            printf '%s\\n' "$WHP_ACTIVE_TOOL_DIRS" "$PATH"
+         ''', "promotion-test", str(ROOT / "scripts/whp-build/shell-functions.sh"),
+         *map(str, dirs)],
+        text=True, capture_output=True, check=True,
+    )
+    lines = result.stdout.splitlines()
+    if lines[:3] != ["managed", "managed", "later"]:
+        raise SystemExit("error: promoted tool lost PATH precedence")
+    if lines[3].split(":") != [str(dirs[3]), str(dirs[1])]:
+        raise SystemExit("error: managed path registry lost promotion order")
+    if lines[4].split(":").count(str(dirs[2])) != 1:
+        raise SystemExit("error: repeated tool discovery duplicated PATH")
+
+for directory in ("HOMEBREW_PREFIX", "MACPORTS_PREFIX"):
+    require((ROOT / "scripts/whp-build/prepare-build.bash").read_text(encoding="utf-8"),
+            'whp_publish_tool_path "$' + directory + '/bin"',
+            "package-manager tool fallback")
+require(build, 'whp_publish_tool_path "$NATIVE_LLVM_DIR/bin" managed',
+        "native LLVM executable promotion")
+require(host_tools, 'whp_publish_tool_path "$WHP_MAKE_BIN_DIR" managed',
+        "managed Make executable promotion")
+
 # Package-manager discovery runs after artifact-library staging.
 shell_helpers = ROOT / "scripts/whp-build/shell-functions.sh"
 for current, defaults, expected in (

@@ -2418,6 +2418,16 @@ caching earlier Ninja/Bash compilation possible only if those independent
 source builds explicitly opt in to using the cache; it does not imply they
 are automatically wrapped.
 
+**Executable promotion:** validated managed tool directories are recorded in
+the launcher's exported ``WHP_ACTIVE_TOOL_DIRS`` session list. Later host-tool
+or Homebrew/MacPorts discovery inserts fallback directories after those
+providers, deduplicates PATH, and clears the command lookup cache. The
+bundled Python, Perl, Automake, Autoconf, Make, sed, HTTPS-capable Git,
+bundled Ninja/Bash, LLVM and Libtool handoffs use the same mechanism.
+Original bootstrap seeds remain available for rebuilding their own tools;
+an optional local-only Git remains distinct from the network authority.
+Explicit executable selectors and Darwin linker ABI policy are unchanged.
+
 **Compiler promotion:** when ``BOOTSTRAP_NATIVE_LLVM=1``, the native LLVM
 bootstrap publishes QEMU's artifact ``CC``/``CXX`` and coherent LLVM
 archive/binutils replacements.

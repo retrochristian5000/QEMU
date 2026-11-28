@@ -50,7 +50,7 @@ if [ "$BOOTSTRAP_PERL" != 0 ] &&
             if [ -n "$WHP_MANAGED_PERL" ] && [ -x "$WHP_MANAGED_PERL" ]; then
                 PERL=$WHP_MANAGED_PERL
                 WHP_PERL_SEED=$WHP_MANAGED_PERL
-                PATH="${WHP_MANAGED_PERL%/*}:$PATH"
+                whp_publish_tool_path "${WHP_MANAGED_PERL%/*}" managed || exit 1
                 export PERL WHP_PERL_SEED PATH
                 printf 'QEMU managed Perl: %s (original seed %s)\n' \
                     "$PERL" "$WHP_PERL_BOOTSTRAP_SEED" >&2
@@ -213,12 +213,16 @@ if [ "$WHP_AUTOMAKE_EXPLICIT" != 1 ]; then
                 'WHP Automake unavailable; later Autotools source bootstraps may fall back or fail.' >&2
         fi
     fi
+    if [ -n "${WHP_AUTOMAKE_PREFIX:-}" ] &&
+       [ "${AUTOMAKE:-}" = "$WHP_AUTOMAKE_PREFIX/bin/automake" ]; then
+        whp_publish_tool_path "$WHP_AUTOMAKE_PREFIX/bin" managed || exit 1
+    fi
     unset WHP_HOST_AUTOMAKE WHP_HOST_ACLOCAL WHP_NEED_AUTOMAKE WHP_AUTOMAKE_PREFIX
 fi
 
 if [ -n "${AUTOMAKE:-}" ]; then
     WHP_AUTOMAKE_BIN_DIR=$(whp_command_dir "$AUTOMAKE")
-    PATH="$WHP_AUTOMAKE_BIN_DIR:$PATH"
+    whp_publish_tool_path "$WHP_AUTOMAKE_BIN_DIR" || exit 1
     export AUTOMAKE ACLOCAL PATH
     printf 'QEMU Automake: %s\n' "$AUTOMAKE" >&2
     unset WHP_AUTOMAKE_BIN_DIR
@@ -414,7 +418,12 @@ if [ -n "${AUTOCONF:-}" ]; then
     if [ -z "${AUTORECONF:-}" ] && [ -x "$WHP_AUTOCONF_BIN_DIR/autoreconf" ]; then
         AUTORECONF="$WHP_AUTOCONF_BIN_DIR/autoreconf"
     fi
-    PATH="$WHP_AUTOCONF_BIN_DIR:$PATH"
+    if [ -n "${WHP_AUTOCONF_PREFIX:-}" ] &&
+       [ "$AUTOCONF" = "$WHP_AUTOCONF_PREFIX/bin/autoconf" ]; then
+        whp_publish_tool_path "$WHP_AUTOCONF_BIN_DIR" managed || exit 1
+    else
+        whp_publish_tool_path "$WHP_AUTOCONF_BIN_DIR" || exit 1
+    fi
     export AUTOCONF AUTOM4TE AUTOHEADER AUTORECONF PATH
     printf 'QEMU Autoconf: %s\n' "$AUTOCONF" >&2
     unset WHP_AUTOCONF_BIN_DIR
@@ -456,7 +465,7 @@ if [ "$WHP_PROMOTE_MAKE" = 1 ] &&
         if [ -n "$MAKE_CMD" ]; then
             MAKE=$MAKE_CMD
             WHP_MAKE_BIN_DIR=$(whp_command_dir "$MAKE_CMD")
-            PATH="$WHP_MAKE_BIN_DIR:$PATH"
+            whp_publish_tool_path "$WHP_MAKE_BIN_DIR" managed || exit 1
             export WHP_MAKE_PREFIX MAKE_CMD MAKE PATH
             printf 'QEMU make: WHP managed %s\n' \
                 "$("$MAKE_CMD" --version 2>/dev/null | sed -n '1p')" >&2
@@ -539,6 +548,16 @@ else
         SED=$(
             "$PYTHON" "$SOURCE_DIR/scripts/ensure-sed.py" --build-dir "$BUILD_DIR"
         ) || SED=
+        if [ -n "$SED" ]; then
+            if ! whp_sed_is_gnu "$SED"; then
+                printf '%s\n' 'error: managed sed did not pass GNU sed validation' >&2
+                exit 1
+            fi
+            whp_publish_tool_path "$(whp_command_dir "$SED")" managed || exit 1
+            GNUSED=$SED
+            GSED=$SED
+            export GNUSED GSED
+        fi
     fi
 
     if [ -z "$SED" ]; then
@@ -555,7 +574,7 @@ else
 fi
 
 WHP_SED_DIR=$(whp_command_dir "$SED")
-PATH="$WHP_SED_DIR:$PATH"
+whp_publish_tool_path "$WHP_SED_DIR" || exit 1
 export SED PATH
 if whp_sed_is_gnu "$SED"; then
     WHP_SED_KIND=GNU
@@ -586,7 +605,7 @@ if [ "$BOOTSTRAP_GIT" != 0 ] &&
         if [ -n "$WHP_GIT_EXEC_PATH" ] &&
            [ -x "$WHP_GIT_EXEC_PATH/git-remote-https" ]; then
             GIT="$WHP_MANAGED_GIT"
-            PATH="$WHP_GIT_PREFIX/bin:$PATH"
+            whp_publish_tool_path "$WHP_GIT_PREFIX/bin" managed || exit 1
             export GIT WHP_GIT_PREFIX PATH
             printf 'QEMU Git: WHP managed %s\n' \
                 "$("$GIT" --version 2>/dev/null || printf unknown)" >&2
@@ -725,7 +744,11 @@ if [ "${WHP_SHELL_PROBE_ONLY:-0}" != 1 ]; then
         case "$NINJA_CMD" in
             */*)
                 NINJA_DIR=$(whp_command_dir "$NINJA_CMD")
-                PATH="$NINJA_DIR:$PATH"
+                case "$NINJA_CMD" in
+                    */.whp-host-tools/ninja-*/ninja|*/.whp-host-tools/ninja-*/ninja.exe)
+                        whp_publish_tool_path "$NINJA_DIR" managed || exit 1 ;;
+                    *) whp_publish_tool_path "$NINJA_DIR" || exit 1 ;;
+                esac
                 unset NINJA_DIR
                 ;;
         esac
@@ -828,6 +851,7 @@ if [ "$WHP_BUILD_BASH_EXPLICIT" != 1 ] &&
         ) || WHP_BUNDLED_BASH=
         if whp_bash_usable "$WHP_BUNDLED_BASH"; then
             WHP_BUILD_BASH=$WHP_BUNDLED_BASH
+            whp_publish_tool_path "$(whp_command_dir "$WHP_BUILD_BASH")" managed || exit 1
         elif [ "$BOOTSTRAP_BASH" = 1 ]; then
             printf '%s\n' \
                 'error: BOOTSTRAP_BASH=1 requested the pinned WHP Bash, but its bootstrap failed.' >&2

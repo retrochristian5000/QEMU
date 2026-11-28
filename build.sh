@@ -52,6 +52,8 @@ unset whp_entry whp_entry_dir whp_entry_depth whp_link
 . "$SOURCE_DIR/scripts/whp-build/compiler-seed-session.sh"
 # A new launcher (including source-refresh re-exec) always admits anew.
 whp_cc_session_clear
+WHP_ACTIVE_TOOL_DIRS=
+export WHP_ACTIVE_TOOL_DIRS
 
 # Establish one POSIX AWK seed before source refresh, shell menuconfig, Python,
 # and later compiler/firmware bootstraps. Keep literal awk calls and $AWK on
@@ -69,7 +71,7 @@ if [ ! -x "$WHP_AWK_BIN_DIR/awk" ]; then
     exit 1
 fi
 WHP_AWK_LOCKED=1
-PATH="$WHP_AWK_BIN_DIR:$PATH"
+whp_publish_tool_path "$WHP_AWK_BIN_DIR" managed || exit 1
 export WHP_AWK_BOOTSTRAP_SEED WHP_AWK_SEED WHP_AWK_LOCKED AWK PATH
 printf 'QEMU seed awk: %s\n' "$WHP_AWK_SEED" >&2
 unset WHP_AWK_BIN_DIR
@@ -519,6 +521,7 @@ if [ -z "${PYTHON:-}" ]; then
             "${PYTHON:-<missing>}" >&2
         exit 1
     fi
+    whp_publish_tool_path "$(whp_command_dir "$PYTHON")" managed || exit 1
 fi
 
 if [ -z "${PYTHON:-}" ]; then
@@ -927,7 +930,7 @@ if [ "$BOOTSTRAP_NATIVE_LLVM" = 1 ]; then
     READELF="$NATIVE_LLVM_DIR/bin/llvm-readelf"
     STRIP="$NATIVE_LLVM_DIR/bin/llvm-strip"
     OBJC="$NATIVE_LLVM_DIR/bin/clang"
-    PATH="$NATIVE_LLVM_DIR/bin:$PATH"
+    whp_publish_tool_path "$NATIVE_LLVM_DIR/bin" managed || exit 1
     WHP_SHARED_LLVM_DIR="$NATIVE_LLVM_DIR"
     export NATIVE_LLVM_DIR WHP_SHARED_LLVM_DIR CC CXX AR RANLIB NM \
         OBJCOPY OBJDUMP READELF STRIP OBJC PATH
@@ -1055,7 +1058,7 @@ if [ "${WHP_SHELL_PROBE_ONLY:-0}" != 1 ] &&
     if [ -n "$WHP_LIBTOOL_PREFIX" ]; then
         LIBTOOL="$WHP_LIBTOOL_PREFIX/bin/libtool"
         LIBTOOLIZE="$WHP_LIBTOOL_PREFIX/bin/libtoolize"
-        PATH="$WHP_LIBTOOL_PREFIX/bin:$PATH"
+        whp_publish_tool_path "$WHP_LIBTOOL_PREFIX/bin" managed || exit 1
         WHP_LIBTOOL_ACLOCAL="$WHP_LIBTOOL_PREFIX/share/aclocal"
         if [ -d "$WHP_LIBTOOL_ACLOCAL" ]; then
             ACLOCAL_PATH="$WHP_LIBTOOL_ACLOCAL${ACLOCAL_PATH:+:$ACLOCAL_PATH}"
